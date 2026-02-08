@@ -59,7 +59,8 @@ export class HydraGraphNode {
     for (const transform of transforms) {
       if (transform.transform.type === 'renderpass') {
         pushCurrentPass()
-        passes.push([transform])
+        // Identity renderpass() acts as a pass boundary; no standalone dispatch needed.
+        if (transform.name !== 'renderpass') passes.push([transform])
         shouldInjectPrev = true
         continue
       }

@@ -4,7 +4,7 @@ Hydra v2 is a workspace-split rewrite with strict package boundaries and ESM-onl
 
 ## Packages
 
-- `hydra-synth-core`: runtime orchestration, transform graph, WGSL pass generation, lifecycle, typed errors.
+- `hydra-synth-core`: runtime orchestration, transform graph, compute WGSL pass generation, lifecycle, typed errors.
 - `hydra-synth`: browser host + WebGPU renderer + media source/output adapters.
 - `hydra-synth-livecoding`: optional plugin for explicit eval/global livecoding behavior.
 
@@ -50,7 +50,7 @@ runtime.dispose()
 
 ### Multipass Signal Flow (`renderpass`)
 
-Hydra v2 now compiles transform chains into multiple GPU passes when `renderpass` transforms are present.
+Hydra v2 now compiles transform chains into multiple GPU compute passes when `renderpass` transforms are present.
 
 ```ts
 runtime.synth
@@ -62,7 +62,7 @@ runtime.synth
 
 Built-in renderpass transforms:
 
-- `renderpass()` identity pass boundary (`prevBuffer -> out`)
+- `renderpass()` identity pass boundary marker (`prevBuffer` handoff, no extra standalone dispatch)
 - `blurX(amount = 1)`
 - `blurY(amount = 1)`
 - `blur(amount = 1)` (single-pass 3x3 Gaussian-like kernel)

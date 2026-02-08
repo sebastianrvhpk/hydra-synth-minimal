@@ -6,7 +6,7 @@ interface PipelineEntry {
   cacheKey: string
   signature: string
   code: string
-  pipeline: GPURenderPipeline | null
+  pipeline: GPUComputePipeline | null
   error: unknown | null
 }
 
@@ -19,7 +19,25 @@ interface PipelineErrorContext {
 
 interface ResolvedCompiledPass {
   pass: HydraCompiledPass
-  pipeline: GPURenderPipeline
+  pipeline: GPUComputePipeline
+}
+
+const DEFAULT_WORKGROUP_SIZE: [number, number, number] = [16, 16, 1]
+const WORKGROUP_SIZE_PATTERN = /@workgroup_size\(\s*(\d+)\s*(?:,\s*(\d+)\s*)?(?:,\s*(\d+)\s*)?\)/
+
+const getWorkgroupSize = (wgsl: string): [number, number, number] => {
+  const match = WORKGROUP_SIZE_PATTERN.exec(wgsl)
+  if (!match) return DEFAULT_WORKGROUP_SIZE
+
+  const x = Number.parseInt(match[1] ?? '16', 10)
+  const y = Number.parseInt(match[2] ?? `${x}`, 10)
+  const z = Number.parseInt(match[3] ?? '1', 10)
+
+  return [
+    Number.isFinite(x) && x > 0 ? x : 16,
+    Number.isFinite(y) && y > 0 ? y : 16,
+    Number.isFinite(z) && z > 0 ? z : 1
+  ]
 }
 
 export class WebGPUOutputNode implements HydraOutputAdapter {
@@ -262,21 +280,26 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
   }
 
   private getOrCreateBindGroup (
-    pipeline: GPURenderPipeline,
+    pipeline: GPUComputePipeline,
     pass: HydraCompiledPass,
-    resolvedTextures: Array<GPUTexture | null>
+    resolvedTextures: Array<GPUTexture | null>,
+    writeTexture: GPUTexture
   ): GPUBindGroup {
-    if (!this.renderer || !this.renderer.device || !this.renderer.globalUniformBuffer || !this.renderer.linearSampler) {
+    if (
+      !this.renderer ||
+      !this.renderer.device ||
+      !this.renderer.globalUniformBuffer
+    ) {
       throw new Error('Renderer resources are unavailable.')
     }
 
+    const outputTextureBinding = 3 + pass.textures.length
     let cacheKey = `p${this.renderer.getObjectId(pipeline)}|g${this.renderer.getObjectId(this.renderer.globalUniformBuffer)}`
 
     if (pass.uniforms.length > 0 && this.dynamicUniformBuffer) {
       cacheKey += `|d${this.renderer.getObjectId(this.dynamicUniformBuffer)}`
     }
-
-    if (pass.textures.length > 0) {
+    if (pass.textures.length > 0 && this.renderer.linearSampler) {
       cacheKey += `|s${this.renderer.getObjectId(this.renderer.linearSampler)}`
     }
 
@@ -284,6 +307,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
       const textureBinding = pass.textures[index]
       cacheKey += `|t${textureBinding.binding}:${this.renderer.getObjectId(resolvedTextures[index])}`
     }
+    cacheKey += `|o${outputTextureBinding}:${this.renderer.getObjectId(writeTexture)}`
 
     if (this.bindGroupCache && this.bindGroupCacheKey === cacheKey) {
       return this.bindGroupCache
@@ -293,11 +317,17 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
       { binding: 0, resource: { buffer: this.renderer.globalUniformBuffer } }
     ]
 
-    if (pass.uniforms.length > 0 && this.dynamicUniformBuffer) {
+    if (pass.uniforms.length > 0) {
+      if (!this.dynamicUniformBuffer) {
+        throw new Error('Dynamic uniform buffer is unavailable for pass uniforms.')
+      }
       entries.push({ binding: 1, resource: { buffer: this.dynamicUniformBuffer } })
     }
 
     if (pass.textures.length > 0) {
+      if (!this.renderer.linearSampler) {
+        throw new Error('Sampler resource is unavailable for textured pass.')
+      }
       entries.push({ binding: 2, resource: this.renderer.linearSampler })
     }
 
@@ -309,6 +339,10 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
         resource: this.renderer.getTextureView(texture)
       })
     }
+    entries.push({
+      binding: outputTextureBinding,
+      resource: this.renderer.getTextureView(writeTexture)
+    })
 
     this.bindGroupCache = this.renderer.device.createBindGroup({
       layout: pipeline.getBindGroupLayout(0),
@@ -341,21 +375,16 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
       }
       this.resolvedTexturesScratch.length = pass.textures.length
 
-      const bindGroup = this.getOrCreateBindGroup(pipeline, pass, this.resolvedTexturesScratch)
+      const bindGroup = this.getOrCreateBindGroup(pipeline, pass, this.resolvedTexturesScratch, writeTexture)
+      const [workgroupSizeX, workgroupSizeY] = getWorkgroupSize(pass.wgsl)
+      const workgroupsX = Math.max(1, Math.ceil(this.width / workgroupSizeX))
+      const workgroupsY = Math.max(1, Math.ceil(this.height / workgroupSizeY))
 
-      const renderPass = encoder.beginRenderPass({
-        colorAttachments: [{
-          view: this.renderer.getTextureView(writeTexture),
-          clearValue: { r: 0, g: 0, b: 0, a: 0 },
-          loadOp: 'clear',
-          storeOp: 'store'
-        }]
-      })
-
-      renderPass.setPipeline(pipeline)
-      renderPass.setBindGroup(0, bindGroup)
-      renderPass.draw(3, 1, 0, 0)
-      renderPass.end()
+      const computePass = encoder.beginComputePass()
+      computePass.setPipeline(pipeline)
+      computePass.setBindGroup(0, bindGroup)
+      computePass.dispatchWorkgroups(workgroupsX, workgroupsY, 1)
+      computePass.end()
 
       this.pingPongIndex = writeIndex
     }

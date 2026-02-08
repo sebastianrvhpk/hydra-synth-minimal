@@ -64,9 +64,36 @@ export class HydraTransformRegistry implements HydraTransformRegistryHost {
     for (const [name, generator] of Object.entries(this.generators)) {
       bindings[name] = generator
     }
+
+    // Non-src transforms are chain methods, but bindings should expose callable
+    // entries for runtime registration parity.
+    for (const name of Object.keys(this.transforms)) {
+      if (typeof bindings[name] === 'function') continue
+      bindings[name] = this.createBindingProxy(name)
+    }
+
     bindings.registerFunction = (definition: HydraTransformDefinition) => {
       this.registerTransform(definition)
-      bindings[definition.name] = this.generators[definition.name]
+      bindings[definition.name] = this.createBindingProxy(definition.name)
+    }
+  }
+
+  private createBindingProxy (name: string): (...args: unknown[]) => unknown {
+    const directGenerator = this.generators[name]
+    if (typeof directGenerator === 'function') return directGenerator
+
+    return (...args: unknown[]) => {
+      const solidGenerator = this.generators.solid
+      if (typeof solidGenerator !== 'function') {
+        throw new Error(`Transform "${name}" is chain-only and requires a source generator.`)
+      }
+
+      const node = solidGenerator(0, 0, 0, 0) as Record<string, unknown>
+      const method = node[name]
+      if (typeof method !== 'function') {
+        throw new Error(`Transform "${name}" is not available on Hydra graph nodes.`)
+      }
+      return (method as (...methodArgs: unknown[]) => unknown).apply(node, args)
     }
   }
 

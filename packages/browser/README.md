@@ -8,7 +8,7 @@ Includes:
 - `WebGPURenderer` (WebGPU backend)
 - `HydraBrowserRuntime` (core + host + renderer composition)
 - `HydraSourceNode` / `WebGPUOutputNode` adapters
-- sequential multipass execution for `renderpass`-compiled chains
+- sequential multipass compute dispatch for compiled chains (`.out()` remains screen render/present)
 - dependency-aware output scheduling (topological when possible, stable fallback on cycles)
 
 Use `createHydraBrowserRuntime()` for default composition, or wire `BrowserHost` + `WebGPURenderer` explicitly.

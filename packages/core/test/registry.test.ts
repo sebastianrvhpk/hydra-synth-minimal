@@ -20,6 +20,8 @@ describe('HydraTransformRegistry', () => {
     expect(output.passes.length).toBe(1)
     expect(output.passes[0].wgsl).toContain('fn osc')
     expect(output.passes[0].wgsl).toContain('fn rotate')
+    expect(output.passes[0].wgsl).toContain('@compute')
+    expect(output.passes[0].wgsl).toContain('fn csMain')
   })
 
   it('splits renderpass transforms into sequential GPU passes', () => {
@@ -36,15 +38,26 @@ describe('HydraTransformRegistry', () => {
     expect(output.passes[2].wgsl).toContain('prevBuffer')
   })
 
+  it('emits specialized compute workgroup sizes for directional blur kernels', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators.osc(8, 0.1, 0).blurX(1).blurY(1).out()
+
+    expect(output.passes.length).toBe(3)
+    expect(output.passes[1].wgsl).toContain('@workgroup_size(32, 8, 1)')
+    expect(output.passes[2].wgsl).toContain('@workgroup_size(8, 32, 1)')
+  })
+
   it('injects prev() when chaining non-src transforms after renderpass boundaries', () => {
     const output = new CaptureOutput()
     const registry = new HydraTransformRegistry({ defaultOutput: output })
 
     registry.generators.osc(8, 0.1, 0).renderpass().invert(1).out()
 
-    expect(output.passes.length).toBe(3)
-    expect(output.passes[2].wgsl).toContain('fn prev')
-    expect(output.passes[2].wgsl).toContain('fn invert')
+    expect(output.passes.length).toBe(2)
+    expect(output.passes[1].wgsl).toContain('fn prev')
+    expect(output.passes[1].wgsl).toContain('fn invert')
   })
 
   it('tracks texture source references for downstream output dependency scheduling', () => {

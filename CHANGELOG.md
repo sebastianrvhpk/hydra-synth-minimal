@@ -33,6 +33,9 @@
 - Multipass `renderpass` compilation and execution path.
 - Built-in renderpass transforms: `renderpass`, `blurX`, `blurY`, `blur`.
 - Pipeline compile-error surfacing through runtime error reporting.
+- Compute-first internal execution path for compiled Hydra passes (`csMain` dispatch).
+- Compute pipeline cache and output-node compute dispatch orchestration.
+- Renderpass boundary optimization: identity `renderpass()` no longer emits a standalone internal pass.
 
 ### Removed
 

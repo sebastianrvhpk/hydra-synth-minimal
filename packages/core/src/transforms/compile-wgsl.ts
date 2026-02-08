@@ -18,6 +18,15 @@ interface ShaderParams {
   structureSignature: string
 }
 
+const resolveWorkgroupSize = (transforms: HydraTransformCall[]): [number, number, number] => {
+  if (transforms.length === 1) {
+    const only = transforms[0]
+    if (only?.name === 'blurX') return [32, 8, 1]
+    if (only?.name === 'blurY') return [8, 32, 1]
+  }
+  return [16, 16, 1]
+}
+
 const hashString = (value = ''): string => {
   let hash = 2166136261
   for (let index = 0; index < value.length; index += 1) {
@@ -275,6 +284,7 @@ export const compileWgslPass = (
   maxDynamicUniforms = 256
 ): HydraCompiledPass => {
   const shaderInfo = generateWgsl(transforms)
+  const [workgroupSizeX, workgroupSizeY, workgroupSizeZ] = resolveWorkgroupSize(transforms)
   const dynamicUniformVec4Count = Math.ceil(maxDynamicUniforms / 4)
 
   if (shaderInfo.uniformScalarCount > maxDynamicUniforms) {
@@ -289,6 +299,7 @@ export const compileWgslPass = (
   const textureDeclarations = textureBindings.map((texture) =>
     `@group(0) @binding(${texture.binding}) var ${texture.variableName}: texture_2d<f32>;`
   ).join('\n')
+  const outputTextureBinding = 3 + textureBindings.length
 
   const functionDeclarations = shaderInfo.wgslFunctions.map((transform) => transform.transform.wgsl).join('\n')
   const utilityDeclarations = collectUtilityDeclarations(shaderInfo.wgslFunctions)
@@ -314,6 +325,7 @@ struct DynamicUniforms {
 @group(0) @binding(1) var<uniform> dynamicUniforms: DynamicUniforms;
 @group(0) @binding(2) var hydraSampler: sampler;
 ${textureDeclarations}
+@group(0) @binding(${outputTextureBinding}) var outImage: texture_storage_2d<rgba8unorm, write>;
 
 fn hydraDynamicUniform(index: u32) -> f32 {
   let vecIndex = index / 4u;
@@ -352,27 +364,22 @@ fn hydraDynamicUniformVec4(index: u32) -> vec4f {
 ${utilityDeclarations}
 ${functionDeclarations}
 
-@vertex
-fn vsMain(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4f {
-  let positions = array<vec2f, 3>(
-    vec2f(-1.0, -1.0),
-    vec2f(3.0, -1.0),
-    vec2f(-1.0, 3.0)
-  );
-  let p = positions[vertexIndex];
-  return vec4f(p, 0.0, 1.0);
-}
+@compute @workgroup_size(${workgroupSizeX}, ${workgroupSizeY}, ${workgroupSizeZ})
+fn csMain(@builtin(global_invocation_id) invocationId: vec3u) {
+  let width = max(1u, u32(globals.width));
+  let height = max(1u, u32(globals.height));
+  if (invocationId.x >= width || invocationId.y >= height) {
+    return;
+  }
 
-@fragment
-fn fsMain(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
-  var st = fragCoord.xy / vec2f(globals.width, globals.height);
+  var st = vec2f(f32(invocationId.x) + 0.5, f32(invocationId.y) + 0.5) / vec2f(globals.width, globals.height);
   var c = vec4f(0.0);
   ${shaderInfo.fragColor}
-  return c;
+  textureStore(outImage, vec2i(i32(invocationId.x), i32(invocationId.y)), c);
 }
 `
 
-  const pipelineSignature = `${signatureBase}|h${hashString(wgsl)}`
+  const pipelineSignature = `${signatureBase}|cs${workgroupSizeX}x${workgroupSizeY}x${workgroupSizeZ}|h${hashString(wgsl)}`
 
   return {
     signature: pipelineSignature,

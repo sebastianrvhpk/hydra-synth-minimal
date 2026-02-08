@@ -144,7 +144,7 @@ fn hydraNoise(v: vec3f) -> f32 {
   hydraSampleTexture: {
     wgsl: `
 fn hydraSampleTexture(tex: texture_2d<f32>, uv: vec2f) -> vec4f {
-  return textureSample(tex, hydraSampler, fract(uv));
+  return textureSampleLevel(tex, hydraSampler, fract(uv), 0.0);
 }
 `
   }
