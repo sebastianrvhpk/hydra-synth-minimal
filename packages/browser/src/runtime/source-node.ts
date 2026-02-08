@@ -48,6 +48,8 @@ export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
   }
 
   init (opts: SourceInitOptions = {}, params: StreamInitParams = {}): void {
+    if (this.disposed) return
+    this.clearRegisteredCleanups()
     if ('dynamic' in opts && typeof opts.dynamic === 'boolean') this.dynamic = opts.dynamic
     if ('src' in opts && opts.src) {
       this.src = opts.src
@@ -59,6 +61,7 @@ export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
 
   initVideo (url = '', params: StreamInitParams = {}): void {
     if (this.disposed) return
+    this.clearRegisteredCleanups()
     const video = document.createElement('video')
     video.crossOrigin = 'anonymous'
     video.autoplay = true
@@ -86,6 +89,7 @@ export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
 
   initImage (url = '', params: StreamInitParams = {}): void {
     if (this.disposed) return
+    this.clearRegisteredCleanups()
     const image = document.createElement('img')
     image.crossOrigin = 'anonymous'
     image.src = url
@@ -102,6 +106,7 @@ export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
 
   initStream (streamName: string, params: StreamInitParams = {}): void {
     if (!streamName || !this.pb || this.disposed) return
+    this.clearRegisteredCleanups()
     this.pb.initSource(streamName)
 
     const onVideo = (nick: string, video: HTMLVideoElement): void => {
@@ -146,6 +151,18 @@ export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
 
   private registerCleanup (cleanup: Cleanup): void {
     this.cleanups.push(cleanup)
+  }
+
+  private clearRegisteredCleanups (): void {
+    while (this.cleanups.length > 0) {
+      const cleanup = this.cleanups.pop()
+      if (!cleanup) continue
+      try {
+        cleanup()
+      } catch {
+        // Cleanup should not block source reconfiguration.
+      }
+    }
   }
 
   private listen (
@@ -201,6 +218,7 @@ export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
       this.src.srcObject.getTracks().forEach((track) => track.stop())
     }
 
+    this.clearRegisteredCleanups()
     this.src = null
     this.dynamic = true
     this.needsUpload = false
@@ -264,17 +282,6 @@ export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
     this.disposed = true
 
     this.clear()
-
-    while (this.cleanups.length > 0) {
-      const cleanup = this.cleanups.pop()
-      if (cleanup) {
-        try {
-          cleanup()
-        } catch {
-          // Cleanup should not block disposal flow.
-        }
-      }
-    }
 
     if (this.texture) this.texture.destroy()
     this.texture = null

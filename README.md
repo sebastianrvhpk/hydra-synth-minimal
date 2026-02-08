@@ -48,6 +48,25 @@ runtime.tick(16)
 runtime.dispose()
 ```
 
+### Multipass Signal Flow (`renderpass`)
+
+Hydra v2 now compiles transform chains into multiple GPU passes when `renderpass` transforms are present.
+
+```ts
+runtime.synth
+  .osc(12, 0.05, 0)
+  .blurX(2.0) // renderpass: horizontal blur over previous pass
+  .blurY(2.0) // renderpass: vertical blur over previous pass
+  .out()
+```
+
+Built-in renderpass transforms:
+
+- `renderpass()` identity pass boundary (`prevBuffer -> out`)
+- `blurX(amount = 1)`
+- `blurY(amount = 1)`
+- `blur(amount = 1)` (single-pass 3x3 Gaussian-like kernel)
+
 ### Explicit Host Wiring
 
 ```ts

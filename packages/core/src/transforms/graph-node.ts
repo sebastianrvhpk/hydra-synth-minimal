@@ -31,9 +31,8 @@ export class HydraGraphNode {
   }
 
   wgsl (): HydraCompiledPass[] {
-    const transforms = this.transforms.filter((transform) => transform.transform.type !== 'renderpass')
-    if (transforms.length === 0) return []
-    return [this.compile(transforms)]
+    if (this.transforms.length === 0) return []
+    return this.splitIntoPasses(this.transforms).map((pass) => this.compile(pass))
   }
 
   private compile (transforms: HydraTransformCall[]): HydraCompiledPass {
@@ -43,6 +42,51 @@ export class HydraGraphNode {
       const transformName = transforms[transforms.length - 1]?.name ?? 'unknown'
       if (this.onCompileError) this.onCompileError(transformName, error)
       throw error
+    }
+  }
+
+  private splitIntoPasses (transforms: HydraTransformCall[]): HydraTransformCall[][] {
+    const passes: HydraTransformCall[][] = []
+    let currentPass: HydraTransformCall[] = []
+    let shouldInjectPrev = false
+
+    const pushCurrentPass = (): void => {
+      if (currentPass.length === 0) return
+      passes.push(currentPass)
+      currentPass = []
+    }
+
+    for (const transform of transforms) {
+      if (transform.transform.type === 'renderpass') {
+        pushCurrentPass()
+        passes.push([transform])
+        shouldInjectPrev = true
+        continue
+      }
+
+      if (currentPass.length === 0 && shouldInjectPrev && transform.transform.type !== 'src') {
+        const prevTransform = this.createPrevTransform(transform)
+        if (prevTransform) currentPass.push(prevTransform)
+      }
+
+      currentPass.push(transform)
+      shouldInjectPrev = false
+    }
+
+    pushCurrentPass()
+    return passes
+  }
+
+  private createPrevTransform (anchor: HydraTransformCall): HydraTransformCall | null {
+    const prevGenerator = anchor.synth.generators.prev
+    if (typeof prevGenerator !== 'function') return null
+
+    try {
+      const prevNode = prevGenerator()
+      if (!prevNode || !Array.isArray(prevNode.transforms) || prevNode.transforms.length === 0) return null
+      return prevNode.transforms[0]
+    } catch {
+      return null
     }
   }
 }

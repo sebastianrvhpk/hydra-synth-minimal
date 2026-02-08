@@ -91,6 +91,24 @@ describe('HydraEngine lifecycle', () => {
     expect(renderer.disposed).toBe(true)
     expect(source.disposed).toBe(true)
   })
+
+  it('addSource disposer removes source from the tick loop', async () => {
+    const renderer = new MockRenderer()
+    const engine = new HydraEngine({ renderer })
+    const source = new MockSource()
+
+    await engine.init()
+    const removeSource = engine.addSource(source)
+
+    engine.tick(16)
+    expect(source.tickCount).toBe(1)
+
+    removeSource()
+    engine.tick(16)
+
+    expect(source.tickCount).toBe(1)
+    expect(source.disposed).toBe(true)
+  })
 })
 
 describe('HydraEngine errors', () => {
@@ -104,7 +122,7 @@ describe('HydraEngine errors', () => {
       onError: (error) => errors.push(error)
     })
 
-    await engine.init()
+    await expect(engine.init()).rejects.toThrow('Renderer init failed')
 
     expect(errors.length).toBe(1)
     expect(errors[0].type).toBe('init')

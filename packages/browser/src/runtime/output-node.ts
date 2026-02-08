@@ -10,6 +10,18 @@ interface PipelineEntry {
   error: unknown | null
 }
 
+interface PipelineErrorContext {
+  outputLabel: string
+  passIndex: number
+  signature: string
+  error: unknown
+}
+
+interface ResolvedCompiledPass {
+  pass: HydraCompiledPass
+  pipeline: GPURenderPipeline
+}
+
 export class WebGPUOutputNode implements HydraOutputAdapter {
   readonly label: string
   id = -1
@@ -22,24 +34,25 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
   private dynamicUniformBuffer: GPUBuffer | null = null
   private readonly dynamicUniformData = new Float32Array(MAX_DYNAMIC_UNIFORMS)
 
-  private activePass: HydraCompiledPass | null = null
-  private pendingPass: HydraCompiledPass | null = null
-  private activePipelineEntry: PipelineEntry | null = null
-  private lastPipelineErrorKey = ''
+  private activePasses: HydraCompiledPass[] = []
+  private pendingPasses: HydraCompiledPass[] | null = null
+  private activePipelineEntries: PipelineEntry[] = []
+  private readonly reportedPipelineErrors = new Set<string>()
+  private pipelineErrorHandler: ((context: PipelineErrorContext) => void) | null = null
 
   private bindGroupCacheKey = ''
   private bindGroupCache: GPUBindGroup | null = null
   private readonly resolvedTexturesScratch: Array<GPUTexture | null> = []
-  private readonly resolvedPass = {
-    pass: null as HydraCompiledPass | null,
-    pipeline: null as GPURenderPipeline | null
-  }
 
   constructor ({ renderer, label = '', width, height }: { renderer: WebGPURenderer | null, label?: string, width: number, height: number }) {
     this.renderer = renderer
     this.label = label
     this.width = width
     this.height = height
+  }
+
+  setPipelineErrorHandler (handler: ((context: PipelineErrorContext) => void) | null): void {
+    this.pipelineErrorHandler = handler
   }
 
   attachRenderer (renderer: WebGPURenderer): void {
@@ -91,18 +104,45 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
   }
 
   render (passes: HydraCompiledPass[]): void {
-    const pass = passes[0]
-    if (!pass) return
+    this.pendingPasses = passes.slice()
+    this.reportedPipelineErrors.clear()
 
-    this.pendingPass = pass
     if (this.renderer && this.renderer.ready) {
-      this.renderer.getOutputPipelineEntry(pass.signature, pass.wgsl)
+      for (const pass of this.pendingPasses) {
+        this.renderer.getOutputPipelineEntry(pass.signature, pass.wgsl)
+      }
     }
   }
 
-  private warnPipelineErrorOnce (errorKey: string, error: unknown): void {
-    if (this.lastPipelineErrorKey === errorKey) return
-    this.lastPipelineErrorKey = errorKey
+  getDependencyOutputIds (): number[] {
+    const dependencies = new Set<number>()
+    const trackedPasses = this.pendingPasses ?? this.activePasses
+
+    for (const pass of trackedPasses) {
+      for (const textureBinding of pass.textures) {
+        if (textureBinding.isPrev) continue
+        const sourceRef = textureBinding.sourceRef
+        if (!sourceRef || typeof sourceRef !== 'object') continue
+
+        const candidateId = (sourceRef as { id?: unknown }).id
+        if (
+          typeof candidateId === 'number' &&
+          Number.isInteger(candidateId) &&
+          candidateId >= 0 &&
+          candidateId !== this.id
+        ) {
+          dependencies.add(candidateId)
+        }
+      }
+    }
+
+    return Array.from(dependencies)
+  }
+
+  private reportPipelineErrorOnce (errorKey: string, context: PipelineErrorContext): void {
+    if (this.reportedPipelineErrors.has(errorKey)) return
+    this.reportedPipelineErrors.add(errorKey)
+    if (this.pipelineErrorHandler) this.pipelineErrorHandler(context)
   }
 
   private invalidateBindGroupCache (): void {
@@ -110,55 +150,100 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     this.bindGroupCache = null
   }
 
-  private resolvePass (): { pass: HydraCompiledPass, pipeline: GPURenderPipeline } | null {
+  private resolvePasses (): ResolvedCompiledPass[] | null {
     if (!this.renderer || !this.renderer.ready) return null
 
-    if (this.pendingPass) {
-      const entry = this.renderer.getOutputPipelineEntry(this.pendingPass.signature, this.pendingPass.wgsl) as PipelineEntry | null
-      if (!entry) return null
-      if (entry.error) {
-        this.warnPipelineErrorOnce(entry.cacheKey || this.pendingPass.signature, entry.error)
-        this.pendingPass = null
-      } else if (entry.pipeline) {
-        this.activePass = this.pendingPass
-        this.activePipelineEntry = entry
-        this.pendingPass = null
-        this.lastPipelineErrorKey = ''
-        this.invalidateBindGroupCache()
+    if (this.pendingPasses) {
+      const nextEntries: PipelineEntry[] = []
+
+      for (let index = 0; index < this.pendingPasses.length; index += 1) {
+        const pass = this.pendingPasses[index]
+        const entry = this.renderer.getOutputPipelineEntry(pass.signature, pass.wgsl) as PipelineEntry | null
+        if (!entry) return null
+
+        if (entry.error) {
+          this.reportPipelineErrorOnce(entry.cacheKey || pass.signature, {
+            outputLabel: this.label,
+            passIndex: index,
+            signature: pass.signature,
+            error: entry.error
+          })
+          this.pendingPasses = null
+          return null
+        }
+
+        if (!entry.pipeline) return null
+        nextEntries.push(entry)
       }
+
+      this.activePasses = this.pendingPasses
+      this.activePipelineEntries = nextEntries
+      this.pendingPasses = null
+      this.invalidateBindGroupCache()
     }
 
-    if (!this.activePass) return null
+    if (this.activePasses.length === 0) return null
 
-    if (
-      !this.activePipelineEntry ||
-      this.activePipelineEntry.signature !== this.activePass.signature ||
-      this.activePipelineEntry.code !== this.activePass.wgsl
-    ) {
-      this.activePipelineEntry = this.renderer.getOutputPipelineEntry(this.activePass.signature, this.activePass.wgsl) as PipelineEntry | null
-      if (!this.activePipelineEntry) return null
+    const resolved: ResolvedCompiledPass[] = []
+    for (let index = 0; index < this.activePasses.length; index += 1) {
+      const pass = this.activePasses[index]
+      let entry = this.activePipelineEntries[index]
+
+      if (!entry || entry.signature !== pass.signature || entry.code !== pass.wgsl) {
+        entry = this.renderer.getOutputPipelineEntry(pass.signature, pass.wgsl) as PipelineEntry | null
+        if (!entry) return null
+        this.activePipelineEntries[index] = entry
+      }
+
+      if (entry.error) {
+        this.reportPipelineErrorOnce(entry.cacheKey || pass.signature, {
+          outputLabel: this.label,
+          passIndex: index,
+          signature: pass.signature,
+          error: entry.error
+        })
+        return null
+      }
+      if (!entry.pipeline) return null
+
+      resolved.push({ pass, pipeline: entry.pipeline })
     }
 
-    if (this.activePipelineEntry.error) {
-      this.warnPipelineErrorOnce(this.activePipelineEntry.cacheKey || this.activePass.signature, this.activePipelineEntry.error)
-      return null
-    }
-    if (!this.activePipelineEntry.pipeline) return null
-
-    this.resolvedPass.pass = this.activePass
-    this.resolvedPass.pipeline = this.activePipelineEntry.pipeline
-    return this.resolvedPass as { pass: HydraCompiledPass, pipeline: GPURenderPipeline }
+    return resolved
   }
 
   private updateDynamicUniforms (uniforms: HydraCompiledPass['uniforms'], props: HydraFrameState): void {
     if (!this.renderer || !this.renderer.device || !this.dynamicUniformBuffer || uniforms.length === 0) return
 
+    const writeScalar = (index: number, value: unknown): void => {
+      const safe = typeof value === 'number' && Number.isFinite(value) ? value : 0
+      this.dynamicUniformData[index] = safe
+    }
+
     let maxIndex = -1
     uniforms.forEach((uniform) => {
+      const size = Math.max(1, Math.min(4, Math.floor(uniform.size || 1)))
       const value = typeof uniform.value === 'function' ? uniform.value(props) : 0
-      const safe = Number.isFinite(value) ? value : 0
-      this.dynamicUniformData[uniform.index] = safe
-      if (uniform.index > maxIndex) maxIndex = uniform.index
+
+      if (size <= 1) {
+        writeScalar(uniform.index, value)
+        if (uniform.index > maxIndex) maxIndex = uniform.index
+        return
+      }
+
+      const vector = Array.isArray(value)
+        ? value
+        : ArrayBuffer.isView(value)
+          ? Array.from(value as ArrayLike<number>)
+          : typeof value === 'number'
+            ? Array(size).fill(value)
+            : []
+
+      for (let lane = 0; lane < size; lane += 1) {
+        writeScalar(uniform.index + lane, vector[lane])
+      }
+      const endIndex = uniform.index + size - 1
+      if (endIndex > maxIndex) maxIndex = endIndex
     })
     if (maxIndex < 0) return
 
@@ -237,47 +322,51 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     this.ensureResources()
     if (!this.renderer || !this.renderer.ready || !encoder) return
 
-    const resolved = this.resolvePass()
-    if (!resolved) return
+    const resolvedPasses = this.resolvePasses()
+    if (!resolvedPasses) return
 
-    const { pass, pipeline } = resolved
+    for (const resolved of resolvedPasses) {
+      const { pass, pipeline } = resolved
 
-    const readIndex = this.pingPongIndex
-    const writeIndex = this.pingPongIndex ? 0 : 1
-    const readTexture = this.textures[readIndex] ?? this.renderer.getFallbackTexture()
-    const writeTexture = this.textures[writeIndex] ?? this.renderer.getFallbackTexture()
+      const readIndex = this.pingPongIndex
+      const writeIndex = this.pingPongIndex ? 0 : 1
+      const readTexture = this.textures[readIndex] ?? this.renderer.getFallbackTexture()
+      const writeTexture = this.textures[writeIndex] ?? this.renderer.getFallbackTexture()
 
-    this.updateDynamicUniforms(pass.uniforms, props)
+      this.updateDynamicUniforms(pass.uniforms, props)
 
-    for (let index = 0; index < pass.textures.length; index += 1) {
-      const textureBinding = pass.textures[index]
-      this.resolvedTexturesScratch[index] = this.resolveTextureBinding(textureBinding, readTexture) ?? this.renderer.getFallbackTexture()
+      for (let index = 0; index < pass.textures.length; index += 1) {
+        const textureBinding = pass.textures[index]
+        this.resolvedTexturesScratch[index] = this.resolveTextureBinding(textureBinding, readTexture) ?? this.renderer.getFallbackTexture()
+      }
+      this.resolvedTexturesScratch.length = pass.textures.length
+
+      const bindGroup = this.getOrCreateBindGroup(pipeline, pass, this.resolvedTexturesScratch)
+
+      const renderPass = encoder.beginRenderPass({
+        colorAttachments: [{
+          view: this.renderer.getTextureView(writeTexture),
+          clearValue: { r: 0, g: 0, b: 0, a: 0 },
+          loadOp: 'clear',
+          storeOp: 'store'
+        }]
+      })
+
+      renderPass.setPipeline(pipeline)
+      renderPass.setBindGroup(0, bindGroup)
+      renderPass.draw(3, 1, 0, 0)
+      renderPass.end()
+
+      this.pingPongIndex = writeIndex
     }
-
-    const bindGroup = this.getOrCreateBindGroup(pipeline, pass, this.resolvedTexturesScratch)
-
-    const renderPass = encoder.beginRenderPass({
-      colorAttachments: [{
-        view: this.renderer.getTextureView(writeTexture),
-        clearValue: { r: 0, g: 0, b: 0, a: 0 },
-        loadOp: 'clear',
-        storeOp: 'store'
-      }]
-    })
-
-    renderPass.setPipeline(pipeline)
-    renderPass.setBindGroup(0, bindGroup)
-    renderPass.draw(3, 1, 0, 0)
-    renderPass.end()
-
-    this.pingPongIndex = writeIndex
   }
 
   dispose (): void {
-    this.pendingPass = null
-    this.activePass = null
-    this.activePipelineEntry = null
-    this.lastPipelineErrorKey = ''
+    this.pendingPasses = null
+    this.activePasses = []
+    this.activePipelineEntries = []
+    this.reportedPipelineErrors.clear()
+    this.pipelineErrorHandler = null
 
     this.invalidateBindGroupCache()
 

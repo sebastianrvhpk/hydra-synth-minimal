@@ -118,10 +118,14 @@ export declare class WebGPUOutputNode implements HydraOutputAdapter {
   readonly label: string
   id: number
   constructor (options: { renderer: WebGPURenderer | null, label?: string, width: number, height: number })
+  setPipelineErrorHandler (
+    handler: ((context: { outputLabel: string, passIndex: number, signature: string, error: unknown }) => void) | null
+  ): void
   attachRenderer (renderer: WebGPURenderer): void
   resize (width: number, height: number): void
   getCurrent (): GPUTexture | null
   getTexture (): GPUTexture | null
+  getDependencyOutputIds (): number[]
   render (passes: HydraCompiledPass[]): void
   tick (props: HydraFrameState, encoder: GPUCommandEncoder | null): void
   dispose (): void

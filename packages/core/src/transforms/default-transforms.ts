@@ -573,6 +573,71 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
 `
   },
   {
+    name: 'renderpass',
+    type: 'renderpass',
+    inputs: [],
+    wgsl: `
+  return hydraSampleTexture(prevBuffer, fract(_st));
+`
+  },
+  {
+    name: 'blurX',
+    type: 'renderpass',
+    inputs: [
+      { type: 'float', name: 'amount', default: 1 }
+    ],
+    wgsl: `
+  let stepX = amount / max(globals.width, 1.0);
+  let offset = vec2f(stepX, 0.0);
+  let c0 = hydraSampleTexture(prevBuffer, fract(_st - offset));
+  let c1 = hydraSampleTexture(prevBuffer, fract(_st));
+  let c2 = hydraSampleTexture(prevBuffer, fract(_st + offset));
+  return c0 * 0.25 + c1 * 0.5 + c2 * 0.25;
+`
+  },
+  {
+    name: 'blurY',
+    type: 'renderpass',
+    inputs: [
+      { type: 'float', name: 'amount', default: 1 }
+    ],
+    wgsl: `
+  let stepY = amount / max(globals.height, 1.0);
+  let offset = vec2f(0.0, stepY);
+  let c0 = hydraSampleTexture(prevBuffer, fract(_st - offset));
+  let c1 = hydraSampleTexture(prevBuffer, fract(_st));
+  let c2 = hydraSampleTexture(prevBuffer, fract(_st + offset));
+  return c0 * 0.25 + c1 * 0.5 + c2 * 0.25;
+`
+  },
+  {
+    name: 'blur',
+    type: 'renderpass',
+    inputs: [
+      { type: 'float', name: 'amount', default: 1 }
+    ],
+    wgsl: `
+  let stepX = amount / max(globals.width, 1.0);
+  let stepY = amount / max(globals.height, 1.0);
+
+  let c00 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(-stepX, -stepY)));
+  let c10 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(0.0, -stepY)));
+  let c20 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(stepX, -stepY)));
+  let c01 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(-stepX, 0.0)));
+  let c11 = hydraSampleTexture(prevBuffer, fract(_st));
+  let c21 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(stepX, 0.0)));
+  let c02 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(-stepX, stepY)));
+  let c12 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(0.0, stepY)));
+  let c22 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(stepX, stepY)));
+
+  return (
+    c00 + c20 + c02 + c22 +
+    (c10 + c01 + c21 + c12) * 2.0 +
+    c11 * 4.0
+  ) / 16.0;
+`
+  },
+  {
     name: 'prev',
     type: 'src',
     inputs: [],

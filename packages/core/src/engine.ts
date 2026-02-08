@@ -98,8 +98,14 @@ export class HydraEngine implements HydraEngineBindingHost {
         this.initialized = true
       })
       .catch((error) => {
-        const envelope = this.handleError('init', 'Renderer init failed', { stage: 'renderer.init' }, error)
-        this.initError = envelope
+        try {
+          const envelope = this.handleError('init', 'Renderer init failed', { stage: 'renderer.init' }, error)
+          this.initError = envelope
+          throw new HydraEngineFailure(envelope)
+        } catch (raised) {
+          if (raised instanceof HydraEngineFailure) this.initError = raised.envelope
+          throw raised
+        }
       })
 
     return this.initPromise
@@ -191,7 +197,18 @@ export class HydraEngine implements HydraEngineBindingHost {
     if (this.disposed) return () => {}
 
     this.sources.push(source)
-    return this.addDisposable(source)
+    const removeDisposable = this.addDisposable(source)
+    let removed = false
+
+    return () => {
+      if (removed) return
+      removed = true
+
+      const index = this.sources.indexOf(source)
+      if (index >= 0) this.sources.splice(index, 1)
+
+      removeDisposable()
+    }
   }
 
   attachPlugin (plugin: ScriptPlugin): () => void {

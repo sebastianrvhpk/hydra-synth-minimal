@@ -14,6 +14,7 @@ interface ShaderParams {
   wgslFunctions: HydraTransformCall[]
   fragColor: string
   usesPrev: boolean
+  uniformScalarCount: number
   structureSignature: string
 }
 
@@ -81,19 +82,35 @@ export const buildStructureSignature = (transforms: HydraTransformCall[] = []): 
   })
   .join('>')
 
-const registerUniform = (shaderParams: ShaderParams, arg: HydraTypedArgument): number => {
-  if (!arg.uniformName || typeof arg.value !== 'function') return -1
-  const existing = shaderParams.uniforms.find((uniform) => uniform.name === arg.uniformName)
-  if (existing) return existing.index
+const uniformSlotCount = (wgslType: HydraTypedArgument['wgslType']): number => {
+  if (wgslType === 'vec2f') return 2
+  if (wgslType === 'vec3f') return 3
+  if (wgslType === 'vec4f') return 4
+  return 1
+}
 
-  const index = shaderParams.uniforms.length
-  shaderParams.uniforms.push({
+const registerUniform = (shaderParams: ShaderParams, arg: HydraTypedArgument): HydraUniformBinding | null => {
+  if (!arg.uniformName || typeof arg.value !== 'function') return null
+  const existing = shaderParams.uniforms.find((uniform) => uniform.name === arg.uniformName)
+  if (existing) return existing
+
+  const entry: HydraUniformBinding = {
     name: arg.uniformName,
-    index,
+    index: shaderParams.uniformScalarCount,
+    size: uniformSlotCount(arg.wgslType),
     value: arg.value,
     type: arg.type
-  })
-  return index
+  }
+  shaderParams.uniforms.push(entry)
+  shaderParams.uniformScalarCount += entry.size
+  return entry
+}
+
+const uniformExpressionForArg = (arg: HydraTypedArgument, uniform: HydraUniformBinding): string => {
+  if (arg.wgslType === 'vec2f') return `hydraDynamicUniformVec2(${uniform.index}u)`
+  if (arg.wgslType === 'vec3f') return `hydraDynamicUniformVec3(${uniform.index}u)`
+  if (arg.wgslType === 'vec4f') return `hydraDynamicUniformVec4(${uniform.index}u)`
+  return `hydraDynamicUniform(${uniform.index}u)`
 }
 
 const registerTexture = (shaderParams: ShaderParams, arg: HydraTypedArgument): string => {
@@ -107,7 +124,8 @@ const registerTexture = (shaderParams: ShaderParams, arg: HydraTypedArgument): s
     name: arg.textureName,
     variableName,
     getTexture: arg.value,
-    isPrev: false
+    isPrev: false,
+    sourceRef: arg.textureSource
   })
   return variableName
 }
@@ -136,9 +154,9 @@ const resolveInputExpression = (
   }
 
   if (arg.isUniform) {
-    const uniformIndex = registerUniform(shaderParams, arg)
-    const expression = `hydraDynamicUniform(${uniformIndex}u)`
-    return coerceExpression(expression, 'f32', arg.wgslType)
+    const uniform = registerUniform(shaderParams, arg)
+    if (!uniform) return '0.0'
+    return uniformExpressionForArg(arg, uniform)
   }
 
   if (arg.isTexture) {
@@ -191,16 +209,16 @@ const generateWgslTransforms = (transforms: HydraTransformCall[], shaderParams: 
   let generator = (): string => ''
 
   transforms.forEach((transform, index) => {
-    const args = formatArguments(transform, shaderParams.uniforms.length + shaderParams.textures.length)
+    const args = formatArguments(transform, shaderParams.uniformScalarCount + shaderParams.textures.length)
     const previous = generator
 
     if (!containsTransform(transform, shaderParams.wgslFunctions)) {
       shaderParams.wgslFunctions.push(transform)
     }
 
-    if (transform.name === 'prev') shaderParams.usesPrev = true
+    if (transform.name === 'prev' || transform.transform.type === 'renderpass') shaderParams.usesPrev = true
 
-    if (transform.transform.type === 'src') {
+    if (transform.transform.type === 'src' || transform.transform.type === 'renderpass') {
       generator = (cVar, stVar) => {
         const contextVar = `${cVar}${index}`
         const nested = buildNestedInputs(args, shaderParams)(contextVar, stVar)
@@ -240,6 +258,7 @@ const generateWgsl = (transforms: HydraTransformCall[]): ShaderParams => {
     wgslFunctions: [],
     fragColor: '',
     usesPrev: false,
+    uniformScalarCount: 0,
     structureSignature: buildStructureSignature(transforms)
   }
 
@@ -258,8 +277,8 @@ export const compileWgslPass = (
   const shaderInfo = generateWgsl(transforms)
   const dynamicUniformVec4Count = Math.ceil(maxDynamicUniforms / 4)
 
-  if (shaderInfo.uniforms.length > maxDynamicUniforms) {
-    throw new Error(`Shader uses ${shaderInfo.uniforms.length} dynamic uniforms, but max is ${maxDynamicUniforms}.`)
+  if (shaderInfo.uniformScalarCount > maxDynamicUniforms) {
+    throw new Error(`Shader uses ${shaderInfo.uniformScalarCount} dynamic uniform scalars, but max is ${maxDynamicUniforms}.`)
   }
 
   const textureBindings: HydraTextureBinding[] = shaderInfo.textures.map((texture, index) => ({
@@ -277,7 +296,7 @@ export const compileWgslPass = (
     .map((transform) => `${transform.name}:${transform.transform.wgsl.length}`)
     .join(',')
 
-  const signatureBase = `${shaderInfo.structureSignature}|u${shaderInfo.uniforms.length}|t${textureBindings.length}|f${functionSignature}`
+  const signatureBase = `${shaderInfo.structureSignature}|u${shaderInfo.uniforms.length}|us${shaderInfo.uniformScalarCount}|t${textureBindings.length}|f${functionSignature}`
 
   const wgsl = `
 struct GlobalUniforms {
@@ -304,6 +323,30 @@ fn hydraDynamicUniform(index: u32) -> f32 {
   if (lane == 1u) { return packed.y; }
   if (lane == 2u) { return packed.z; }
   return packed.w;
+}
+
+fn hydraDynamicUniformVec2(index: u32) -> vec2f {
+  return vec2f(
+    hydraDynamicUniform(index),
+    hydraDynamicUniform(index + 1u)
+  );
+}
+
+fn hydraDynamicUniformVec3(index: u32) -> vec3f {
+  return vec3f(
+    hydraDynamicUniform(index),
+    hydraDynamicUniform(index + 1u),
+    hydraDynamicUniform(index + 2u)
+  );
+}
+
+fn hydraDynamicUniformVec4(index: u32) -> vec4f {
+  return vec4f(
+    hydraDynamicUniform(index),
+    hydraDynamicUniform(index + 1u),
+    hydraDynamicUniform(index + 2u),
+    hydraDynamicUniform(index + 3u)
+  );
 }
 
 ${utilityDeclarations}

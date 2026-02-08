@@ -29,6 +29,49 @@ const vecLiteral = (value: unknown, len: number): string => {
 
 const sanitizeName = (name: string): string => name.replace(/[^a-zA-Z0-9_]/g, '_')
 
+const toFiniteNumber = (value: unknown, fallback = 0): number => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  return fallback
+}
+
+const toNumberArray = (value: unknown): number[] | null => {
+  if (Array.isArray(value)) return value.map((entry) => Number(entry))
+  if (ArrayBuffer.isView(value)) return Array.from(value as ArrayLike<number>).map((entry) => Number(entry))
+  return null
+}
+
+const buildDefaultVector = (value: unknown, len: number): number[] => {
+  const fallback = toNumberArray(value)
+  const defaults = fallback ? fallback.slice(0, len) : []
+  while (defaults.length < len) {
+    defaults.push(defaults.length === 3 ? 1 : 0)
+  }
+  return defaults.map((entry, index) => toFiniteNumber(entry, index === 3 ? 1 : 0))
+}
+
+const normalizeUniformValue = (
+  value: unknown,
+  type: HydraTypedArgument['type'],
+  fallback: unknown
+): number | number[] => {
+  if (type === 'float') return toFiniteNumber(value, toFiniteNumber(fallback, 0))
+
+  if (type === 'vec2' || type === 'vec3' || type === 'vec4') {
+    const len = Number.parseInt(type.slice(3), 10)
+    const fallbackVector = buildDefaultVector(fallback, len)
+    const maybeVector = toNumberArray(value)
+    const source = maybeVector ?? (typeof value === 'number' ? Array(len).fill(value) : fallbackVector)
+    const normalized: number[] = []
+
+    for (let index = 0; index < len; index += 1) {
+      normalized.push(toFiniteNumber(source[index], fallbackVector[index]))
+    }
+    return normalized
+  }
+
+  return 0
+}
+
 export const formatArguments = (
   transform: HydraTransformCall,
   startIndex = 0
@@ -67,6 +110,7 @@ export const formatArguments = (
       typedArg.isTexture = true
       typedArg.textureName = `${sanitizeName(input.name)}_${startIndex + index}`
       typedArg.value = () => textureLike.getTexture()
+      typedArg.textureSource = textureLike
       return typedArg
     }
 
@@ -90,12 +134,11 @@ export const formatArguments = (
       typedArg.uniformName = `${sanitizeName(input.name)}_${startIndex + index}`
       typedArg.value = (props: HydraFrameState) => {
         try {
-          const result = fn(props)
-          if (typeof result === 'number' && Number.isFinite(result)) return result
+          return normalizeUniformValue(fn(props), typedArg.type, input.default)
         } catch {
           // Uniform callbacks are isolated from runtime errors and fall back to defaults.
         }
-        return typeof input.default === 'number' ? input.default : 0
+        return normalizeUniformValue(undefined, typedArg.type, input.default)
       }
       return typedArg
     }

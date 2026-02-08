@@ -106,6 +106,12 @@ export class HydraBrowserRuntime {
       onError
     })
 
+    this.outputs.forEach((output) => {
+      output.setPipelineErrorHandler(({ outputLabel, passIndex, signature, error }) => {
+        this.engine.reportCompileError(`${outputLabel}:pass${passIndex}`, { signature, cause: error })
+      })
+    })
+
     this.synth = this.engine.getBindings() as Record<string, unknown>
     this.synth.stats = { fps: 0 }
     this.synth.render = this.render.bind(this)
@@ -138,7 +144,7 @@ export class HydraBrowserRuntime {
     this.registry.attachToBindings(this.synth)
 
     if (autoLoop) {
-      void this.start()
+      void this.start().catch(() => {})
     }
   }
 

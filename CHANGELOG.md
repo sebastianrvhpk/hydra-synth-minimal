@@ -30,6 +30,9 @@
 - Unit test scaffolding (Vitest) and browser smoke scaffolding (Playwright).
 - CI workflow enforcing lint, typecheck, tests, build, and packaging checks.
 - Release workflow using changesets.
+- Multipass `renderpass` compilation and execution path.
+- Built-in renderpass transforms: `renderpass`, `blurX`, `blurY`, `blur`.
+- Pipeline compile-error surfacing through runtime error reporting.
 
 ### Removed
 

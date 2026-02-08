@@ -94,12 +94,14 @@ export interface HydraTypedArgument {
   isTexture: boolean
   uniformName?: string
   textureName?: string
+  textureSource?: unknown
 }
 
 export interface HydraUniformBinding {
   name: string
   index: number
-  value: (props: HydraFrameState) => number
+  size: number
+  value: (props: HydraFrameState) => number | number[]
   type: HydraTransformInputType
 }
 
@@ -108,6 +110,7 @@ export interface HydraTextureBinding {
   variableName: string
   getTexture: (() => unknown) | null
   isPrev: boolean
+  sourceRef?: unknown
   binding: number
 }
 

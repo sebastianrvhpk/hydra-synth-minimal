@@ -22,6 +22,80 @@ describe('HydraTransformRegistry', () => {
     expect(output.passes[0].wgsl).toContain('fn rotate')
   })
 
+  it('splits renderpass transforms into sequential GPU passes', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators.osc(8, 0.1, 0).blurX(1).blurY(1).out()
+
+    expect(output.passes.length).toBe(3)
+    expect(output.passes[0].wgsl).toContain('fn osc')
+    expect(output.passes[1].wgsl).toContain('fn blurX')
+    expect(output.passes[2].wgsl).toContain('fn blurY')
+    expect(output.passes[1].wgsl).toContain('prevBuffer')
+    expect(output.passes[2].wgsl).toContain('prevBuffer')
+  })
+
+  it('injects prev() when chaining non-src transforms after renderpass boundaries', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators.osc(8, 0.1, 0).renderpass().invert(1).out()
+
+    expect(output.passes.length).toBe(3)
+    expect(output.passes[2].wgsl).toContain('fn prev')
+    expect(output.passes[2].wgsl).toContain('fn invert')
+  })
+
+  it('tracks texture source references for downstream output dependency scheduling', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+    const provider = {
+      id: 2,
+      getTexture: () => null
+    }
+
+    registry.generators.src(provider).out()
+
+    expect(output.passes.length).toBe(1)
+    expect(output.passes[0].textures.length).toBe(1)
+    expect(output.passes[0].textures[0].sourceRef).toBe(provider)
+  })
+
+  it('supports vector dynamic uniforms and packs scalar lanes deterministically', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.registerTransform({
+      name: 'vecTint',
+      type: 'color',
+      inputs: [
+        { type: 'vec3', name: 'tint', default: [0, 0, 0] },
+        { type: 'float', name: 'mixAmount', default: 1 }
+      ],
+      wgsl: `
+  let tinted = _c0.xyz + tint * mixAmount;
+  return vec4f(tinted, _c0.w);
+`
+    })
+
+    registry.generators
+      .solid(0.2, 0.3, 0.4, 1)
+      .vecTint(
+        ({ time }) => [time, 0.5, 1.0],
+        () => 0.75
+      )
+      .out()
+
+    expect(output.passes.length).toBe(1)
+    expect(output.passes[0].wgsl).toContain('hydraDynamicUniformVec3')
+    expect(output.passes[0].uniforms.length).toBe(2)
+    expect(output.passes[0].uniforms[0].size).toBe(3)
+    expect(output.passes[0].uniforms[0].index).toBe(0)
+    expect(output.passes[0].uniforms[1].size).toBe(1)
+    expect(output.passes[0].uniforms[1].index).toBe(3)
+  })
+
   it('supports custom transform registration and synth binding attachment', () => {
     const output = new CaptureOutput()
     const registry = new HydraTransformRegistry({ defaultOutput: output })
