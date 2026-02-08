@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hydra v2 Playground</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "hydra-synth-core": "../packages/core/dist/index.js",
+          "hydra-synth": "../packages/browser/dist/index.js",
+          "hydra-synth-livecoding": "../packages/livecoding/dist/index.js"
+        }
+      }
+    </script>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+
+      body {
+        margin: 0;
+        overflow: hidden;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        background: #10151f;
+        color: #dbe8ff;
+      }
+
+      #hud {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        z-index: 10;
+        padding: 10px 12px;
+        border-radius: 8px;
+        background: rgba(15, 20, 30, 0.72);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        font-size: 12px;
+        line-height: 1.4;
+        max-width: min(420px, calc(100vw - 32px));
+      }
+
+      #live-panel {
+        position: fixed;
+        right: 12px;
+        bottom: 12px;
+        z-index: 11;
+        width: min(560px, calc(100vw - 24px));
+        max-height: min(48vh, 440px);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 10px;
+        border-radius: 10px;
+        border: 1px solid rgba(141, 229, 255, 0.34);
+        background: rgba(8, 13, 21, 0.88);
+        box-shadow: 0 14px 36px rgba(0, 0, 0, 0.35);
+        backdrop-filter: blur(6px);
+      }
+
+      #live-panel[hidden] {
+        display: none;
+      }
+
+      #live-panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      #live-run {
+        border: 1px solid rgba(141, 229, 255, 0.4);
+        background: rgba(141, 229, 255, 0.12);
+        color: #dbe8ff;
+        border-radius: 6px;
+        padding: 6px 10px;
+        cursor: pointer;
+        font-size: 12px;
+      }
+
+      #live-run:hover {
+        background: rgba(141, 229, 255, 0.2);
+      }
+
+      #live-editor {
+        width: 100%;
+        flex: 1;
+        min-height: 130px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 8px;
+        background: rgba(1, 5, 12, 0.7);
+        color: #dbe8ff;
+        font: inherit;
+        line-height: 1.45;
+        padding: 10px;
+        resize: vertical;
+        tab-size: 2;
+      }
+
+      #live-status {
+        min-height: 1em;
+        font-size: 11px;
+        color: #a7bad8;
+      }
+
+      #live-status[data-state="ok"] {
+        color: #96f6ad;
+      }
+
+      #live-status[data-state="error"] {
+        color: #ff9494;
+      }
+
+      code {
+        color: #8de5ff;
+      }
+
+      canvas {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+      }
+
+      @media (max-width: 900px) {
+        #live-panel {
+          left: 8px;
+          right: 8px;
+          bottom: 8px;
+          width: auto;
+          max-height: 46vh;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="hud">
+      <div><strong>Hydra v2 Playground</strong></div>
+      <div>Console globals are exposed (for development only).</div>
+      <div>Try: <code>osc(10, 0.1, 0).out()</code></div>
+      <div>Runtime is available as <code>hydra</code>.</div>
+      <div id="livecoding-note">Live editor: add <code>?livecoding=1</code>.</div>
+    </div>
+
+    <div id="live-panel" hidden>
+      <div id="live-panel-header">
+        <strong>Livecoding Editor</strong>
+        <button id="live-run" type="button">Run (Ctrl/Cmd+Enter)</button>
+      </div>
+      <textarea
+        id="live-editor"
+        spellcheck="false"
+        autocapitalize="off"
+        autocomplete="off"
+        autocorrect="off"
+      ></textarea>
+      <div id="live-status"></div>
+    </div>
+
+    <script type="module">
+      import { createHydraBrowserRuntime } from 'hydra-synth'
+      import { createLivecodingPlugin } from 'hydra-synth-livecoding'
+
+      const runtime = createHydraBrowserRuntime({
+        autoLoop: true,
+        numSources: 4,
+        numOutputs: 4
+      })
+
+      await runtime.init()
+      const synth = runtime.synth
+
+      const attachBinding = (name) => {
+        Object.defineProperty(window, name, {
+          configurable: true,
+          enumerable: true,
+          get () {
+            return synth[name]
+          },
+          set (value) {
+            synth[name] = value
+          }
+        })
+      }
+
+      // Expose all synth entries with live getters/setters for console-driven coding.
+      for (const name of Object.keys(synth)) {
+        attachBinding(name)
+      }
+
+      window.hydra = runtime
+      window.synth = synth
+
+      // Default scene so users immediately see output.
+      if (typeof synth.osc === 'function') {
+        synth.osc(12, 0.08, 0).out()
+      }
+
+      const params = new URLSearchParams(window.location.search)
+      const enableLivecoding = params.get('livecoding') === '1'
+      const livePanel = document.getElementById('live-panel')
+      const livecodingNote = document.getElementById('livecoding-note')
+      const liveEditor = document.getElementById('live-editor')
+      const liveRunButton = document.getElementById('live-run')
+      const liveStatus = document.getElementById('live-status')
+      const liveEditorStorageKey = 'hydra-playground-livecode'
+      const defaultLiveSnippet = `osc(18, 0.05, 0)
+  .rotate(() => time * 0.08)
+  .out()
+
+speed = 0.75`
+
+      const setLiveStatus = (message, state = '') => {
+        if (!liveStatus) return
+        liveStatus.textContent = message
+        if (state) liveStatus.dataset.state = state
+        else delete liveStatus.dataset.state
+      }
+
+      const loadLiveSnippet = () => {
+        try {
+          const saved = window.localStorage.getItem(liveEditorStorageKey)
+          return saved && saved.trim().length > 0 ? saved : defaultLiveSnippet
+        } catch {
+          return defaultLiveSnippet
+        }
+      }
+
+      const persistLiveSnippet = () => {
+        if (!liveEditor) return
+        try {
+          window.localStorage.setItem(liveEditorStorageKey, liveEditor.value)
+        } catch {
+          // Ignore local storage failures in restricted contexts.
+        }
+      }
+
+      let detachLivecoding = null
+      let livecodingPlugin = null
+
+      const runEditorSnippet = () => {
+        if (!liveEditor) return
+        if (!livecodingPlugin || typeof livecodingPlugin.run !== 'function') {
+          setLiveStatus('Livecoding plugin is not attached.', 'error')
+          return
+        }
+
+        const code = liveEditor.value
+        if (!code.trim()) {
+          setLiveStatus('Editor is empty.', 'error')
+          return
+        }
+
+        try {
+          livecodingPlugin.run(code)
+          setLiveStatus(`Ran at ${new Date().toLocaleTimeString()}.`, 'ok')
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          setLiveStatus(`Error: ${message}`, 'error')
+          console.error('[hydra] live editor run failed', error)
+        }
+      }
+
+      if (liveEditor) {
+        liveEditor.value = loadLiveSnippet()
+        liveEditor.addEventListener('input', persistLiveSnippet)
+        liveEditor.addEventListener('keydown', (event) => {
+          const wantsRun = (event.ctrlKey || event.metaKey) && event.key === 'Enter'
+          if (!wantsRun) return
+          event.preventDefault()
+          runEditorSnippet()
+        })
+      }
+
+      if (liveRunButton) {
+        liveRunButton.addEventListener('click', runEditorSnippet)
+      }
+
+      if (enableLivecoding) {
+        livecodingPlugin = createLivecodingPlugin({
+          exposeHelpers: true,
+          allowedBindings: ['speed', 'bpm', 'fps', 'time', 'update', 'afterUpdate']
+        })
+        detachLivecoding = runtime.attachPlugin(livecodingPlugin)
+        window.livecoding = livecodingPlugin
+        window.livecodingDetach = detachLivecoding
+        if (livePanel) livePanel.hidden = false
+        if (livecodingNote) {
+          livecodingNote.innerHTML = 'Live editor enabled: <code>Ctrl/Cmd+Enter</code> to run.'
+        }
+        setLiveStatus('Ready. Press Ctrl/Cmd+Enter or click Run.')
+        console.info('[hydra] livecoding plugin attached')
+        console.info('[hydra] live editor ready: use panel or livecoding.run(...)')
+      } else if (livecodingNote) {
+        livecodingNote.innerHTML = 'Live editor disabled. Add <code>?livecoding=1</code>.'
+      }
+
+      const originalDispose = runtime.dispose.bind(runtime)
+      runtime.dispose = () => {
+        if (typeof detachLivecoding === 'function') {
+          detachLivecoding()
+          detachLivecoding = null
+        }
+        livecodingPlugin = null
+        originalDispose()
+      }
+
+      console.info('[hydra] ready')
+      console.info('[hydra] try: osc(20, 0.1, 0).rotate(0.2).out()')
+      console.info('[hydra] dispose via: hydra.dispose()')
+    </script>
+  </body>
+</html>

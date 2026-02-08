@@ -1,41 +1,28 @@
 {
-  "name": "hydra-synth",
-  "version": "1.4.0",
-  "description": "base synth for hydra-editor",
+  "name": "hydra-synth-workspace",
+  "version": "2.0.0-alpha.0",
+  "private": true,
   "type": "module",
-  "main": "./src/hydra-synth.js",
-  "exports": {
-    ".": {
-      "import": "./src/hydra-synth.js"
-    },
-    "./src/wgsl/wgsl-functions.js": {
-      "import": "./src/wgsl/wgsl-functions.js"
-    }
-  },
+  "packageManager": "pnpm@10.14.0",
   "scripts": {
-    "dev-ssl": "budo ./dev/index.js --ssl --open --live --port 8000 --",
-    "dev": "budo ./dev/index.js --open --live --port 8000 -- -p esmify"
+    "build": "pnpm -r --workspace-concurrency=1 --filter ./packages/* run build",
+    "dev": "pnpm build && node scripts/dev-server.mjs --open",
+    "dev:livecoding": "pnpm build && node scripts/dev-server.mjs --open --path=/playground/index.html?livecoding=1",
+    "dev:no-open": "pnpm build && node scripts/dev-server.mjs",
+    "lint": "node scripts/lint.mjs",
+    "test": "pnpm test:unit && pnpm test:browser",
+    "test:unit": "pnpm exec vitest run --config vitest.config.ts",
+    "test:browser": "pnpm exec playwright test --config playwright.config.ts",
+    "typecheck": "pnpm -r --workspace-concurrency=1 --filter ./packages/* run typecheck",
+    "verify:pack": "node scripts/verify-packages.mjs",
+    "changeset:check": "changeset status --verbose",
+    "changeset:gate": "node scripts/check-versioning-gate.mjs",
+    "release:version": "changeset version",
+    "release:publish": "changeset publish"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/ojack/hydra-synth.git"
-  },
-  "keywords": [
-    "webgpu",
-    "graphics",
-    "livecoding",
-    "synth"
-  ],
-  "author": "ojack",
-  "license": "AGPL",
-  "bugs": {
-    "url": "https://github.com/ojack/hydra-synth/issues"
-  },
-  "homepage": "https://github.com/ojack/hydra-synth#readme",
-  "dependencies": {},
   "devDependencies": {
-    "browserify": "^17.0.0",
-    "budo": "^11.8.4",
-    "esmify": "^2.1.1"
+    "@changesets/cli": "2.27.12",
+    "@playwright/test": "1.51.1",
+    "vitest": "3.1.1"
   }
 }

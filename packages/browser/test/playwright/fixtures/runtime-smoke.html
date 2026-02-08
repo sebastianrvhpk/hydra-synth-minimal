@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Hydra Browser Smoke</title>
+  </head>
+  <body>
+    <script type="module">
+      import {
+        BrowserHost,
+        HydraBrowserRuntime,
+        WEBGPU_UNAVAILABLE_MESSAGE,
+        WebGPURenderer
+      } from '../../../dist/index.js'
+
+      const params = new URLSearchParams(window.location.search)
+      const mode = params.get('mode') ?? 'auto'
+
+      const publish = (result) => {
+        window.__hydraSmokeResult = result
+        window.__hydraSmokeDone = true
+      }
+
+      const run = async () => {
+        const host = new BrowserHost({
+          width: 320,
+          height: 180,
+          autoAppend: false
+        })
+
+        if (mode === 'force-unavailable') {
+          host.canvas.getContext = () => null
+        }
+
+        const renderer = new WebGPURenderer({ canvas: host.canvas })
+        const runtime = new HydraBrowserRuntime({
+          host,
+          renderer,
+          autoLoop: false,
+          errorPolicy: 'throw'
+        })
+
+        try {
+          if (mode === 'auto' && !navigator.gpu) {
+            publish({ status: 'no-webgpu' })
+            return
+          }
+
+          await runtime.init()
+          const synth = runtime.synth
+          synth.solid(1, 0, 0, 1).out()
+          runtime.tick(16)
+          runtime.dispose()
+          publish({ status: 'ok' })
+        } catch (error) {
+          runtime.dispose()
+          publish({
+            status: 'error',
+            message: error instanceof Error ? error.message : String(error),
+            expectedUnavailableMessage: WEBGPU_UNAVAILABLE_MESSAGE
+          })
+        }
+      }
+
+      run()
+    </script>
+  </body>
+</html>
