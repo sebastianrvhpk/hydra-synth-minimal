@@ -66,6 +66,7 @@ Built-in renderpass transforms:
 - `blurX(amount = 1)`
 - `blurY(amount = 1)`
 - `blur(amount = 1)` (single-pass 3x3 Gaussian-like kernel)
+- `bloom(amount = 0.8, radius = 1, threshold = 0.6, softness = 0.1)` (single-pass bright-knee bloom over `prevBuffer`)
 
 ### Explicit Host Wiring
 

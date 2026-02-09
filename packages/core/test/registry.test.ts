@@ -38,6 +38,85 @@ describe('HydraTransformRegistry', () => {
     expect(output.passes[2].wgsl).toContain('prevBuffer')
   })
 
+  it('compiles bloom() as a renderpass over prevBuffer', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators.osc(8, 0.1, 0).bloom(0.9, 1.2, 0.55, 0.15).out()
+
+    expect(output.passes.length).toBe(2)
+    expect(output.passes[0].wgsl).toContain('fn osc')
+    expect(output.passes[1].wgsl).toContain('fn bloom')
+    expect(output.passes[1].wgsl).toContain('prevBuffer')
+    expect(output.passes[1].wgsl).toContain('hydraLuminance')
+  })
+
+  it('registers additional post-processing transforms on generators and chain methods', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+    const expectedTransforms = [
+      'sharpen',
+      'chromaticAberration',
+      'rgbSplit',
+      'vignette',
+      'filmGrain',
+      'dither',
+      'edgeDetect',
+      'radialBlur',
+      'zoomBlur',
+      'dualKawaseBlur',
+      'dualKawaseBloom',
+      'toneMap',
+      'exposure'
+    ]
+
+    const registered = new Set(registry.listTransforms())
+    expectedTransforms.forEach((name) => {
+      expect(registered.has(name)).toBe(true)
+    })
+  })
+
+  it('compiles a full chain with all new post-processing transforms', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators
+      .osc(8, 0.1, 0)
+      .sharpen(1.1, 1.0)
+      .chromaticAberration(1.3, 1.0)
+      .rgbSplit(1.0, 0.2)
+      .vignette(0.6, 0.9, 0.35)
+      .filmGrain(0.05, 24.0, 0.5)
+      .dither(0.8, 8.0)
+      .edgeDetect(1.0, 0.6)
+      .radialBlur(1.0, 0.8)
+      .zoomBlur(0.8, 0.5, 0.5)
+      .dualKawaseBlur(1.5, 1.0)
+      .dualKawaseBloom(0.8, 1.0, 0.6, 0.1)
+      .toneMap(1.0, 2.2)
+      .exposure(0.1)
+      .out()
+
+    expect(output.passes.length).toBe(13)
+
+    const wgsl = output.passes.map((pass) => pass.wgsl).join('\n')
+    expect(wgsl).toContain('fn sharpen')
+    expect(wgsl).toContain('fn chromaticAberration')
+    expect(wgsl).toContain('fn rgbSplit')
+    expect(wgsl).toContain('fn vignette')
+    expect(wgsl).toContain('fn filmGrain')
+    expect(wgsl).toContain('fn dither')
+    expect(wgsl).toContain('fn edgeDetect')
+    expect(wgsl).toContain('fn radialBlur')
+    expect(wgsl).toContain('fn zoomBlur')
+    expect(wgsl).toContain('fn dualKawaseBlur')
+    expect(wgsl).toContain('fn dualKawaseBloom')
+    expect(wgsl).toContain('fn toneMap')
+    expect(wgsl).toContain('fn exposure')
+    expect(wgsl).toContain('fn hydraNoise')
+    expect(wgsl).toContain('fn hydraMod')
+  })
+
   it('emits specialized compute workgroup sizes for directional blur kernels', () => {
     const output = new CaptureOutput()
     const registry = new HydraTransformRegistry({ defaultOutput: output })

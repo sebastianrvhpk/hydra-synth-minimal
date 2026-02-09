@@ -638,6 +638,417 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
 `
   },
   {
+    name: 'bloom',
+    type: 'renderpass',
+    inputs: [
+      { type: 'float', name: 'amount', default: 0.8 },
+      { type: 'float', name: 'radius', default: 1.0 },
+      { type: 'float', name: 'threshold', default: 0.6 },
+      { type: 'float', name: 'softness', default: 0.1 }
+    ],
+    wgsl: `
+  let center = hydraSampleTexture(prevBuffer, fract(_st));
+  let stepSize = vec2f(
+    radius / max(globals.width, 1.0),
+    radius / max(globals.height, 1.0)
+  );
+  let knee = max(softness, 0.0001);
+
+  let s00 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(-stepSize.x, -stepSize.y)));
+  let s10 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(0.0, -stepSize.y)));
+  let s20 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(stepSize.x, -stepSize.y)));
+  let s01 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(-stepSize.x, 0.0)));
+  let s11 = center;
+  let s21 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(stepSize.x, 0.0)));
+  let s02 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(-stepSize.x, stepSize.y)));
+  let s12 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(0.0, stepSize.y)));
+  let s22 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(stepSize.x, stepSize.y)));
+
+  let b00 = s00.xyz * smoothstep(threshold - knee, threshold + knee, hydraLuminance(s00.xyz));
+  let b10 = s10.xyz * smoothstep(threshold - knee, threshold + knee, hydraLuminance(s10.xyz));
+  let b20 = s20.xyz * smoothstep(threshold - knee, threshold + knee, hydraLuminance(s20.xyz));
+  let b01 = s01.xyz * smoothstep(threshold - knee, threshold + knee, hydraLuminance(s01.xyz));
+  let b11 = s11.xyz * smoothstep(threshold - knee, threshold + knee, hydraLuminance(s11.xyz));
+  let b21 = s21.xyz * smoothstep(threshold - knee, threshold + knee, hydraLuminance(s21.xyz));
+  let b02 = s02.xyz * smoothstep(threshold - knee, threshold + knee, hydraLuminance(s02.xyz));
+  let b12 = s12.xyz * smoothstep(threshold - knee, threshold + knee, hydraLuminance(s12.xyz));
+  let b22 = s22.xyz * smoothstep(threshold - knee, threshold + knee, hydraLuminance(s22.xyz));
+
+  let glow = (
+    b00 + b20 + b02 + b22 +
+    (b10 + b01 + b21 + b12) * 2.0 +
+    b11 * 4.0
+  ) / 16.0;
+
+  return vec4f(center.xyz + glow * amount, center.w);
+`
+  },
+  {
+    name: 'sharpen',
+    type: 'renderpass',
+    inputs: [
+      { type: 'float', name: 'amount', default: 1.0 },
+      { type: 'float', name: 'radius', default: 1.0 }
+    ],
+    wgsl: `
+  let center = hydraSampleTexture(prevBuffer, fract(_st));
+  let stepSize = vec2f(
+    radius / max(globals.width, 1.0),
+    radius / max(globals.height, 1.0)
+  );
+
+  let c00 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(-stepSize.x, -stepSize.y)));
+  let c10 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(0.0, -stepSize.y)));
+  let c20 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(stepSize.x, -stepSize.y)));
+  let c01 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(-stepSize.x, 0.0)));
+  let c11 = center;
+  let c21 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(stepSize.x, 0.0)));
+  let c02 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(-stepSize.x, stepSize.y)));
+  let c12 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(0.0, stepSize.y)));
+  let c22 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(stepSize.x, stepSize.y)));
+
+  let blurred = (
+    c00 + c20 + c02 + c22 +
+    (c10 + c01 + c21 + c12) * 2.0 +
+    c11 * 4.0
+  ) / 16.0;
+
+  let sharpened = center.xyz + (center.xyz - blurred.xyz) * amount;
+  return vec4f(clamp(sharpened, vec3f(0.0), vec3f(1.0)), center.w);
+`
+  },
+  {
+    name: 'chromaticAberration',
+    type: 'renderpass',
+    inputs: [
+      { type: 'float', name: 'amount', default: 1.5 },
+      { type: 'float', name: 'radial', default: 1.0 }
+    ],
+    wgsl: `
+  let center = hydraSampleTexture(prevBuffer, fract(_st));
+  let offsetPerAxis = vec2f(
+    amount / max(globals.width, 1.0),
+    amount / max(globals.height, 1.0)
+  );
+  let centerOffset = _st - vec2f(0.5);
+  let dir = centerOffset / max(length(centerOffset), 0.0001);
+  let radialMix = clamp(radial, 0.0, 1.0);
+  let offset = vec2f(offsetPerAxis.x, 0.0) * (1.0 - radialMix) + (dir * offsetPerAxis) * radialMix;
+
+  let r = hydraSampleTexture(prevBuffer, fract(_st + offset)).x;
+  let b = hydraSampleTexture(prevBuffer, fract(_st - offset)).z;
+  return vec4f(r, center.y, b, center.w);
+`
+  },
+  {
+    name: 'rgbSplit',
+    type: 'renderpass',
+    inputs: [
+      { type: 'float', name: 'amount', default: 1.0 },
+      { type: 'float', name: 'angle', default: 0.0 }
+    ],
+    wgsl: `
+  let center = hydraSampleTexture(prevBuffer, fract(_st));
+  let direction = vec2f(cos(angle), sin(angle));
+  let offset = direction * vec2f(
+    amount / max(globals.width, 1.0),
+    amount / max(globals.height, 1.0)
+  );
+
+  let r = hydraSampleTexture(prevBuffer, fract(_st + offset)).x;
+  let b = hydraSampleTexture(prevBuffer, fract(_st - offset)).z;
+  return vec4f(r, center.y, b, center.w);
+`
+  },
+  {
+    name: 'vignette',
+    type: 'renderpass',
+    inputs: [
+      { type: 'float', name: 'amount', default: 0.6 },
+      { type: 'float', name: 'radius', default: 0.9 },
+      { type: 'float', name: 'softness', default: 0.35 }
+    ],
+    wgsl: `
+  let center = hydraSampleTexture(prevBuffer, fract(_st));
+  let aspect = max(globals.width / max(globals.height, 1.0), 0.0001);
+  let p = (_st - vec2f(0.5)) * vec2f(aspect, 1.0);
+  let dist = length(p);
+  let inner = max(radius - softness, 0.0);
+  let outer = max(radius, inner + 0.0001);
+  let mask = 1.0 - clamp(amount, 0.0, 1.0) * smoothstep(inner, outer, dist);
+  return vec4f(center.xyz * mask, center.w);
+`
+  },
+  {
+    name: 'filmGrain',
+    type: 'renderpass',
+    inputs: [
+      { type: 'float', name: 'amount', default: 0.06 },
+      { type: 'float', name: 'speed', default: 24.0 },
+      { type: 'float', name: 'colored', default: 0.0 }
+    ],
+    wgsl: `
+  let center = hydraSampleTexture(prevBuffer, fract(_st));
+  let noiseUv = _st * vec2f(globals.width, globals.height);
+  let t = globals.time * speed;
+
+  let n0 = hydraNoise(vec3f(noiseUv, t));
+  let n1 = hydraNoise(vec3f(noiseUv + vec2f(19.19, 73.73), t + 11.0));
+  let n2 = hydraNoise(vec3f(noiseUv + vec2f(41.41, 29.29), t + 23.0));
+
+  let mono = vec3f(n0);
+  let chroma = vec3f(n0, n1, n2);
+  let chromaMix = clamp(colored, 0.0, 1.0);
+  let grain = mono * (1.0 - chromaMix) + chroma * chromaMix;
+
+  let c = center.xyz + grain * amount;
+  return vec4f(clamp(c, vec3f(0.0), vec3f(1.0)), center.w);
+`
+  },
+  {
+    name: 'dither',
+    type: 'renderpass',
+    inputs: [
+      { type: 'float', name: 'amount', default: 0.75 },
+      { type: 'float', name: 'levels', default: 8.0 }
+    ],
+    wgsl: `
+  let center = hydraSampleTexture(prevBuffer, fract(_st));
+  let px = vec2i(
+    i32(floor(_st.x * globals.width)),
+    i32(floor(_st.y * globals.height))
+  );
+  let x = i32(hydraMod(f32(px.x), 4.0));
+  let y = i32(hydraMod(f32(px.y), 4.0));
+
+  var bayer = 0.0;
+  if (y == 0) {
+    if (x == 0) { bayer = 0.0; }
+    if (x == 1) { bayer = 8.0; }
+    if (x == 2) { bayer = 2.0; }
+    if (x == 3) { bayer = 10.0; }
+  }
+  if (y == 1) {
+    if (x == 0) { bayer = 12.0; }
+    if (x == 1) { bayer = 4.0; }
+    if (x == 2) { bayer = 14.0; }
+    if (x == 3) { bayer = 6.0; }
+  }
+  if (y == 2) {
+    if (x == 0) { bayer = 3.0; }
+    if (x == 1) { bayer = 11.0; }
+    if (x == 2) { bayer = 1.0; }
+    if (x == 3) { bayer = 9.0; }
+  }
+  if (y == 3) {
+    if (x == 0) { bayer = 15.0; }
+    if (x == 1) { bayer = 7.0; }
+    if (x == 2) { bayer = 13.0; }
+    if (x == 3) { bayer = 5.0; }
+  }
+
+  let levelCount = max(levels, 2.0);
+  let threshold = ((bayer + 0.5) / 16.0 - 0.5) * amount;
+  let scaled = center.xyz * (levelCount - 1.0) + vec3f(threshold);
+  let quantized = floor(scaled + vec3f(0.5)) / (levelCount - 1.0);
+  return vec4f(clamp(quantized, vec3f(0.0), vec3f(1.0)), center.w);
+`
+  },
+  {
+    name: 'edgeDetect',
+    type: 'renderpass',
+    inputs: [
+      { type: 'float', name: 'amount', default: 1.0 },
+      { type: 'float', name: 'mixAmount', default: 1.0 }
+    ],
+    wgsl: `
+  let center = hydraSampleTexture(prevBuffer, fract(_st));
+  let texel = vec2f(
+    1.0 / max(globals.width, 1.0),
+    1.0 / max(globals.height, 1.0)
+  );
+
+  let s00 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(-texel.x, -texel.y)));
+  let s10 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(0.0, -texel.y)));
+  let s20 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(texel.x, -texel.y)));
+  let s01 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(-texel.x, 0.0)));
+  let s21 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(texel.x, 0.0)));
+  let s02 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(-texel.x, texel.y)));
+  let s12 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(0.0, texel.y)));
+  let s22 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(texel.x, texel.y)));
+
+  let l00 = hydraLuminance(s00.xyz);
+  let l10 = hydraLuminance(s10.xyz);
+  let l20 = hydraLuminance(s20.xyz);
+  let l01 = hydraLuminance(s01.xyz);
+  let l21 = hydraLuminance(s21.xyz);
+  let l02 = hydraLuminance(s02.xyz);
+  let l12 = hydraLuminance(s12.xyz);
+  let l22 = hydraLuminance(s22.xyz);
+
+  let gx = (l20 + 2.0 * l21 + l22) - (l00 + 2.0 * l01 + l02);
+  let gy = (l02 + 2.0 * l12 + l22) - (l00 + 2.0 * l10 + l20);
+  let edge = clamp(length(vec2f(gx, gy)) * amount, 0.0, 1.0);
+  let edgeColor = vec3f(edge);
+  let blend = clamp(mixAmount, 0.0, 1.0);
+
+  return vec4f(center.xyz * (1.0 - blend) + edgeColor * blend, center.w);
+`
+  },
+  {
+    name: 'radialBlur',
+    type: 'renderpass',
+    inputs: [
+      { type: 'float', name: 'amount', default: 1.0 },
+      { type: 'float', name: 'radius', default: 0.8 }
+    ],
+    wgsl: `
+  let centerUv = vec2f(0.5);
+  let p = _st - centerUv;
+  let blurAmount = amount * smoothstep(0.0, max(radius, 0.0001), length(p));
+  let theta1 = blurAmount * 0.02;
+  let theta2 = theta1 * 2.0;
+
+  let cs1 = cos(theta1);
+  let sn1 = sin(theta1);
+  let cs2 = cos(theta2);
+  let sn2 = sin(theta2);
+
+  let pPos1 = vec2f(cs1 * p.x - sn1 * p.y, sn1 * p.x + cs1 * p.y);
+  let pNeg1 = vec2f(cs1 * p.x + sn1 * p.y, -sn1 * p.x + cs1 * p.y);
+  let pPos2 = vec2f(cs2 * p.x - sn2 * p.y, sn2 * p.x + cs2 * p.y);
+  let pNeg2 = vec2f(cs2 * p.x + sn2 * p.y, -sn2 * p.x + cs2 * p.y);
+
+  let s0 = hydraSampleTexture(prevBuffer, fract(_st));
+  let s1 = hydraSampleTexture(prevBuffer, fract(centerUv + pPos1));
+  let s2 = hydraSampleTexture(prevBuffer, fract(centerUv + pNeg1));
+  let s3 = hydraSampleTexture(prevBuffer, fract(centerUv + pPos2));
+  let s4 = hydraSampleTexture(prevBuffer, fract(centerUv + pNeg2));
+
+  return s0 * 0.3 + s1 * 0.2 + s2 * 0.2 + s3 * 0.15 + s4 * 0.15;
+`
+  },
+  {
+    name: 'zoomBlur',
+    type: 'renderpass',
+    inputs: [
+      { type: 'float', name: 'amount', default: 0.8 },
+      { type: 'float', name: 'centerX', default: 0.5 },
+      { type: 'float', name: 'centerY', default: 0.5 }
+    ],
+    wgsl: `
+  let centerUv = vec2f(centerX, centerY);
+  let dir = centerUv - _st;
+  let stepVec = dir * amount * 0.2;
+
+  let s0 = hydraSampleTexture(prevBuffer, fract(_st));
+  let s1 = hydraSampleTexture(prevBuffer, fract(_st + stepVec * 0.25));
+  let s2 = hydraSampleTexture(prevBuffer, fract(_st + stepVec * 0.5));
+  let s3 = hydraSampleTexture(prevBuffer, fract(_st + stepVec * 0.75));
+  let s4 = hydraSampleTexture(prevBuffer, fract(_st + stepVec * 1.0));
+  let s5 = hydraSampleTexture(prevBuffer, fract(_st + stepVec * 1.25));
+
+  return (s0 * 0.25) + (s1 * 0.2) + (s2 * 0.18) + (s3 * 0.15) + (s4 * 0.12) + (s5 * 0.1);
+`
+  },
+  {
+    name: 'dualKawaseBlur',
+    type: 'renderpass',
+    inputs: [
+      { type: 'float', name: 'radius', default: 1.5 },
+      { type: 'float', name: 'mixAmount', default: 1.0 }
+    ],
+    wgsl: `
+  let center = hydraSampleTexture(prevBuffer, fract(_st));
+  let texel = vec2f(
+    radius / max(globals.width, 1.0),
+    radius / max(globals.height, 1.0)
+  );
+  let halfTexel = texel * 0.5;
+
+  let d0 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(-halfTexel.x, -halfTexel.y)));
+  let d1 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(halfTexel.x, -halfTexel.y)));
+  let d2 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(-halfTexel.x, halfTexel.y)));
+  let d3 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(halfTexel.x, halfTexel.y)));
+
+  let a0 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(-texel.x, 0.0)));
+  let a1 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(texel.x, 0.0)));
+  let a2 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(0.0, -texel.y)));
+  let a3 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(0.0, texel.y)));
+
+  let blur = center * 0.2 + (d0 + d1 + d2 + d3) * 0.15 + (a0 + a1 + a2 + a3) * 0.05;
+  let blend = clamp(mixAmount, 0.0, 1.0);
+  return vec4f(center.xyz * (1.0 - blend) + blur.xyz * blend, center.w);
+`
+  },
+  {
+    name: 'dualKawaseBloom',
+    type: 'renderpass',
+    inputs: [
+      { type: 'float', name: 'amount', default: 0.8 },
+      { type: 'float', name: 'radius', default: 1.0 },
+      { type: 'float', name: 'threshold', default: 0.6 },
+      { type: 'float', name: 'softness', default: 0.1 }
+    ],
+    wgsl: `
+  let center = hydraSampleTexture(prevBuffer, fract(_st));
+  let texel = vec2f(
+    radius / max(globals.width, 1.0),
+    radius / max(globals.height, 1.0)
+  );
+  let halfTexel = texel * 0.5;
+  let knee = max(softness, 0.0001);
+
+  let d0 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(-halfTexel.x, -halfTexel.y)));
+  let d1 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(halfTexel.x, -halfTexel.y)));
+  let d2 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(-halfTexel.x, halfTexel.y)));
+  let d3 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(halfTexel.x, halfTexel.y)));
+
+  let a0 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(-texel.x, 0.0)));
+  let a1 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(texel.x, 0.0)));
+  let a2 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(0.0, -texel.y)));
+  let a3 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(0.0, texel.y)));
+
+  let g0 = d0.xyz * smoothstep(threshold - knee, threshold + knee, hydraLuminance(d0.xyz));
+  let g1 = d1.xyz * smoothstep(threshold - knee, threshold + knee, hydraLuminance(d1.xyz));
+  let g2 = d2.xyz * smoothstep(threshold - knee, threshold + knee, hydraLuminance(d2.xyz));
+  let g3 = d3.xyz * smoothstep(threshold - knee, threshold + knee, hydraLuminance(d3.xyz));
+  let g4 = a0.xyz * smoothstep(threshold - knee, threshold + knee, hydraLuminance(a0.xyz));
+  let g5 = a1.xyz * smoothstep(threshold - knee, threshold + knee, hydraLuminance(a1.xyz));
+  let g6 = a2.xyz * smoothstep(threshold - knee, threshold + knee, hydraLuminance(a2.xyz));
+  let g7 = a3.xyz * smoothstep(threshold - knee, threshold + knee, hydraLuminance(a3.xyz));
+  let gCenter = center.xyz * smoothstep(threshold - knee, threshold + knee, hydraLuminance(center.xyz));
+
+  let glow = gCenter * 0.2 + (g0 + g1 + g2 + g3) * 0.15 + (g4 + g5 + g6 + g7) * 0.05;
+  return vec4f(center.xyz + glow * amount, center.w);
+`
+  },
+  {
+    name: 'toneMap',
+    type: 'color',
+    inputs: [
+      { type: 'float', name: 'whitePoint', default: 1.0 },
+      { type: 'float', name: 'gamma', default: 2.2 }
+    ],
+    wgsl: `
+  let wp = max(whitePoint, 0.0001);
+  let mapped = (_c0.xyz * (vec3f(1.0) + _c0.xyz / vec3f(wp * wp))) / (vec3f(1.0) + _c0.xyz);
+  let corrected = pow(max(mapped, vec3f(0.0)), vec3f(1.0 / max(gamma, 0.0001)));
+  return vec4f(clamp(corrected, vec3f(0.0), vec3f(1.0)), _c0.w);
+`
+  },
+  {
+    name: 'exposure',
+    type: 'color',
+    inputs: [
+      { type: 'float', name: 'amount', default: 0.0 }
+    ],
+    wgsl: `
+  let scale = exp2(amount);
+  return vec4f(_c0.xyz * scale, _c0.w);
+`
+  },
+  {
     name: 'prev',
     type: 'src',
     inputs: [],

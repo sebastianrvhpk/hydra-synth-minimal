@@ -103,9 +103,9 @@ export class WebGPURenderer {
     })
 
     this.linearSampler = this.device.createSampler({
-      magFilter: 'linear',
-      minFilter: 'linear',
-      mipmapFilter: 'linear',
+      magFilter: 'nearest',
+      minFilter: 'nearest',
+      mipmapFilter: 'nearest',
       addressModeU: 'repeat',
       addressModeV: 'repeat'
     })

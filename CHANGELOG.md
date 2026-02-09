@@ -31,7 +31,7 @@
 - CI workflow enforcing lint, typecheck, tests, build, and packaging checks.
 - Release workflow using changesets.
 - Multipass `renderpass` compilation and execution path.
-- Built-in renderpass transforms: `renderpass`, `blurX`, `blurY`, `blur`.
+- Built-in renderpass transforms: `renderpass`, `blurX`, `blurY`, `blur`, `bloom`.
 - Pipeline compile-error surfacing through runtime error reporting.
 - Compute-first internal execution path for compiled Hydra passes (`csMain` dispatch).
 - Compute pipeline cache and output-node compute dispatch orchestration.
