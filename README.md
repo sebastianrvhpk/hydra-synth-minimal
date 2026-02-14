@@ -109,6 +109,25 @@ runtime.dispose()
 
 Playground shortcut: open `playground/index.html?livecoding=1` to enable the on-page live editor panel (no devtools console required).
 
+When `livecoding=1` is enabled in the playground, capture helpers are exposed in the live scope:
+
+- `captureFrames(options)` (wrapper over `captureHydraFrameSequence`)
+- `buildFfmpegCommands({ fps, ffmpegPattern, outputBaseName? })`
+- `captureAndSaveGif(options?)` (2-second GIF by default, temp frames on dev server, downloads final file)
+- `captureAndSaveVideo(options?)` (uses the selected video profile in the UI by default)
+- `captureAndSaveMp4(options?)`
+- `captureAndSaveWebm(options?)`
+
+Playground capture button:
+
+- `Capture and Save GIF (2s)` and `Capture and Save <Video Profile> (2s)` both toggle start/stop capture.
+- Capture duration and video profile are configurable from the controls beside those buttons.
+- If you stop early, uploaded frames are still encoded and downloaded as a shorter output.
+- Frames are written to an OS temp folder on the dev server, encoded with `ffmpeg`, then only the final media file is downloaded to your browser downloads folder.
+- Video profiles include: `mp4` (H.264 high quality) and `webm` (VP9 high quality).
+- Delivery MP4 and VP9 WebM encoding auto-pad odd frame dimensions to even values where needed by 4:2:0 pixel formats.
+- Requires `ffmpeg` installed and available on PATH for `scripts/dev-server.mjs`.
+
 ## Development
 
 ```bash

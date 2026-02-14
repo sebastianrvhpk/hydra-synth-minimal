@@ -45,6 +45,7 @@ export declare class BrowserHost {
   readonly ownsCanvas: boolean
   constructor (options?: BrowserHostOptions)
   append (): void
+  get isRunning (): boolean
   start (onFrame: (deltaMs: number) => void): void
   stop (): void
   setResolution (width: number, height: number): void
@@ -166,6 +167,101 @@ export declare class HydraBrowserRuntime {
   attachPlugin (plugin: ScriptPlugin): () => void
   dispose (): void
 }
+
+export type CaptureFrameSequenceExtension = 'png' | 'jpg' | 'jpeg' | 'webp'
+
+export interface CaptureFrameSequenceFrameInfo {
+  frame: number
+  totalFrames: number
+  fps: number
+  time: number
+  deltaTime: number
+  playhead: number
+  duration: number
+  width: number
+  height: number
+  canvas: HTMLCanvasElement
+}
+
+export interface CaptureFrameSequenceBlobInfo {
+  frame: number
+  frameNumber: number
+  totalFrames: number
+  fileName: string
+  blob: Blob
+}
+
+export interface CaptureFrameSequenceProgressInfo {
+  frame: number
+  frameNumber: number
+  totalFrames: number
+  fileName: string
+  percent: number
+}
+
+export interface CaptureFrameSequenceResult {
+  fps: number
+  width: number
+  height: number
+  totalFrames: number
+  duration: number
+  prefix: string
+  extension: 'png' | 'jpg' | 'webp'
+  ffmpegPattern: string
+}
+
+export interface CaptureFrameSequenceOptions {
+  canvas: HTMLCanvasElement
+  step: (info: CaptureFrameSequenceFrameInfo) => void | Promise<void>
+  fps?: number
+  duration?: number
+  totalFrames?: number
+  width?: number
+  height?: number
+  prefix?: string
+  extension?: CaptureFrameSequenceExtension
+  quality?: number
+  directoryHandle?: FileSystemDirectoryHandle | null
+  pickDirectory?: boolean
+  downloadFallback?: boolean
+  waitForRAF?: boolean
+  signal?: AbortSignal
+  onFrameBlob?: (info: CaptureFrameSequenceBlobInfo) => void | Promise<void>
+  onProgress?: (info: CaptureFrameSequenceProgressInfo) => void
+}
+
+export interface CaptureHydraFrameSequenceFrameInfo extends CaptureFrameSequenceFrameInfo {
+  runtime: HydraBrowserRuntime
+  synth: Record<string, unknown>
+}
+
+export interface CaptureHydraFrameSequenceOptions extends Omit<CaptureFrameSequenceOptions, 'canvas' | 'step'> {
+  runtime: HydraBrowserRuntime
+  output?: WebGPUOutputNode
+  step?: (info: CaptureHydraFrameSequenceFrameInfo) => void | Promise<void>
+  waitForGPU?: boolean
+  resumeAfterCapture?: boolean
+  restoreResolution?: boolean
+  ignoreEngineFpsGate?: boolean
+}
+
+export interface BuildFfmpegCommandsOptions {
+  fps: number
+  ffmpegPattern: string
+  outputBaseName?: string
+}
+
+export interface FfmpegCommandSet {
+  mp4: string
+  gif: string
+  webm: string
+}
+
+export declare const captureFrameSequence: (options: CaptureFrameSequenceOptions) => Promise<CaptureFrameSequenceResult>
+export declare const captureHydraFrameSequence: (
+  options: CaptureHydraFrameSequenceOptions
+) => Promise<CaptureFrameSequenceResult>
+export declare const buildFfmpegCommands: (options: BuildFfmpegCommandsOptions) => FfmpegCommandSet
 
 export interface CreateHydraBrowserRuntimeOptions extends Omit<HydraBrowserRuntimeOptions, 'host' | 'renderer'> {
   host?: BrowserHost

@@ -10,6 +10,21 @@ import {
   type ScriptPlugin,
   type SourceAdapter
 } from 'hydra-synth-core'
+import {
+  buildFfmpegCommands,
+  captureFrameSequence,
+  captureHydraFrameSequence,
+  type BuildFfmpegCommandsOptions,
+  type CaptureFrameSequenceBlobInfo,
+  type CaptureFrameSequenceExtension,
+  type CaptureFrameSequenceFrameInfo,
+  type CaptureFrameSequenceOptions,
+  type CaptureFrameSequenceProgressInfo,
+  type CaptureFrameSequenceResult,
+  type CaptureHydraFrameSequenceFrameInfo,
+  type CaptureHydraFrameSequenceOptions,
+  type FfmpegCommandSet
+} from './capture/frame-sequence.js'
 import { BrowserHost, type BrowserHostOptions } from './runtime/browser-host.js'
 import { HydraBrowserRuntime, type HydraBrowserRuntimeOptions } from './runtime/runtime.js'
 import { WebGPUOutputNode } from './runtime/output-node.js'
@@ -26,11 +41,22 @@ export type {
   HydraFrameState,
   RendererAdapter,
   ScriptPlugin,
-  SourceAdapter
+  SourceAdapter,
+  BuildFfmpegCommandsOptions,
+  CaptureFrameSequenceBlobInfo,
+  CaptureFrameSequenceExtension,
+  CaptureFrameSequenceFrameInfo,
+  CaptureFrameSequenceOptions,
+  CaptureFrameSequenceProgressInfo,
+  CaptureFrameSequenceResult,
+  CaptureHydraFrameSequenceFrameInfo,
+  CaptureHydraFrameSequenceOptions,
+  FfmpegCommandSet
 }
 
 export { WEBGPU_UNAVAILABLE_MESSAGE, WebGPURenderer, BrowserHost, HydraBrowserRuntime, HydraSourceNode, WebGPUOutputNode }
 export type { BrowserHostOptions, HydraBrowserRuntimeOptions, PatchBayAdapter, WebGPURendererOptions }
+export { captureFrameSequence, captureHydraFrameSequence, buildFfmpegCommands }
 
 export interface CreateHydraBrowserRuntimeOptions extends Omit<HydraBrowserRuntimeOptions, 'host' | 'renderer'> {
   host?: BrowserHost

@@ -55,6 +55,10 @@ export class BrowserHost {
     this.attachedToDom = true
   }
 
+  get isRunning (): boolean {
+    return this.rafHandle !== null
+  }
+
   start (onFrame: (deltaMs: number) => void): void {
     if (this.disposed || this.rafHandle !== null) return
 

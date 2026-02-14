@@ -40,6 +40,87 @@
         max-width: min(420px, calc(100vw - 32px));
       }
 
+      #capture-controls {
+        margin-top: 10px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+      }
+
+      #capture-duration-label {
+        font-size: 11px;
+        color: #a7bad8;
+      }
+
+      #capture-video-profile-label {
+        font-size: 11px;
+        color: #a7bad8;
+      }
+
+      #capture-duration-input {
+        width: 68px;
+        border: 1px solid rgba(141, 229, 255, 0.38);
+        background: rgba(1, 5, 12, 0.45);
+        color: #dbe8ff;
+        border-radius: 6px;
+        padding: 5px 7px;
+        font-size: 12px;
+      }
+
+      #capture-duration-input:disabled {
+        opacity: 0.6;
+      }
+
+      #capture-video-profile {
+        max-width: min(220px, calc(100vw - 48px));
+        border: 1px solid rgba(141, 229, 255, 0.38);
+        background: rgba(1, 5, 12, 0.45);
+        color: #dbe8ff;
+        border-radius: 6px;
+        padding: 5px 7px;
+        font-size: 12px;
+      }
+
+      #capture-video-profile:disabled {
+        opacity: 0.6;
+      }
+
+      .capture-toggle {
+        border: 1px solid rgba(141, 229, 255, 0.4);
+        background: rgba(141, 229, 255, 0.14);
+        color: #dbe8ff;
+        border-radius: 6px;
+        padding: 6px 10px;
+        cursor: pointer;
+        font-size: 12px;
+      }
+
+      .capture-toggle:hover {
+        background: rgba(141, 229, 255, 0.22);
+      }
+
+      .capture-toggle[data-state="active"] {
+        border-color: rgba(255, 140, 140, 0.55);
+        background: rgba(255, 92, 92, 0.2);
+      }
+
+      #capture-status {
+        margin-top: 2px;
+        flex-basis: 100%;
+        min-height: 1em;
+        font-size: 11px;
+        color: #a7bad8;
+      }
+
+      #capture-status[data-state="ok"] {
+        color: #96f6ad;
+      }
+
+      #capture-status[data-state="error"] {
+        color: #ff9494;
+      }
+
       #live-panel {
         position: fixed;
         right: 12px;
@@ -140,6 +221,26 @@
       <div>Try: <code>osc(10, 0.1, 0).out()</code></div>
       <div>Runtime is available as <code>hydra</code>.</div>
       <div id="livecoding-note">Live editor: add <code>?livecoding=1</code>.</div>
+      <div id="capture-controls">
+        <label id="capture-duration-label" for="capture-duration-input">Duration (s)</label>
+        <input
+          id="capture-duration-input"
+          type="number"
+          min="0.1"
+          max="600"
+          step="0.1"
+          value="2"
+          inputmode="decimal"
+        />
+        <label id="capture-video-profile-label" for="capture-video-profile">Video</label>
+        <select id="capture-video-profile">
+          <option value="mp4">MP4 (Delivery)</option>
+          <option value="webm">WebM (VP9)</option>
+        </select>
+        <button id="capture-gif-toggle" class="capture-toggle" type="button">Capture and Save GIF (2s)</button>
+        <button id="capture-video-toggle" class="capture-toggle" type="button">Capture and Save MP4 (2s)</button>
+        <div id="capture-status"></div>
+      </div>
     </div>
 
     <div id="live-panel" hidden>
@@ -158,7 +259,7 @@
     </div>
 
     <script type="module">
-      import { createHydraBrowserRuntime } from 'hydra-synth'
+      import { buildFfmpegCommands, captureHydraFrameSequence, createHydraBrowserRuntime } from 'hydra-synth'
       import { createLivecodingPlugin } from 'hydra-synth-livecoding'
 
       const runtime = createHydraBrowserRuntime({
@@ -190,6 +291,13 @@
 
       window.hydra = runtime
       window.synth = synth
+      const captureFrames = async (options = {}) => captureHydraFrameSequence({
+        runtime,
+        ...options
+      })
+      window.captureFrames = captureFrames
+      window.captureHydraFrameSequence = captureFrames
+      window.buildFfmpegCommands = buildFfmpegCommands
 
       // Default scene so users immediately see output.
       if (typeof synth.osc === 'function') {
@@ -203,7 +311,31 @@
       const liveEditor = document.getElementById('live-editor')
       const liveRunButton = document.getElementById('live-run')
       const liveStatus = document.getElementById('live-status')
+      const captureDurationInput = document.getElementById('capture-duration-input')
+      const captureVideoProfileSelect = document.getElementById('capture-video-profile')
+      const captureGifToggle = document.getElementById('capture-gif-toggle')
+      const captureVideoToggle = document.getElementById('capture-video-toggle')
+      const captureStatus = document.getElementById('capture-status')
       const liveEditorStorageKey = 'hydra-playground-livecode'
+      const captureBaseNameStorageKey = 'hydra-playground-capture-base-name'
+      const captureDurationStorageKey = 'hydra-playground-capture-duration-seconds'
+      const captureVideoProfileStorageKey = 'hydra-playground-capture-video-profile'
+      const defaultCaptureDurationSeconds = 2
+      const minCaptureDurationSeconds = 0.1
+      const maxCaptureDurationSeconds = 600
+      const defaultVideoCaptureFormat = 'mp4'
+      const videoCaptureFormats = {
+        mp4: {
+          label: 'MP4',
+          buttonLabel: 'MP4',
+          frameExtension: 'png'
+        },
+        webm: {
+          label: 'WebM',
+          buttonLabel: 'WebM',
+          frameExtension: 'png'
+        }
+      }
       const defaultLiveSnippet = `osc(18, 0.05, 0)
   .rotate(() => time * 0.08)
   .out()
@@ -215,6 +347,13 @@ speed = 0.75`
         liveStatus.textContent = message
         if (state) liveStatus.dataset.state = state
         else delete liveStatus.dataset.state
+      }
+
+      const setCaptureStatus = (message, state = '') => {
+        if (!captureStatus) return
+        captureStatus.textContent = message
+        if (state) captureStatus.dataset.state = state
+        else delete captureStatus.dataset.state
       }
 
       const loadLiveSnippet = () => {
@@ -235,8 +374,437 @@ speed = 0.75`
         }
       }
 
+      const parseJsonResponse = async (response) => {
+        const text = await response.text()
+        let payload = {}
+
+        if (text) {
+          try {
+            payload = JSON.parse(text)
+          } catch {
+            payload = { error: text }
+          }
+        }
+
+        if (!response.ok) {
+          const errorMessage = typeof payload.error === 'string'
+            ? payload.error
+            : `Request failed with status ${response.status}.`
+          throw new Error(errorMessage)
+        }
+
+        return payload
+      }
+
+      const sanitizeOutputBaseName = (value) => String(value ?? '')
+        .replace(/[^A-Za-z0-9._-]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+
+      const defaultOutputBaseName = () => {
+        const now = new Date()
+        const pad = (n) => String(n).padStart(2, '0')
+        const base = [
+          now.getFullYear(),
+          pad(now.getMonth() + 1),
+          pad(now.getDate()),
+          '-',
+          pad(now.getHours()),
+          pad(now.getMinutes()),
+          pad(now.getSeconds())
+        ].join('')
+        return `hydra-capture-${base}`
+      }
+
+      const loadCaptureBaseName = () => {
+        try {
+          const saved = window.localStorage.getItem(captureBaseNameStorageKey)
+          const normalized = sanitizeOutputBaseName(saved)
+          return normalized || defaultOutputBaseName()
+        } catch {
+          return defaultOutputBaseName()
+        }
+      }
+
+      const saveCaptureBaseName = (value) => {
+        try {
+          window.localStorage.setItem(captureBaseNameStorageKey, value)
+        } catch {
+          // Ignore local storage failures in restricted contexts.
+        }
+      }
+
+      const clampCaptureDurationSeconds = (value) => Math.min(maxCaptureDurationSeconds, Math.max(minCaptureDurationSeconds, value))
+
+      const formatDurationSeconds = (value) => Number.parseFloat(value.toFixed(2)).toString()
+
+      const normalizeCaptureDurationSeconds = (value, fallback = defaultCaptureDurationSeconds) => {
+        if (!Number.isFinite(value) || value <= 0) return fallback
+        return clampCaptureDurationSeconds(value)
+      }
+
+      const readCaptureDurationSeconds = () => {
+        if (!captureDurationInput) return defaultCaptureDurationSeconds
+        const numeric = Number(captureDurationInput.value)
+        return normalizeCaptureDurationSeconds(numeric)
+      }
+
+      const setCaptureDurationSeconds = (value) => {
+        const normalized = normalizeCaptureDurationSeconds(value)
+        if (captureDurationInput) {
+          captureDurationInput.value = formatDurationSeconds(normalized)
+        }
+        try {
+          window.localStorage.setItem(captureDurationStorageKey, String(normalized))
+        } catch {
+          // Ignore local storage failures in restricted contexts.
+        }
+        return normalized
+      }
+
+      const loadCaptureDurationSeconds = () => {
+        try {
+          const saved = window.localStorage.getItem(captureDurationStorageKey)
+          const parsed = Number(saved)
+          return normalizeCaptureDurationSeconds(parsed)
+        } catch {
+          return defaultCaptureDurationSeconds
+        }
+      }
+
+      const normalizeVideoCaptureFormat = (value) => {
+        const normalized = String(value ?? '').toLowerCase()
+        if (Object.prototype.hasOwnProperty.call(videoCaptureFormats, normalized)) {
+          return normalized
+        }
+        return defaultVideoCaptureFormat
+      }
+
+      const isVideoCaptureFormat = (value) => Object.prototype.hasOwnProperty.call(videoCaptureFormats, value)
+
+      const readVideoCaptureFormat = () => {
+        if (!captureVideoProfileSelect) return defaultVideoCaptureFormat
+        return normalizeVideoCaptureFormat(captureVideoProfileSelect.value)
+      }
+
+      const setVideoCaptureFormat = (value) => {
+        const normalized = normalizeVideoCaptureFormat(value)
+        if (captureVideoProfileSelect) {
+          captureVideoProfileSelect.value = normalized
+        }
+        try {
+          window.localStorage.setItem(captureVideoProfileStorageKey, normalized)
+        } catch {
+          // Ignore local storage failures in restricted contexts.
+        }
+        return normalized
+      }
+
+      const loadVideoCaptureFormat = () => {
+        try {
+          const saved = window.localStorage.getItem(captureVideoProfileStorageKey)
+          return normalizeVideoCaptureFormat(saved)
+        } catch {
+          return defaultVideoCaptureFormat
+        }
+      }
+
+      const requestCaptureSession = async ({ extension = 'png', signal } = {}) => {
+        const response = await fetch('/__capture/start', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ extension }),
+          signal
+        })
+        return parseJsonResponse(response)
+      }
+
+      const uploadCaptureFrame = async ({ sessionId, fileName, blob, signal }) => {
+        const query = new URLSearchParams({ sessionId, fileName })
+        const response = await fetch(`/__capture/frame?${query.toString()}`, {
+          method: 'POST',
+          body: blob,
+          signal
+        })
+        return parseJsonResponse(response)
+      }
+
+      const finalizeCaptureSession = async ({ sessionId, fps, format, outputBaseName, signal }) => {
+        const response = await fetch('/__capture/finalize', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ sessionId, fps, format, outputBaseName }),
+          signal
+        })
+        return parseJsonResponse(response)
+      }
+
+      const abortCaptureSession = async (sessionId) => {
+        await fetch('/__capture/abort', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ sessionId })
+        })
+      }
+
+      const fetchCaptureResultBlob = async ({ downloadPath, signal }) => {
+        const response = await fetch(downloadPath, { method: 'GET', signal })
+        if (!response.ok) {
+          const text = await response.text()
+          throw new Error(text || `Download failed with status ${response.status}.`)
+        }
+        return response.blob()
+      }
+
+      const downloadBlob = ({ blob, fileName }) => {
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = fileName
+        link.style.display = 'none'
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+        URL.revokeObjectURL(url)
+      }
+
+      let activeCaptureAbortController = null
+      let activeCaptureSessionId = null
+      let activeCaptureFormat = null
       let detachLivecoding = null
       let livecodingPlugin = null
+
+      const captureLabel = (format) => {
+        if (format === 'gif') return 'GIF'
+        if (isVideoCaptureFormat(format)) return videoCaptureFormats[format].label
+        return 'Capture'
+      }
+
+      const captureVideoButtonLabel = (format) => {
+        if (isVideoCaptureFormat(format)) return videoCaptureFormats[format].buttonLabel
+        return videoCaptureFormats[defaultVideoCaptureFormat].buttonLabel
+      }
+
+      const updateCaptureButtonState = () => {
+        const active = Boolean(activeCaptureAbortController)
+        const activeFormat = activeCaptureFormat
+        const durationSeconds = formatDurationSeconds(readCaptureDurationSeconds())
+        const selectedVideoFormat = readVideoCaptureFormat()
+        const selectedVideoButtonLabel = captureVideoButtonLabel(selectedVideoFormat)
+
+        if (captureGifToggle) {
+          const isActive = active && activeFormat === 'gif'
+          captureGifToggle.textContent = isActive ? 'Stop GIF Capture' : `Capture and Save GIF (${durationSeconds}s)`
+          captureGifToggle.disabled = active && !isActive
+          if (isActive) captureGifToggle.dataset.state = 'active'
+          else delete captureGifToggle.dataset.state
+        }
+
+        if (captureVideoToggle) {
+          const isActive = active && isVideoCaptureFormat(activeFormat)
+          const activeLabel = isVideoCaptureFormat(activeFormat)
+            ? captureVideoButtonLabel(activeFormat)
+            : selectedVideoButtonLabel
+          captureVideoToggle.textContent = isActive
+            ? `Stop ${activeLabel} Capture`
+            : `Capture and Save ${selectedVideoButtonLabel} (${durationSeconds}s)`
+          captureVideoToggle.disabled = active && !isActive
+          if (isActive) captureVideoToggle.dataset.state = 'active'
+          else delete captureVideoToggle.dataset.state
+        }
+
+        if (captureDurationInput) {
+          captureDurationInput.disabled = active
+        }
+        if (captureVideoProfileSelect) {
+          captureVideoProfileSelect.disabled = active
+        }
+      }
+
+      const encodeAndDownloadMedia = async ({ sessionId, fps, outputBaseName, format, signal }) => {
+        const label = captureLabel(format)
+        setCaptureStatus(`Encoding ${label} with ffmpeg...`)
+        const encoded = await finalizeCaptureSession({
+          sessionId,
+          fps,
+          format,
+          outputBaseName,
+          signal
+        })
+
+        const resultBlob = await fetchCaptureResultBlob({
+          downloadPath: encoded.downloadPath,
+          signal
+        })
+
+        downloadBlob({
+          blob: resultBlob,
+          fileName: encoded.fileName
+        })
+
+        return encoded
+      }
+
+      const captureAndSaveMedia = async (options = {}) => {
+        if (activeCaptureAbortController) {
+          throw new Error('A capture is already in progress.')
+        }
+
+        const format = String(options.format ?? 'gif').toLowerCase()
+        if (format !== 'gif' && !isVideoCaptureFormat(format)) {
+          throw new Error('captureAndSaveMedia: format must be gif, mp4, or webm.')
+        }
+        const label = captureLabel(format)
+        const fps = Number.isFinite(options.fps) && Number(options.fps) > 0 ? Number(options.fps) : 30
+        const fallbackDuration = readCaptureDurationSeconds()
+        const duration = Number.isFinite(options.duration) && Number(options.duration) > 0
+          ? normalizeCaptureDurationSeconds(Number(options.duration), fallbackDuration)
+          : fallbackDuration
+        const width = Number.isFinite(options.width) && Number(options.width) > 0 ? Math.floor(options.width) : undefined
+        const height = Number.isFinite(options.height) && Number(options.height) > 0 ? Math.floor(options.height) : undefined
+        const defaultFrameExtension = isVideoCaptureFormat(format) ? videoCaptureFormats[format].frameExtension : 'png'
+        const frameExtension = options.extension ?? defaultFrameExtension
+        const outputBaseName = sanitizeOutputBaseName(options.outputBaseName ?? loadCaptureBaseName()) || defaultOutputBaseName()
+        const abortController = new AbortController()
+
+        activeCaptureAbortController = abortController
+        activeCaptureFormat = format
+        updateCaptureButtonState()
+        setCaptureStatus(`Starting ${label} capture session...`)
+
+        let shouldCleanupSession = false
+        let uploadedFrameCount = 0
+        let encodeFps = fps
+
+        try {
+          const session = await requestCaptureSession({ extension: frameExtension, signal: abortController.signal })
+          activeCaptureSessionId = String(session.sessionId)
+          shouldCleanupSession = true
+
+          setCaptureStatus('Capturing frames...')
+          const captureResult = await captureHydraFrameSequence({
+            runtime,
+            fps,
+            duration,
+            width,
+            height,
+            extension: frameExtension,
+            waitForRAF: false,
+            downloadFallback: false,
+            signal: abortController.signal,
+            onFrameBlob: async ({ fileName, blob, frameNumber, totalFrames }) => {
+              setCaptureStatus(`Uploading frame ${frameNumber}/${totalFrames}...`)
+              await uploadCaptureFrame({
+                sessionId: activeCaptureSessionId,
+                fileName,
+                blob,
+                signal: abortController.signal
+              })
+              uploadedFrameCount += 1
+            }
+          })
+          encodeFps = captureResult.fps
+
+          if (abortController.signal.aborted) {
+            throw new Error('Capture aborted.')
+          }
+
+          const encoded = await encodeAndDownloadMedia({
+            sessionId: activeCaptureSessionId,
+            fps: captureResult.fps,
+            format,
+            outputBaseName,
+            signal: abortController.signal
+          })
+
+          shouldCleanupSession = false
+          saveCaptureBaseName(outputBaseName)
+          setCaptureStatus(`Saved ${encoded.fileName} to your downloads folder.`, 'ok')
+          return encoded
+        } catch (error) {
+          if (abortController.signal.aborted) {
+            if (uploadedFrameCount > 0 && activeCaptureSessionId) {
+              try {
+                setCaptureStatus(`Stopped. Encoding ${uploadedFrameCount} frame(s) to ${label}...`)
+                const encoded = await encodeAndDownloadMedia({
+                  sessionId: activeCaptureSessionId,
+                  fps: encodeFps,
+                  format,
+                  outputBaseName,
+                  signal: undefined
+                })
+                shouldCleanupSession = false
+                saveCaptureBaseName(outputBaseName)
+                setCaptureStatus(`Saved ${encoded.fileName} to your downloads folder.`, 'ok')
+                return encoded
+              } catch (encodeError) {
+                const message = encodeError instanceof Error ? encodeError.message : String(encodeError)
+                setCaptureStatus(`Capture failed after stop: ${message}`, 'error')
+                console.error('[hydra] partial capture encode failed', encodeError)
+                return null
+              }
+            }
+            setCaptureStatus('Capture cancelled.', '')
+            return null
+          }
+
+          const message = error instanceof Error ? error.message : String(error)
+          setCaptureStatus(`Capture failed: ${message}`, 'error')
+          console.error('[hydra] capture failed', error)
+          throw error
+        } finally {
+          if (shouldCleanupSession && activeCaptureSessionId) {
+            try {
+              await abortCaptureSession(activeCaptureSessionId)
+            } catch {
+              // Cleanup is best effort if the server session already ended.
+            }
+          }
+          activeCaptureAbortController = null
+          activeCaptureSessionId = null
+          activeCaptureFormat = null
+          updateCaptureButtonState()
+        }
+      }
+
+      const captureAndSaveGif = async (options = {}) => captureAndSaveMedia({ ...options, format: 'gif' })
+      const captureAndSaveVideo = async (options = {}) => {
+        const format = normalizeVideoCaptureFormat(options.format ?? readVideoCaptureFormat())
+        return captureAndSaveMedia({ ...options, format })
+      }
+      const captureAndSaveMp4 = async (options = {}) => captureAndSaveMedia({ ...options, format: 'mp4' })
+      const captureAndSaveWebm = async (options = {}) => captureAndSaveMedia({ ...options, format: 'webm' })
+
+      const toggleMediaCapture = (format) => {
+        if (activeCaptureAbortController) {
+          const runningLabel = captureLabel(activeCaptureFormat)
+          const requestedLabel = captureLabel(format)
+          if (activeCaptureFormat === format) setCaptureStatus(`Stopping ${runningLabel} capture...`)
+          else setCaptureStatus(`Stopping ${runningLabel} capture before starting ${requestedLabel}...`)
+          activeCaptureAbortController.abort()
+          return
+        }
+
+        void captureAndSaveMedia({ format }).catch(() => {})
+      }
+
+      const toggleGifCapture = () => {
+        toggleMediaCapture('gif')
+      }
+      const toggleVideoCapture = () => {
+        toggleMediaCapture(readVideoCaptureFormat())
+      }
+
+      window.captureAndSaveMedia = captureAndSaveMedia
+      window.captureAndSaveGif = captureAndSaveGif
+      window.captureAndSaveVideo = captureAndSaveVideo
+      window.captureAndSaveMp4 = captureAndSaveMp4
+      window.captureAndSaveWebm = captureAndSaveWebm
+      window.toggleGifCapture = toggleGifCapture
+      window.toggleVideoCapture = toggleVideoCapture
+      window.toggleMp4Capture = toggleVideoCapture
+      setVideoCaptureFormat(loadVideoCaptureFormat())
+      setCaptureDurationSeconds(loadCaptureDurationSeconds())
+      updateCaptureButtonState()
 
       const runEditorSnippet = () => {
         if (!liveEditor) return
@@ -276,9 +844,43 @@ speed = 0.75`
         liveRunButton.addEventListener('click', runEditorSnippet)
       }
 
+      if (captureGifToggle) {
+        captureGifToggle.addEventListener('click', toggleGifCapture)
+      }
+
+      if (captureVideoToggle) {
+        captureVideoToggle.addEventListener('click', toggleVideoCapture)
+      }
+
+      if (captureDurationInput) {
+        const syncCaptureDuration = () => {
+          setCaptureDurationSeconds(readCaptureDurationSeconds())
+          updateCaptureButtonState()
+        }
+        captureDurationInput.addEventListener('change', syncCaptureDuration)
+        captureDurationInput.addEventListener('blur', syncCaptureDuration)
+      }
+
+      if (captureVideoProfileSelect) {
+        const syncVideoCaptureFormat = () => {
+          setVideoCaptureFormat(readVideoCaptureFormat())
+          updateCaptureButtonState()
+        }
+        captureVideoProfileSelect.addEventListener('change', syncVideoCaptureFormat)
+      }
+
       if (enableLivecoding) {
         livecodingPlugin = createLivecodingPlugin({
-          exposeHelpers: true,
+          exposeHelpers: {
+            captureFrames,
+            captureAndSaveGif,
+            captureAndSaveVideo,
+            captureAndSaveMp4,
+            captureAndSaveWebm,
+            toggleGifCapture,
+            toggleVideoCapture,
+            buildFfmpegCommands
+          },
           allowedBindings: ['speed', 'bpm', 'fps', 'time', 'update', 'afterUpdate']
         })
         detachLivecoding = runtime.attachPlugin(livecodingPlugin)
@@ -286,7 +888,7 @@ speed = 0.75`
         window.livecodingDetach = detachLivecoding
         if (livePanel) livePanel.hidden = false
         if (livecodingNote) {
-          livecodingNote.innerHTML = 'Live editor enabled: <code>Ctrl/Cmd+Enter</code> to run.'
+          livecodingNote.innerHTML = 'Live editor enabled: <code>Ctrl/Cmd+Enter</code> to run. Capture via buttons, <code>captureAndSaveGif()</code>, or <code>captureAndSaveVideo()</code>.'
         }
         setLiveStatus('Ready. Press Ctrl/Cmd+Enter or click Run.')
         console.info('[hydra] livecoding plugin attached')
@@ -297,6 +899,13 @@ speed = 0.75`
 
       const originalDispose = runtime.dispose.bind(runtime)
       runtime.dispose = () => {
+        if (activeCaptureAbortController) {
+          activeCaptureAbortController.abort()
+        }
+        if (activeCaptureSessionId) {
+          void abortCaptureSession(activeCaptureSessionId).catch(() => {})
+          activeCaptureSessionId = null
+        }
         if (typeof detachLivecoding === 'function') {
           detachLivecoding()
           detachLivecoding = null
@@ -307,6 +916,11 @@ speed = 0.75`
 
       console.info('[hydra] ready')
       console.info('[hydra] try: osc(20, 0.1, 0).rotate(0.2).out()')
+      console.info('[hydra] capture gif: set Duration (s), then click GIF button or run await captureAndSaveGif({ duration: 3 })')
+      console.info('[hydra] capture video: choose Video profile, then click Video button or run await captureAndSaveVideo({ duration: 3 })')
+      console.info('[hydra] capture webm: await captureAndSaveWebm({ duration: 3 })')
+      console.info('[hydra] capture frames: await captureFrames({ duration: 2, fps: 60, extension: "png", pickDirectory: true })')
+      console.info('[hydra] ffmpeg: buildFfmpegCommands({ fps: 60, ffmpegPattern: "frame-%04d.png" })')
       console.info('[hydra] dispose via: hydra.dispose()')
     </script>
   </body>
