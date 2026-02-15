@@ -51,10 +51,34 @@ describe('HydraTransformRegistry', () => {
     expect(output.passes[1].wgsl).toContain('hydraLuminance')
   })
 
+  it('compiles staged bloom chains with downsample scheduling metadata', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators
+      .osc(8, 0.1, 0)
+      .bloomThreshold(0.6, 0.1)
+      .bloomDownsample(1.0)
+      .bloomUpsample(1.0, 1.2)
+      .bloomMix(registry.generators.osc(8, 0.1, 0), 0.8)
+      .out()
+
+    expect(output.passes.length).toBe(5)
+    expect(output.passes[1].wgsl).toContain('fn bloomThreshold')
+    expect(output.passes[2].wgsl).toContain('fn bloomDownsample')
+    expect(output.passes[2].schedule?.resolutionScale).toBe(0.5)
+    expect(output.passes[3].wgsl).toContain('fn bloomUpsample')
+    expect(output.passes[4].wgsl).toContain('fn bloomMix')
+  })
+
   it('registers additional post-processing transforms on generators and chain methods', () => {
     const output = new CaptureOutput()
     const registry = new HydraTransformRegistry({ defaultOutput: output })
     const expectedTransforms = [
+      'blurTiledX',
+      'blurTiledY',
+      'blurFast',
+      'blurBilateral',
       'sharpen',
       'chromaticAberration',
       'rgbSplit',
@@ -62,10 +86,15 @@ describe('HydraTransformRegistry', () => {
       'filmGrain',
       'dither',
       'edgeDetect',
+      'edgeLaplacian',
       'radialBlur',
       'zoomBlur',
       'dualKawaseBlur',
       'dualKawaseBloom',
+      'bloomThreshold',
+      'bloomDownsample',
+      'bloomUpsample',
+      'bloomMix',
       'toneMap',
       'exposure'
     ]
@@ -128,6 +157,28 @@ describe('HydraTransformRegistry', () => {
     expect(output.passes[2].wgsl).toContain('@workgroup_size(8, 32, 1)')
   })
 
+  it('specializes blurTiledX/blurTiledY into workgroup-tiled kernels with fallback metadata', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators.osc(8, 0.1, 0).blurTiledX(1).blurTiledY(1).out()
+
+    expect(output.passes.length).toBe(3)
+    const tiledXPass = output.passes[1]
+    const tiledYPass = output.passes[2]
+
+    expect(tiledXPass.wgsl).toContain('var<workgroup> tile')
+    expect(tiledYPass.wgsl).toContain('var<workgroup> tile')
+    expect(tiledXPass.dispatch?.workgroupSize).toEqual([128, 1, 1])
+    expect(tiledYPass.dispatch?.workgroupSize).toEqual([1, 128, 1])
+    expect((tiledXPass.dispatch?.requiredWorkgroupStorageBytes ?? 0) > 0).toBe(true)
+    expect((tiledYPass.dispatch?.requiredWorkgroupStorageBytes ?? 0) > 0).toBe(true)
+    expect(tiledXPass.fallbackPass).toBeDefined()
+    expect(tiledYPass.fallbackPass).toBeDefined()
+    expect(tiledXPass.fallbackPass?.wgsl).toContain('fn blurTiledX')
+    expect(tiledYPass.fallbackPass?.wgsl).toContain('fn blurTiledY')
+  })
+
   it('injects prev() when chaining non-src transforms after renderpass boundaries', () => {
     const output = new CaptureOutput()
     const registry = new HydraTransformRegistry({ defaultOutput: output })
@@ -152,6 +203,236 @@ describe('HydraTransformRegistry', () => {
     expect(output.passes.length).toBe(1)
     expect(output.passes[0].textures.length).toBe(1)
     expect(output.passes[0].textures[0].sourceRef).toBe(provider)
+  })
+
+  it('prevents uniform name collisions when sequential transforms reuse argument names', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.registerTransform({
+      name: 'uniformA',
+      type: 'color',
+      inputs: [
+        { type: 'float', name: 'foo', default: 0.1 },
+        { type: 'float', name: 'amount', default: 0.2 }
+      ],
+      wgsl: `
+  return _c0 + vec4f(foo + amount);
+`
+    })
+
+    registry.registerTransform({
+      name: 'uniformB',
+      type: 'color',
+      inputs: [
+        { type: 'float', name: 'amount', default: 0.3 }
+      ],
+      wgsl: `
+  return _c0 + vec4f(amount);
+`
+    })
+
+    registry.generators
+      .solid(0.1, 0.2, 0.3, 1.0)
+      .uniformA(() => 0.4, () => 0.5)
+      .uniformB(() => 0.6)
+      .out()
+
+    expect(output.passes.length).toBe(1)
+    const uniforms = output.passes[0].uniforms
+    expect(uniforms.length).toBe(3)
+    expect(new Set(uniforms.map((uniform) => uniform.name)).size).toBe(3)
+  })
+
+  it('prevents sampler binding collisions when sequential transforms reuse sampler names', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+    const sourceA = { id: 10, getTexture: () => null }
+    const sourceB = { id: 11, getTexture: () => null }
+    const sourceC = { id: 12, getTexture: () => null }
+
+    registry.registerTransform({
+      name: 'samplePair',
+      type: 'color',
+      inputs: [
+        { type: 'sampler2D', name: 'texA', default: sourceA },
+        { type: 'sampler2D', name: 'tex', default: sourceB }
+      ],
+      wgsl: `
+  let a = hydraSampleTexture(texA, _st);
+  let b = hydraSampleTexture(tex, _st);
+  return (_c0 + a + b) / 3.0;
+`
+    })
+
+    registry.registerTransform({
+      name: 'sampleSingle',
+      type: 'color',
+      inputs: [
+        { type: 'sampler2D', name: 'tex', default: sourceC }
+      ],
+      wgsl: `
+  let c = hydraSampleTexture(tex, _st);
+  return (_c0 + c) / 2.0;
+`
+    })
+
+    registry.generators
+      .solid(0.5, 0.4, 0.3, 1.0)
+      .samplePair(sourceA, sourceB)
+      .sampleSingle(sourceC)
+      .out()
+
+    expect(output.passes.length).toBe(1)
+    const textures = output.passes[0].textures
+    expect(textures.length).toBe(3)
+    expect(new Set(textures.map((texture) => texture.name)).size).toBe(3)
+    expect(new Set(textures.map((texture) => texture.binding)).size).toBe(3)
+  })
+
+  it('emits pass IR metadata and scheduling defaults for compiled passes', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators.osc(8, 0.1, 0).out()
+
+    expect(output.passes.length).toBe(1)
+    const pass = output.passes[0]
+    expect(pass.ir).toBeDefined()
+    expect(pass.schedule).toEqual({
+      resolutionScale: 1,
+      updateRate: 'everyFrame',
+      sparse: false
+    })
+    expect(pass.dispatch?.mode).toBe('direct')
+    expect(pass.dispatch?.workgroupSize).toEqual([16, 16, 1])
+    expect(pass.ir?.writes).toContain('outImage')
+  })
+
+  it('supports storage resources on kernel transforms and exposes bound resource metadata', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.registerTransform({
+      name: 'writeTrail',
+      type: 'kernel',
+      inputs: [{ type: 'float', name: 'amount', default: 0.25 }],
+      resources: [
+        {
+          type: 'storageTexture2D',
+          name: 'trailBuffer',
+          access: 'read_write',
+          format: 'rgba8unorm',
+          lifetime: 'persistent',
+          stateKey: 'trail-buffer'
+        }
+      ],
+      wgsl: `
+  let dims = vec2f(max(globals.width, 1.0), max(globals.height, 1.0));
+  let pix = vec2i(
+    i32(clamp(floor(_st.x * dims.x), 0.0, dims.x - 1.0)),
+    i32(clamp(floor(_st.y * dims.y), 0.0, dims.y - 1.0))
+  );
+  let oldColor = textureLoad(trailBuffer, pix);
+  let nextColor = clamp(oldColor + vec4f(amount, 0.0, 0.0, 0.0), vec4f(0.0), vec4f(1.0));
+  textureStore(trailBuffer, pix, nextColor);
+  return vec4f(nextColor.xyz, 1.0);
+`
+    })
+
+    registry.generators.solid(0, 0, 0, 1).writeTrail(0.5).out()
+
+    expect(output.passes.length).toBe(2)
+    const pass = output.passes[1]
+    expect(pass.storageTextures?.length).toBe(1)
+    expect(pass.storageTextures?.[0].name).toBe('trailBuffer')
+    expect(pass.storageTextures?.[0].stateKey).toBe('trail-buffer')
+    expect(pass.storageTextures?.[0].lifetime).toBe('persistent')
+    expect(pass.wgsl).toContain('var trailBuffer: texture_storage_2d<rgba8unorm, read_write>;')
+  })
+
+  it('registers built-in compute-native transforms', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+    const registered = new Set(registry.listTransforms())
+
+    expect(registered.has('rdStep')).toBe(true)
+    expect(registered.has('lumaProbe')).toBe(true)
+    expect(registered.has('trailScatter')).toBe(true)
+  })
+
+  it('schedules simulation and analysis transforms as standalone compute passes', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators.solid(1, 0, 0, 1).rdStep().lumaProbe().out()
+
+    expect(output.passes.length).toBe(3)
+    expect(output.passes[1].wgsl).toContain('fn rdStep')
+    expect(output.passes[2].wgsl).toContain('fn lumaProbe')
+    expect(output.passes[2].schedule?.resolutionScale).toBe(0.5)
+  })
+
+  it('propagates analysis output metadata onto compiled analysis passes', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators.solid(1, 0, 0, 1).lumaProbe(1.0).out()
+
+    expect(output.passes.length).toBe(2)
+    const analysisPass = output.passes[1]
+    expect(analysisPass.analysisOut).toEqual([{ uniformName: 'analysis_luma', type: 'float' }])
+  })
+
+  it('compiles storageTexture2DArray resources with correct dimension metadata', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.registerTransform({
+      name: 'arrayTrail',
+      type: 'kernel',
+      resources: [
+        {
+          type: 'storageTexture2DArray',
+          name: 'trailArray',
+          access: 'read_write',
+          format: 'rgba8unorm',
+          lifetime: 'persistent',
+          stateKey: 'trail-array'
+        }
+      ],
+      wgsl: `
+  let dims = vec2f(max(globals.width, 1.0), max(globals.height, 1.0));
+  let pix = vec2i(
+    i32(clamp(floor(_st.x * dims.x), 0.0, dims.x - 1.0)),
+    i32(clamp(floor(_st.y * dims.y), 0.0, dims.y - 1.0))
+  );
+  let current = textureLoad(trailArray, pix, 0);
+  textureStore(trailArray, pix, 0, current);
+  return current;
+`
+    })
+
+    registry.generators.solid(0.2, 0.3, 0.4, 1).arrayTrail().out()
+
+    expect(output.passes.length).toBe(2)
+    const pass = output.passes[1]
+    expect(pass.storageTextures?.length).toBe(1)
+    expect(pass.storageTextures?.[0].dimension).toBe('2d_array')
+    expect(pass.wgsl).toContain('texture_storage_2d_array<rgba8unorm, read_write>')
+  })
+
+  it('compiles persistent storage resources for built-in trailScatter()', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators.solid(0.3, 0.2, 0.1, 1).trailScatter(0.1, 0.98).out()
+
+    expect(output.passes.length).toBe(2)
+    const pass = output.passes[1]
+    expect(pass.storageTextures?.length).toBe(1)
+    expect(pass.storageTextures?.[0].stateKey).toBe('trail-buffer')
+    expect(pass.textures.some((texture) => texture.name === 'prevBuffer')).toBe(true)
   })
 
   it('supports vector dynamic uniforms and packs scalar lanes deterministically', () => {

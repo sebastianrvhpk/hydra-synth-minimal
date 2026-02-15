@@ -1,6 +1,8 @@
 import { HydraEngine } from 'hydra-synth-core'
 import type {
+  HydraAnalysisOutputBinding,
   HydraCompiledPass,
+  HydraDispatchConfig,
   HydraEngineBindingHost,
   HydraEngineError,
   HydraEngineErrorType,
@@ -8,8 +10,18 @@ import type {
   HydraErrorPolicy,
   HydraFrameState,
   HydraOutputAdapter,
+  HydraPassIRNode,
+  HydraPassSchedule,
+  HydraPassUpdateRate,
+  HydraResourceAccess,
+  HydraResourceElementType,
+  HydraResourceFormat,
+  HydraResourceLifetime,
+  HydraStorageBufferBinding,
+  HydraStorageTextureBinding,
   HydraTextureProvider,
   HydraTransformDefinition,
+  HydraTransformResource,
   RendererAdapter,
   ScriptPlugin,
   SourceAdapter
@@ -17,7 +29,9 @@ import type {
 
 export { HydraEngine }
 export type {
+  HydraAnalysisOutputBinding,
   HydraCompiledPass,
+  HydraDispatchConfig,
   HydraEngineBindingHost,
   HydraEngineError,
   HydraEngineErrorType,
@@ -25,8 +39,18 @@ export type {
   HydraErrorPolicy,
   HydraFrameState,
   HydraOutputAdapter,
+  HydraPassIRNode,
+  HydraPassSchedule,
+  HydraPassUpdateRate,
+  HydraResourceAccess,
+  HydraResourceElementType,
+  HydraResourceFormat,
+  HydraResourceLifetime,
+  HydraStorageBufferBinding,
+  HydraStorageTextureBinding,
   HydraTextureProvider,
   HydraTransformDefinition,
+  HydraTransformResource,
   RendererAdapter,
   ScriptPlugin,
   SourceAdapter
@@ -60,6 +84,34 @@ export interface WebGPURendererOptions {
   height?: number
 }
 
+export interface WebGPUComputeCapabilities {
+  maxComputeInvocationsPerWorkgroup: number
+  maxComputeWorkgroupStorageSize: number
+  maxComputeWorkgroupSizeX: number
+  maxComputeWorkgroupSizeY: number
+  maxComputeWorkgroupSizeZ: number
+}
+
+export interface WebGPUStorageCapabilities {
+  maxStorageBuffersPerShaderStage: number
+  maxStorageTexturesPerShaderStage: number
+  maxBufferSize: number
+  preferredStorageFormats: string[]
+}
+
+export interface WebGPUSubgroupCapabilities {
+  supported: boolean
+  minSize: number | null
+  maxSize: number | null
+}
+
+export interface WebGPUCapabilities {
+  compute: WebGPUComputeCapabilities
+  storage: WebGPUStorageCapabilities
+  subgroups: WebGPUSubgroupCapabilities
+  features: string[]
+}
+
 export declare class WebGPURenderer {
   readonly canvas: HTMLCanvasElement
   width: number
@@ -73,17 +125,31 @@ export declare class WebGPURenderer {
   globalUniformBuffer: GPUBuffer | null
   linearSampler: GPUSampler | null
   fallbackTexture: GPUTexture | null
+  fallbackTextureArray: GPUTexture | null
+  capabilities: WebGPUCapabilities | null
   constructor (options: WebGPURendererOptions)
   static assertSupport (): void
   init (): Promise<this>
   setResolution (width: number, height: number): void
   updateGlobalUniforms (state: { time: number, bpm: number, width?: number, height?: number }): void
-  createOutputTexture (options?: { width?: number, height?: number, label?: string }): GPUTexture
+  createOutputTexture (
+    options?: {
+      width?: number,
+      height?: number,
+      depthOrArrayLayers?: number,
+      label?: string,
+      format?: GPUTextureFormat,
+      includeRenderAttachment?: boolean
+    }
+  ): GPUTexture
   createDynamicUniformBuffer (label: string): GPUBuffer
+  createStorageBuffer (label: string, byteLength: number): GPUBuffer
+  getCapabilities (): WebGPUCapabilities | null
   getFallbackTexture (): GPUTexture
+  getFallbackStorageTexture (dimension?: '2d' | '2d_array'): GPUTexture
   getOutputPipelineEntry (signature: string, code: string): unknown
   getObjectId (value: object | null | undefined): number
-  getTextureView (texture: GPUTexture): GPUTextureView
+  getTextureView (texture: GPUTexture, dimension?: GPUTextureViewDimension): GPUTextureView
   beginFrame (): GPUCommandEncoder | null
   submitFrame (encoder: GPUCommandEncoder | null): void
   renderTextureToScreen (encoder: GPUCommandEncoder, texture: GPUTexture | null): void
@@ -122,6 +188,7 @@ export declare class WebGPUOutputNode implements HydraOutputAdapter {
   setPipelineErrorHandler (
     handler: ((context: { outputLabel: string, passIndex: number, signature: string, error: unknown }) => void) | null
   ): void
+  emitEvent (name: string): void
   attachRenderer (renderer: WebGPURenderer): void
   resize (width: number, height: number): void
   getCurrent (): GPUTexture | null
@@ -154,12 +221,14 @@ export declare class HydraBrowserRuntime {
   readonly outputs: WebGPUOutputNode[]
   readonly sources: HydraSourceNode[]
   readonly synth: Record<string, unknown>
+  capabilities: WebGPUCapabilities | null
   constructor (options: HydraBrowserRuntimeOptions)
   get bindings (): Readonly<Record<string, unknown>>
   init (): Promise<void>
   start (): Promise<void>
   stop (): void
   tick (deltaMs?: number): void
+  emitEvent (name: string): void
   render (output?: WebGPUOutputNode): void
   setResolution (width: number, height: number): void
   createSource (): HydraSourceNode

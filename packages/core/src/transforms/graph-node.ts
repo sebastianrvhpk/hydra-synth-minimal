@@ -49,6 +49,7 @@ export class HydraGraphNode {
     const passes: HydraTransformCall[][] = []
     let currentPass: HydraTransformCall[] = []
     let shouldInjectPrev = false
+    const standalonePassTypes = new Set(['renderpass', 'simulation', 'analysis', 'kernel'])
 
     const pushCurrentPass = (): void => {
       if (currentPass.length === 0) return
@@ -57,10 +58,11 @@ export class HydraGraphNode {
     }
 
     for (const transform of transforms) {
-      if (transform.transform.type === 'renderpass') {
+      if (standalonePassTypes.has(transform.transform.type)) {
         pushCurrentPass()
-        // Identity renderpass() acts as a pass boundary; no standalone dispatch needed.
-        if (transform.name !== 'renderpass') passes.push([transform])
+        const isIdentityRenderpass =
+          transform.transform.type === 'renderpass' && transform.name === 'renderpass'
+        if (!isIdentityRenderpass) passes.push([transform])
         shouldInjectPrev = true
         continue
       }

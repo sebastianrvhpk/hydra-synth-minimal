@@ -11,7 +11,7 @@ import type { BrowserHost } from './browser-host.js'
 import { WebGPUOutputNode } from './output-node.js'
 import { WebGPUFrameRendererAdapter } from './renderer-adapter.js'
 import { HydraSourceNode, type PatchBayAdapter } from './source-node.js'
-import type { WebGPURenderer } from '../webgpu/renderer.js'
+import type { WebGPUCapabilities, WebGPURenderer } from '../webgpu/renderer.js'
 
 export interface HydraBrowserRuntimeOptions {
   host: BrowserHost
@@ -35,6 +35,7 @@ export class HydraBrowserRuntime {
   readonly outputs: WebGPUOutputNode[]
   readonly sources: HydraSourceNode[]
   readonly synth: Record<string, unknown>
+  capabilities: WebGPUCapabilities | null = null
 
   private readonly registry: HydraTransformRegistry
   private readonly patchbay: PatchBayAdapter | null
@@ -114,10 +115,12 @@ export class HydraBrowserRuntime {
 
     this.synth = this.engine.getBindings() as Record<string, unknown>
     this.synth.stats = { fps: 0 }
+    this.synth.capabilities = this.capabilities
     this.synth.render = this.render.bind(this)
     this.synth.setResolution = this.setResolution.bind(this)
     this.synth.hush = this.hush.bind(this)
     this.synth.tick = this.tick.bind(this)
+    this.synth.emitEvent = this.emitEvent.bind(this)
     this.synth.createSource = this.createSource.bind(this)
 
     this.outputs.forEach((output, index) => {
@@ -155,7 +158,10 @@ export class HydraBrowserRuntime {
   async init (): Promise<void> {
     if (this.disposed) return
     if (this.initPromise) return this.initPromise
-    this.initPromise = this.engine.init()
+    this.initPromise = this.engine.init().then(() => {
+      this.capabilities = this.renderer.getCapabilities()
+      this.synth.capabilities = this.capabilities
+    })
     return this.initPromise
   }
 
@@ -176,6 +182,11 @@ export class HydraBrowserRuntime {
     this.engine.tick(deltaMs)
     const stats = this.synth.stats as { fps: number }
     stats.fps = deltaMs > 0 ? Math.ceil(1000 / deltaMs) : 0
+  }
+
+  emitEvent (name: string): void {
+    if (!name) return
+    this.outputs.forEach((output) => output.emitEvent(name))
   }
 
   render (output?: WebGPUOutputNode): void {

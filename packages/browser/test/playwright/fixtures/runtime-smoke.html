@@ -3,6 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <title>Hydra Browser Smoke</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "hydra-synth-core": "/packages/core/dist/index.js"
+        }
+      }
+    </script>
   </head>
   <body>
     <script type="module">
@@ -11,7 +18,7 @@
         HydraBrowserRuntime,
         WEBGPU_UNAVAILABLE_MESSAGE,
         WebGPURenderer
-      } from '../../../dist/index.js'
+      } from '/packages/browser/dist/index.js'
 
       const params = new URLSearchParams(window.location.search)
       const mode = params.get('mode') ?? 'auto'
@@ -19,6 +26,22 @@
       const publish = (result) => {
         window.__hydraSmokeResult = result
         window.__hydraSmokeDone = true
+      }
+
+      const toMessage = (value) => {
+        if (!value) return ''
+        if (typeof value === 'string') return value
+        if (value instanceof Error) return value.message
+        if (typeof value === 'object' && typeof value.message === 'string') return value.message
+        return String(value)
+      }
+
+      const toCause = (value) => {
+        if (!value || typeof value !== 'object') return null
+        if (value.envelope && typeof value.envelope === 'object') {
+          return value.envelope.cause ?? null
+        }
+        return value.cause ?? null
       }
 
       const run = async () => {
@@ -53,10 +76,30 @@
           runtime.dispose()
           publish({ status: 'ok' })
         } catch (error) {
+          const message = toMessage(error)
+          const causeMessage = toMessage(toCause(error))
+          const isUnavailableError = (
+            message.includes('WebGPU context creation failed') ||
+            message.includes(WEBGPU_UNAVAILABLE_MESSAGE) ||
+            message.includes('No compatible GPU adapter') ||
+            causeMessage.includes('WebGPU context creation failed') ||
+            causeMessage.includes(WEBGPU_UNAVAILABLE_MESSAGE) ||
+            causeMessage.includes('No compatible GPU adapter')
+          )
+
           runtime.dispose()
+          if (mode === 'auto' && isUnavailableError) {
+            publish({
+              status: 'no-webgpu',
+              message,
+              causeMessage
+            })
+            return
+          }
           publish({
             status: 'error',
-            message: error instanceof Error ? error.message : String(error),
+            message,
+            causeMessage,
             expectedUnavailableMessage: WEBGPU_UNAVAILABLE_MESSAGE
           })
         }

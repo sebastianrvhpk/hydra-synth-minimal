@@ -1,6 +1,7 @@
 import type {
   HydraTransformDefinition,
   HydraTransformInput,
+  HydraPassSchedule,
   HydraTransformType,
   HydraWgslType,
   ProcessedHydraTransform
@@ -36,6 +37,18 @@ const typeLookup: Record<HydraTransformType, { returnType: HydraWgslType, args: 
   renderpass: {
     returnType: 'vec4f',
     args: [{ type: 'vec2', name: '_st', default: undefined }]
+  },
+  simulation: {
+    returnType: 'vec4f',
+    args: [{ type: 'vec2', name: '_st', default: undefined }]
+  },
+  analysis: {
+    returnType: 'vec4f',
+    args: [{ type: 'vec2', name: '_st', default: undefined }]
+  },
+  kernel: {
+    returnType: 'vec4f',
+    args: [{ type: 'vec2', name: '_st', default: undefined }]
   }
 }
 
@@ -46,7 +59,20 @@ const typeToWgsl = (type: HydraTransformInput['type']): HydraWgslType => {
     case 'vec3': return 'vec3f'
     case 'vec4': return 'vec4f'
     case 'sampler2D': return 'texture_2d<f32>'
+    case 'storageTexture2D': return 'texture_storage_2d<rgba8unorm, read_write>'
+    case 'storageTexture2DArray': return 'texture_storage_2d_array<rgba8unorm, read_write>'
+    case 'storageBuffer': return 'ptr<storage, array<vec4f>, read_write>'
     default: return 'f32'
+  }
+}
+
+const normalizeSchedule = (definition: HydraTransformDefinition): HydraPassSchedule => {
+  const scale = Number(definition.resolutionScale ?? 1)
+  const resolutionScale = Number.isFinite(scale) && scale > 0 ? scale : 1
+  return {
+    resolutionScale,
+    updateRate: definition.updateRate ?? 'everyFrame',
+    sparse: Boolean(definition.sparse)
   }
 }
 
@@ -70,8 +96,10 @@ ${definition.wgsl}
 
   return {
     ...definition,
+    resources: definition.resources ?? [],
     inputs: inputs.slice(1),
     wgsl: wgslFunction,
-    wgsl_return_type: typeConfig.returnType
+    wgsl_return_type: typeConfig.returnType,
+    schedule: normalizeSchedule(definition)
   }
 }

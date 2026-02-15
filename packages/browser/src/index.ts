@@ -1,4 +1,6 @@
 import {
+  type HydraAnalysisOutputBinding,
+  type HydraDispatchConfig,
   HydraEngine,
   type HydraEngineBindingHost,
   type HydraEngineError,
@@ -6,7 +8,17 @@ import {
   type HydraEngineOptions,
   type HydraErrorPolicy,
   type HydraFrameState,
+  type HydraPassIRNode,
+  type HydraPassSchedule,
+  type HydraPassUpdateRate,
   type RendererAdapter,
+  type HydraResourceAccess,
+  type HydraResourceElementType,
+  type HydraResourceFormat,
+  type HydraResourceLifetime,
+  type HydraStorageBufferBinding,
+  type HydraStorageTextureBinding,
+  type HydraTransformResource,
   type ScriptPlugin,
   type SourceAdapter
 } from 'hydra-synth-core'
@@ -29,16 +41,36 @@ import { BrowserHost, type BrowserHostOptions } from './runtime/browser-host.js'
 import { HydraBrowserRuntime, type HydraBrowserRuntimeOptions } from './runtime/runtime.js'
 import { WebGPUOutputNode } from './runtime/output-node.js'
 import { HydraSourceNode, type PatchBayAdapter } from './runtime/source-node.js'
-import { WEBGPU_UNAVAILABLE_MESSAGE, WebGPURenderer, type WebGPURendererOptions } from './webgpu/renderer.js'
+import {
+  WEBGPU_UNAVAILABLE_MESSAGE,
+  WebGPURenderer,
+  type WebGPUCapabilities,
+  type WebGPUComputeCapabilities,
+  type WebGPUStorageCapabilities,
+  type WebGPURendererOptions,
+  type WebGPUSubgroupCapabilities
+} from './webgpu/renderer.js'
 
 export { HydraEngine }
 export type {
+  HydraAnalysisOutputBinding,
+  HydraDispatchConfig,
   HydraEngineBindingHost,
   HydraEngineError,
   HydraEngineErrorType,
   HydraEngineOptions,
   HydraErrorPolicy,
   HydraFrameState,
+  HydraPassIRNode,
+  HydraPassSchedule,
+  HydraPassUpdateRate,
+  HydraResourceAccess,
+  HydraResourceElementType,
+  HydraResourceFormat,
+  HydraResourceLifetime,
+  HydraStorageBufferBinding,
+  HydraStorageTextureBinding,
+  HydraTransformResource,
   RendererAdapter,
   ScriptPlugin,
   SourceAdapter,
@@ -51,7 +83,11 @@ export type {
   CaptureFrameSequenceResult,
   CaptureHydraFrameSequenceFrameInfo,
   CaptureHydraFrameSequenceOptions,
-  FfmpegCommandSet
+  FfmpegCommandSet,
+  WebGPUCapabilities,
+  WebGPUComputeCapabilities,
+  WebGPUStorageCapabilities,
+  WebGPUSubgroupCapabilities
 }
 
 export { WEBGPU_UNAVAILABLE_MESSAGE, WebGPURenderer, BrowserHost, HydraBrowserRuntime, HydraSourceNode, WebGPUOutputNode }

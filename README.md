@@ -65,8 +65,19 @@ Built-in renderpass transforms:
 - `renderpass()` identity pass boundary marker (`prevBuffer` handoff, no extra standalone dispatch)
 - `blurX(amount = 1)`
 - `blurY(amount = 1)`
+- `blurTiledX(amount = 1)` (workgroup-tiled horizontal blur with runtime fallback)
+- `blurTiledY(amount = 1)` (workgroup-tiled vertical blur with runtime fallback)
 - `blur(amount = 1)` (single-pass 3x3 Gaussian-like kernel)
 - `bloom(amount = 0.8, radius = 1, threshold = 0.6, softness = 0.1)` (single-pass bright-knee bloom over `prevBuffer`)
+- `blurFast(amount = 1)` (low-cost cross blur)
+- `blurBilateral(radius = 1, sigmaColor = 18)` (edge-aware blur)
+- `edgeDetect(amount = 1, mixAmount = 1)` (Scharr-style edge response)
+- `edgeLaplacian(amount = 1, mixAmount = 1)`
+- staged bloom helpers:
+  `bloomThreshold(threshold = 0.6, softness = 0.1)`,
+  `bloomDownsample(radius = 1)`,
+  `bloomUpsample(radius = 1, boost = 1)`,
+  `bloomMix(base, amount = 0.8)`
 
 ### Explicit Host Wiring
 

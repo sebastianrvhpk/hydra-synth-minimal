@@ -10,6 +10,34 @@ export interface WebGPURendererOptions {
   height?: number
 }
 
+export interface WebGPUComputeCapabilities {
+  maxComputeInvocationsPerWorkgroup: number
+  maxComputeWorkgroupStorageSize: number
+  maxComputeWorkgroupSizeX: number
+  maxComputeWorkgroupSizeY: number
+  maxComputeWorkgroupSizeZ: number
+}
+
+export interface WebGPUStorageCapabilities {
+  maxStorageBuffersPerShaderStage: number
+  maxStorageTexturesPerShaderStage: number
+  maxBufferSize: number
+  preferredStorageFormats: string[]
+}
+
+export interface WebGPUSubgroupCapabilities {
+  supported: boolean
+  minSize: number | null
+  maxSize: number | null
+}
+
+export interface WebGPUCapabilities {
+  compute: WebGPUComputeCapabilities
+  storage: WebGPUStorageCapabilities
+  subgroups: WebGPUSubgroupCapabilities
+  features: string[]
+}
+
 export class WebGPURenderer {
   readonly canvas: HTMLCanvasElement
   width: number
@@ -24,13 +52,15 @@ export class WebGPURenderer {
   globalUniformBuffer: GPUBuffer | null = null
   linearSampler: GPUSampler | null = null
   fallbackTexture: GPUTexture | null = null
+  fallbackTextureArray: GPUTexture | null = null
+  capabilities: WebGPUCapabilities | null = null
 
   private outputPipelineCache: PipelineCache | null = null
   private screenPipeline: GPURenderPipeline | null = null
   private screenAllPipeline: GPURenderPipeline | null = null
 
   private readonly globalUniformData = new Float32Array(4)
-  private textureViewCache = new WeakMap<GPUTexture, GPUTextureView>()
+  private textureViewCache = new WeakMap<GPUTexture, Map<string, GPUTextureView>>()
   private objectIds = new WeakMap<object, number>()
   private nextObjectId = 1
 
@@ -68,6 +98,7 @@ export class WebGPURenderer {
 
     this.device = await this.adapter.requestDevice()
     this.canvasFormat = navigator.gpu.getPreferredCanvasFormat()
+    this.capabilities = this.inspectCapabilities()
 
     this.configureCanvas()
     this.initGlobalResources()
@@ -81,6 +112,41 @@ export class WebGPURenderer {
 
     this.ready = true
     return this
+  }
+
+  private inspectCapabilities (): WebGPUCapabilities | null {
+    if (!this.adapter || !this.device) return null
+
+    const limits = this.device.limits as unknown as Record<string, number>
+    const readLimit = (name: string, fallback = 0): number => {
+      const value = limits[name]
+      return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+    }
+
+    const features = Array.from(this.adapter.features.values()).map((entry) => `${entry}`)
+    const subgroupSupported = features.includes('subgroups')
+
+    return {
+      compute: {
+        maxComputeInvocationsPerWorkgroup: readLimit('maxComputeInvocationsPerWorkgroup'),
+        maxComputeWorkgroupStorageSize: readLimit('maxComputeWorkgroupStorageSize'),
+        maxComputeWorkgroupSizeX: readLimit('maxComputeWorkgroupSizeX'),
+        maxComputeWorkgroupSizeY: readLimit('maxComputeWorkgroupSizeY'),
+        maxComputeWorkgroupSizeZ: readLimit('maxComputeWorkgroupSizeZ')
+      },
+      storage: {
+        maxStorageBuffersPerShaderStage: readLimit('maxStorageBuffersPerShaderStage'),
+        maxStorageTexturesPerShaderStage: readLimit('maxStorageTexturesPerShaderStage'),
+        maxBufferSize: readLimit('maxBufferSize'),
+        preferredStorageFormats: ['rgba8unorm', 'rgba16float', 'r32float', 'rg32float', 'r32uint']
+      },
+      subgroups: {
+        supported: subgroupSupported,
+        minSize: subgroupSupported ? readLimit('subgroupMinSize', 0) || null : null,
+        maxSize: subgroupSupported ? readLimit('subgroupMaxSize', 0) || null : null
+      },
+      features
+    }
   }
 
   private configureCanvas (): void {
@@ -114,6 +180,13 @@ export class WebGPURenderer {
       width: 1,
       height: 1,
       label: 'hydra-fallback-texture'
+    })
+    this.fallbackTextureArray = this.createOutputTexture({
+      width: 1,
+      height: 1,
+      depthOrArrayLayers: 1,
+      label: 'hydra-fallback-texture-array',
+      includeRenderAttachment: false
     })
 
     const encoder = this.device.createCommandEncoder({ label: 'hydra-fallback-clear' })
@@ -278,17 +351,31 @@ fn fsMain(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
     this.device.queue.writeBuffer(this.globalUniformBuffer, 0, this.globalUniformData)
   }
 
-  createOutputTexture ({ width = this.width, height = this.height, label = '' }: { width?: number, height?: number, label?: string } = {}): GPUTexture {
+  createOutputTexture ({
+    width = this.width,
+    height = this.height,
+    depthOrArrayLayers = 1,
+    label = '',
+    format = OUTPUT_TEXTURE_FORMAT,
+    includeRenderAttachment = true
+  }: {
+    width?: number,
+    height?: number,
+    depthOrArrayLayers?: number,
+    label?: string,
+    format?: GPUTextureFormat,
+    includeRenderAttachment?: boolean
+  } = {}): GPUTexture {
     if (!this.device) throw new Error('Renderer not initialized.')
     return this.device.createTexture({
       label: label || 'hydra-output-texture',
       size: {
         width: Math.max(1, Math.floor(width)),
         height: Math.max(1, Math.floor(height)),
-        depthOrArrayLayers: 1
+        depthOrArrayLayers: Math.max(1, Math.floor(depthOrArrayLayers))
       },
-      format: OUTPUT_TEXTURE_FORMAT,
-      usage: createOutputTextureUsage()
+      format,
+      usage: createOutputTextureUsage({ includeRenderAttachment })
     })
   }
 
@@ -301,9 +388,31 @@ fn fsMain(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
     })
   }
 
+  createStorageBuffer (label: string, byteLength: number): GPUBuffer {
+    if (!this.device) throw new Error('Renderer not initialized.')
+    const aligned = Math.max(16, Math.ceil(Math.max(1, byteLength) / 16) * 16)
+    return this.device.createBuffer({
+      label,
+      size: aligned,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC
+    })
+  }
+
+  getCapabilities (): WebGPUCapabilities | null {
+    return this.capabilities
+  }
+
   getFallbackTexture (): GPUTexture {
     if (!this.fallbackTexture) throw new Error('Renderer fallback texture is not initialized.')
     return this.fallbackTexture
+  }
+
+  getFallbackStorageTexture (dimension: '2d' | '2d_array' = '2d'): GPUTexture {
+    if (dimension === '2d_array') {
+      if (!this.fallbackTextureArray) throw new Error('Renderer array fallback texture is not initialized.')
+      return this.fallbackTextureArray
+    }
+    return this.getFallbackTexture()
   }
 
   getOutputPipelineEntry (signature: string, code: string) {
@@ -321,11 +430,18 @@ fn fsMain(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
     return id
   }
 
-  getTextureView (texture: GPUTexture): GPUTextureView {
-    let view = this.textureViewCache.get(texture)
+  getTextureView (texture: GPUTexture, dimension: GPUTextureViewDimension = '2d'): GPUTextureView {
+    let viewCache = this.textureViewCache.get(texture)
+    if (!viewCache) {
+      viewCache = new Map<string, GPUTextureView>()
+      this.textureViewCache.set(texture, viewCache)
+    }
+
+    const cacheKey = dimension
+    let view = viewCache.get(cacheKey)
     if (!view) {
-      view = texture.createView()
-      this.textureViewCache.set(texture, view)
+      view = texture.createView({ dimension })
+      viewCache.set(cacheKey, view)
     }
     return view
   }
@@ -452,6 +568,8 @@ fn fsMain(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
 
     if (this.fallbackTexture) this.fallbackTexture.destroy()
     this.fallbackTexture = null
+    if (this.fallbackTextureArray) this.fallbackTextureArray.destroy()
+    this.fallbackTextureArray = null
 
     this.textureViewCache = new WeakMap()
     this.objectIds = new WeakMap()
@@ -460,6 +578,7 @@ fn fsMain(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
     this.screenPipeline = null
     this.screenAllPipeline = null
     this.linearSampler = null
+    this.capabilities = null
     this.context = null
     this.device = null
     this.adapter = null
