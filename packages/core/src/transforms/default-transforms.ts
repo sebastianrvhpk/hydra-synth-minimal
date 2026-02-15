@@ -1179,6 +1179,12 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
   {
     name: 'edgeDetect',
     type: 'renderpass',
+    computeKernel: {
+      kind: 'stencil3x3',
+      operator: 'edgeDetect',
+      preferredVariant: 'auto',
+      allowSubgroups: true
+    },
     inputs: [
       { type: 'float', name: 'amount', default: 1.0 },
       { type: 'float', name: 'mixAmount', default: 1.0 }
@@ -1220,6 +1226,12 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
   {
     name: 'edgeLaplacian',
     type: 'renderpass',
+    computeKernel: {
+      kind: 'stencil3x3',
+      operator: 'edgeLaplacian',
+      preferredVariant: 'auto',
+      allowSubgroups: true
+    },
     inputs: [
       { type: 'float', name: 'amount', default: 1.0 },
       { type: 'float', name: 'mixAmount', default: 1.0 }

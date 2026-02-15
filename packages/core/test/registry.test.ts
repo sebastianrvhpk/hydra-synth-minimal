@@ -137,7 +137,7 @@ describe('HydraTransformRegistry', () => {
     expect(wgsl).toContain('fn vignette')
     expect(wgsl).toContain('fn filmGrain')
     expect(wgsl).toContain('fn dither')
-    expect(wgsl).toContain('fn edgeDetect')
+    expect(wgsl).toContain('hydraTileIndex')
     expect(wgsl).toContain('fn radialBlur')
     expect(wgsl).toContain('fn zoomBlur')
     expect(wgsl).toContain('fn dualKawaseBlur')
@@ -201,6 +201,36 @@ describe('HydraTransformRegistry', () => {
     expect(subgroupYPass.fallbackPass?.dispatch?.mode).toBe('indirect')
     expect(subgroupXPass.fallbackPass?.fallbackPass).toBeDefined()
     expect(subgroupYPass.fallbackPass?.fallbackPass).toBeDefined()
+  })
+
+  it('specializes edgeDetect/edgeLaplacian into subgroup variants with tiled+generic fallback chains', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators.osc(8, 0.1, 0).edgeDetect(1, 1).edgeLaplacian(1, 1).out()
+
+    expect(output.passes.length).toBe(3)
+    const edgeDetectPass = output.passes[1]
+    const edgeLaplacianPass = output.passes[2]
+
+    expect(edgeDetectPass.wgsl).toContain('subgroup_invocation_id')
+    expect(edgeLaplacianPass.wgsl).toContain('subgroup_invocation_id')
+    expect(edgeDetectPass.wgsl).toContain('var<workgroup> tile')
+    expect(edgeLaplacianPass.wgsl).toContain('var<workgroup> tile')
+    expect(edgeDetectPass.dispatch?.workgroupSize).toEqual([16, 16, 1])
+    expect(edgeLaplacianPass.dispatch?.workgroupSize).toEqual([16, 16, 1])
+    expect(edgeDetectPass.dispatch?.requiredFeatures).toEqual(['subgroups'])
+    expect(edgeLaplacianPass.dispatch?.requiredFeatures).toEqual(['subgroups'])
+    expect((edgeDetectPass.dispatch?.requiredWorkgroupStorageBytes ?? 0) > 0).toBe(true)
+    expect((edgeLaplacianPass.dispatch?.requiredWorkgroupStorageBytes ?? 0) > 0).toBe(true)
+    expect(edgeDetectPass.fallbackPass).toBeDefined()
+    expect(edgeLaplacianPass.fallbackPass).toBeDefined()
+    expect(edgeDetectPass.fallbackPass?.dispatch?.mode).toBe('indirect')
+    expect(edgeLaplacianPass.fallbackPass?.dispatch?.mode).toBe('indirect')
+    expect(edgeDetectPass.fallbackPass?.fallbackPass).toBeDefined()
+    expect(edgeLaplacianPass.fallbackPass?.fallbackPass).toBeDefined()
+    expect(edgeDetectPass.fallbackPass?.fallbackPass?.wgsl).toContain('fn edgeDetect')
+    expect(edgeLaplacianPass.fallbackPass?.fallbackPass?.wgsl).toContain('fn edgeLaplacian')
   })
 
   it('injects prev() when chaining non-src transforms after renderpass boundaries', () => {

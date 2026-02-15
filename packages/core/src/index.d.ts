@@ -103,12 +103,23 @@ export type HydraResourceElementType = 'f32' | 'vec2f' | 'vec3f' | 'vec4f' | 'u3
 
 export type HydraComputeKernelVariant = 'generic' | 'tiled' | 'subgroup'
 
-export interface HydraComputeKernelDescriptor {
+export interface HydraSeparableBlurKernelDescriptor {
   kind: 'separableBlur'
   axis: 'x' | 'y'
   preferredVariant?: HydraComputeKernelVariant | 'auto'
   allowSubgroups?: boolean
 }
+
+export interface HydraStencil3x3KernelDescriptor {
+  kind: 'stencil3x3'
+  operator: 'edgeDetect' | 'edgeLaplacian'
+  preferredVariant?: HydraComputeKernelVariant | 'auto'
+  allowSubgroups?: boolean
+}
+
+export type HydraComputeKernelDescriptor =
+  | HydraSeparableBlurKernelDescriptor
+  | HydraStencil3x3KernelDescriptor
 export type HydraPassUpdateRate = 'everyFrame' | { everyNFrames: number } | { onEvent: string }
 
 export interface HydraAnalysisOutputBinding {

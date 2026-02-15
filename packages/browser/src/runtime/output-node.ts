@@ -44,10 +44,46 @@ interface AnalysisReadbackState {
   busy: boolean
 }
 
+interface AnalysisReductionPyramid {
+  width: number
+  height: number
+  textures: GPUTexture[]
+}
+
 const DEFAULT_WORKGROUP_SIZE: [number, number, number] = [16, 16, 1]
 const WORKGROUP_SIZE_PATTERN = /@workgroup_size\(\s*(\d+)\s*(?:,\s*(\d+)\s*)?(?:,\s*(\d+)\s*)?\)/
 const MAX_SCALED_TEXTURE_PAIRS = 8
+const MAX_BIND_GROUP_CACHE_ENTRIES = 64
 const DEFAULT_HISTORY_DEPTH = 0
+const ANALYSIS_REDUCTION_WORKGROUP_SIZE = 8
+const ANALYSIS_REDUCTION_PIPELINE_SIGNATURE = '__hydra-analysis-reduction-v1'
+const ANALYSIS_REDUCTION_WGSL = `
+@group(0) @binding(0) var inTex: texture_2d<f32>;
+@group(0) @binding(1) var outTex: texture_storage_2d<rgba8unorm, write>;
+
+fn hydraLoadClamped(coord: vec2i, dims: vec2i) -> vec4f {
+  let clamped = clamp(coord, vec2i(0), dims - vec2i(1));
+  return textureLoad(inTex, clamped, 0);
+}
+
+@compute @workgroup_size(${ANALYSIS_REDUCTION_WORKGROUP_SIZE}, ${ANALYSIS_REDUCTION_WORKGROUP_SIZE}, 1)
+fn csMain(@builtin(global_invocation_id) invocationId: vec3u) {
+  let outDims = vec2u(textureDimensions(outTex));
+  if (invocationId.x >= outDims.x || invocationId.y >= outDims.y) {
+    return;
+  }
+
+  let inDims = vec2i(textureDimensions(inTex));
+  let base = vec2i(invocationId.xy * 2u);
+
+  let c0 = hydraLoadClamped(base, inDims);
+  let c1 = hydraLoadClamped(base + vec2i(1, 0), inDims);
+  let c2 = hydraLoadClamped(base + vec2i(0, 1), inDims);
+  let c3 = hydraLoadClamped(base + vec2i(1, 1), inDims);
+
+  textureStore(outTex, vec2i(invocationId.xy), (c0 + c1 + c2 + c3) * 0.25);
+}
+`
 
 const getWorkgroupSize = (wgsl: string): [number, number, number] => {
   const match = WORKGROUP_SIZE_PATTERN.exec(wgsl)
@@ -82,14 +118,15 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
   private readonly reportedPipelineErrors = new Set<string>()
   private pipelineErrorHandler: ((context: PipelineErrorContext) => void) | null = null
 
-  private bindGroupCacheKey = ''
-  private bindGroupCache: GPUBindGroup | null = null
+  private readonly bindGroupCache = new Map<string, GPUBindGroup>()
   private readonly resolvedTexturesScratch: Array<GPUTexture | null> = []
   private readonly resolvedStorageTexturesScratch: Array<GPUTexture | null> = []
   private readonly resolvedStorageBuffersScratch: Array<GPUBuffer | null> = []
   private readonly scaledTexturePairs = new Map<string, SizedTexturePair>()
   private readonly internalIndirectBuffers = new Map<string, GPUBuffer>()
+  private readonly internalIndirectDispatchState = new Map<string, { x: number, y: number, z: number, offset: number }>()
   private readonly analysisReadbacks = new Map<string, AnalysisReadbackState>()
+  private readonly analysisReductionPyramids = new Map<string, AnalysisReductionPyramid>()
   private readonly analysisValues: Record<string, number | number[]> = {}
   private readonly persistentTextures = new Map<string, GPUTexture>()
   private readonly persistentBuffers = new Map<string, GPUBuffer>()
@@ -263,11 +300,20 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
       if (activeSignatures.has(signature)) return
       buffer.destroy()
       this.internalIndirectBuffers.delete(signature)
+      this.internalIndirectDispatchState.delete(signature)
     })
     this.analysisReadbacks.forEach((state, signature) => {
       if (activeSignatures.has(signature)) return
       if (state.buffer) state.buffer.destroy()
       this.analysisReadbacks.delete(signature)
+    })
+    this.analysisReductionPyramids.forEach((pyramid, key) => {
+      const marker = '::dims='
+      const markerIndex = key.lastIndexOf(marker)
+      const signature = markerIndex >= 0 ? key.slice(0, markerIndex) : key
+      if (activeSignatures.has(signature)) return
+      pyramid.textures.forEach((texture) => texture.destroy())
+      this.analysisReductionPyramids.delete(key)
     })
   }
 
@@ -363,9 +409,11 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
   resize (width: number, height: number): void {
     this.width = width
     this.height = height
+    this.invalidateBindGroupCache()
     this.destroyScaledTexturePairs()
     this.clearInternalIndirectBuffers()
     this.clearAnalysisReadbacks()
+    this.clearAnalysisReductionPyramids()
     this.persistentTextures.forEach((texture) => texture.destroy())
     this.persistentTextures.clear()
     this.persistentBuffers.forEach((buffer) => buffer.destroy())
@@ -447,8 +495,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
   }
 
   private invalidateBindGroupCache (): void {
-    this.bindGroupCacheKey = ''
-    this.bindGroupCache = null
+    this.bindGroupCache.clear()
   }
 
   private hasRequiredFeatures (pass: HydraCompiledPass): boolean {
@@ -723,6 +770,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
       buffer.destroy()
     })
     this.internalIndirectBuffers.clear()
+    this.internalIndirectDispatchState.clear()
   }
 
   private getOrCreateInternalIndirectBuffer (pass: HydraCompiledPass): GPUBuffer | null {
@@ -788,6 +836,106 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     return created
   }
 
+  private getAnalysisReductionPyramidKey (signature: string, width: number, height: number): string {
+    return `${signature}::dims=${Math.max(1, width)}x${Math.max(1, height)}`
+  }
+
+  private getOrCreateAnalysisReductionPyramid (
+    signature: string,
+    width: number,
+    height: number
+  ): AnalysisReductionPyramid | null {
+    if (!this.renderer || !this.renderer.ready) return null
+    const key = this.getAnalysisReductionPyramidKey(signature, width, height)
+    const existing = this.analysisReductionPyramids.get(key)
+    if (existing) return existing
+
+    let nextWidth = Math.max(1, width)
+    let nextHeight = Math.max(1, height)
+    const textures: GPUTexture[] = []
+
+    while (nextWidth > 1 || nextHeight > 1) {
+      nextWidth = Math.max(1, Math.ceil(nextWidth / 2))
+      nextHeight = Math.max(1, Math.ceil(nextHeight / 2))
+      textures.push(this.renderer.createOutputTexture({
+        width: nextWidth,
+        height: nextHeight,
+        label: `${this.label}-analysis-reduce-${signature}-${nextWidth}x${nextHeight}`,
+        includeRenderAttachment: false
+      }))
+    }
+
+    const created: AnalysisReductionPyramid = {
+      width: Math.max(1, width),
+      height: Math.max(1, height),
+      textures
+    }
+    this.analysisReductionPyramids.set(key, created)
+    return created
+  }
+
+  private clearAnalysisReductionPyramids (): void {
+    this.analysisReductionPyramids.forEach((pyramid) => {
+      pyramid.textures.forEach((texture) => texture.destroy())
+    })
+    this.analysisReductionPyramids.clear()
+  }
+
+  private getAnalysisReductionPipeline (): GPUComputePipeline | null {
+    if (!this.renderer || !this.renderer.ready) return null
+    const entry = this.renderer.getOutputPipelineEntry(
+      ANALYSIS_REDUCTION_PIPELINE_SIGNATURE,
+      ANALYSIS_REDUCTION_WGSL
+    ) as PipelineEntry | null
+    if (!entry || entry.error || !entry.pipeline) return null
+    return entry.pipeline
+  }
+
+  private reduceAnalysisTextureToSinglePixel (
+    pass: HydraCompiledPass,
+    texture: GPUTexture,
+    width: number,
+    height: number,
+    encoder: GPUCommandEncoder
+  ): { texture: GPUTexture, width: number, height: number } | null {
+    if (!this.renderer || !this.renderer.ready || !this.renderer.device) return null
+    if (width <= 1 && height <= 1) return { texture, width, height }
+
+    const pipeline = this.getAnalysisReductionPipeline()
+    if (!pipeline) return null
+    const pyramid = this.getOrCreateAnalysisReductionPyramid(pass.signature, width, height)
+    if (!pyramid || pyramid.textures.length === 0) return null
+
+    let readTexture = texture
+    let readWidth = Math.max(1, width)
+    let readHeight = Math.max(1, height)
+
+    for (let index = 0; index < pyramid.textures.length; index += 1) {
+      const targetTexture = pyramid.textures[index]
+      readWidth = Math.max(1, Math.ceil(readWidth / 2))
+      readHeight = Math.max(1, Math.ceil(readHeight / 2))
+      const bindGroup = this.renderer.device.createBindGroup({
+        layout: pipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: this.renderer.getTextureView(readTexture) },
+          { binding: 1, resource: this.renderer.getTextureView(targetTexture) }
+        ]
+      })
+      const computePass = encoder.beginComputePass()
+      computePass.setPipeline(pipeline)
+      computePass.setBindGroup(0, bindGroup)
+      computePass.dispatchWorkgroups(
+        Math.max(1, Math.ceil(readWidth / ANALYSIS_REDUCTION_WORKGROUP_SIZE)),
+        Math.max(1, Math.ceil(readHeight / ANALYSIS_REDUCTION_WORKGROUP_SIZE)),
+        1
+      )
+      computePass.end()
+      readTexture = targetTexture
+    }
+
+    return { texture: readTexture, width: readWidth, height: readHeight }
+  }
+
   private applyAnalysisBindings (
     analysisOut: HydraAnalysisOutputBinding[],
     rgba: [number, number, number, number]
@@ -822,7 +970,17 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     if (!analysisOut || analysisOut.length === 0) return
     if (!this.renderer || !this.renderer.ready || !this.renderer.device) return
 
-    const state = this.getOrCreateAnalysisReadback(pass, width, height)
+    let readTexture = texture
+    let readWidth = Math.max(1, width)
+    let readHeight = Math.max(1, height)
+    const reduced = this.reduceAnalysisTextureToSinglePixel(pass, texture, readWidth, readHeight, encoder)
+    if (reduced) {
+      readTexture = reduced.texture
+      readWidth = reduced.width
+      readHeight = reduced.height
+    }
+
+    const state = this.getOrCreateAnalysisReadback(pass, readWidth, readHeight)
     if (!state || !state.buffer || state.busy) return
 
     const copyTextureToBuffer = (encoder as unknown as {
@@ -836,7 +994,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
 
     copyTextureToBuffer.call(
       encoder,
-      { texture },
+      { texture: readTexture },
       {
         buffer: state.buffer,
         bytesPerRow: state.bytesPerRow,
@@ -941,8 +1099,11 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     }
     cacheKey += `|o${outputTextureBinding}:${this.renderer.getObjectId(writeTexture)}`
 
-    if (this.bindGroupCache && this.bindGroupCacheKey === cacheKey) {
-      return this.bindGroupCache
+    const cached = this.bindGroupCache.get(cacheKey)
+    if (cached) {
+      this.bindGroupCache.delete(cacheKey)
+      this.bindGroupCache.set(cacheKey, cached)
+      return cached
     }
 
     const entries: GPUBindGroupEntry[] = [
@@ -1001,12 +1162,17 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
       resource: this.renderer.getTextureView(writeTexture)
     })
 
-    this.bindGroupCache = this.renderer.device.createBindGroup({
+    const created = this.renderer.device.createBindGroup({
       layout: pipeline.getBindGroupLayout(0),
       entries
     })
-    this.bindGroupCacheKey = cacheKey
-    return this.bindGroupCache
+    this.bindGroupCache.set(cacheKey, created)
+    while (this.bindGroupCache.size > MAX_BIND_GROUP_CACHE_ENTRIES) {
+      const oldest = this.bindGroupCache.keys().next().value
+      if (!oldest) break
+      this.bindGroupCache.delete(oldest)
+    }
+    return created
   }
 
   tick (props: HydraFrameState, encoder: GPUCommandEncoder | null): void {
@@ -1109,11 +1275,27 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
         if (!indirectBuffer) {
           indirectBuffer = this.getOrCreateInternalIndirectBuffer(pass)
           if (indirectBuffer) {
-            this.renderer.device?.queue.writeBuffer(
-              indirectBuffer,
-              dispatchConfig.indirectOffset ?? 0,
-              new Uint32Array([workgroupsX, workgroupsY, 1])
-            )
+            const offset = dispatchConfig.indirectOffset ?? 0
+            const previous = this.internalIndirectDispatchState.get(pass.signature)
+            if (
+              !previous ||
+              previous.x !== workgroupsX ||
+              previous.y !== workgroupsY ||
+              previous.z !== 1 ||
+              previous.offset !== offset
+            ) {
+              this.renderer.device?.queue.writeBuffer(
+                indirectBuffer,
+                offset,
+                new Uint32Array([workgroupsX, workgroupsY, 1])
+              )
+              this.internalIndirectDispatchState.set(pass.signature, {
+                x: workgroupsX,
+                y: workgroupsY,
+                z: 1,
+                offset
+              })
+            }
           }
         }
 
@@ -1168,6 +1350,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     this.passOutputHistory = []
     this.clearInternalIndirectBuffers()
     this.clearAnalysisReadbacks()
+    this.clearAnalysisReductionPyramids()
     this.resetHistoryTextures()
     this.destroyScaledTexturePairs()
     this.resolvedTexturesScratch.length = 0

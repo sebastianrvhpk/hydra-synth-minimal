@@ -13,7 +13,7 @@ const createTestEncoder = (
   dispatches: DispatchLogEntry[],
   options: {
     onCopyTextureToTexture?: () => void
-    onCopyTextureToBuffer?: () => void
+    onCopyTextureToBuffer?: (copySize: GPUExtent3D) => void
   } = {}
 ): GPUCommandEncoder => ({
   beginComputePass: () => {
@@ -47,8 +47,12 @@ const createTestEncoder = (
   copyTextureToTexture: () => {
     options.onCopyTextureToTexture?.()
   },
-  copyTextureToBuffer: () => {
-    options.onCopyTextureToBuffer?.()
+  copyTextureToBuffer: (
+    _source: GPUImageCopyTexture,
+    _destination: GPUImageCopyBuffer,
+    copySize: GPUExtent3D
+  ) => {
+    options.onCopyTextureToBuffer?.(copySize)
   }
 }) as unknown as GPUCommandEncoder
 
@@ -62,6 +66,13 @@ const createRendererMock = (options: {
     includeRenderAttachment?: boolean
   }) => void
   onTextureView?: (dimension: GPUTextureViewDimension) => void
+  onCreateBindGroup?: () => void
+  onCreateReadbackBuffer?: (byteLength: number) => void
+  getOutputPipelineEntry?: (signature: string, code: string) => {
+    cacheKey: string
+    pipeline: { id: string, getBindGroupLayout: () => unknown } | null
+    error: unknown
+  }
 } = {}): unknown => {
   let textureCounter = 0
   const fallbackTexture = { id: 'fallback', destroy: () => {} } as unknown as GPUTexture
@@ -94,7 +105,10 @@ const createRendererMock = (options: {
       queue: {
         writeBuffer: () => {}
       },
-      createBindGroup: ({ entries }: { entries: unknown[] }) => ({ entries })
+      createBindGroup: ({ entries }: { entries: unknown[] }) => {
+        options.onCreateBindGroup?.()
+        return { entries }
+      }
     },
     createOutputTexture: (args: {
       width?: number
@@ -112,21 +126,27 @@ const createRendererMock = (options: {
     createDynamicUniformBuffer: () => ({ destroy: () => {} } as unknown as GPUBuffer),
     createStorageBuffer: () => ({ destroy: () => {} } as unknown as GPUBuffer),
     createIndirectDispatchBuffer: () => ({ destroy: () => {} } as unknown as GPUBuffer),
-    createReadbackBuffer: () => ({
+    createReadbackBuffer: (_label: string, byteLength: number) => {
+      options.onCreateReadbackBuffer?.(byteLength)
+      return ({
       destroy: () => {},
       mapAsync: async () => {},
       getMappedRange: () => new Uint8Array(256).buffer,
       unmap: () => {}
-    } as unknown as GPUBuffer),
+      } as unknown as GPUBuffer)
+    },
     updateGlobalUniforms: () => {},
-    getOutputPipelineEntry: (signature: string) => ({
-      cacheKey: signature,
-      pipeline: {
-        id: signature,
-        getBindGroupLayout: () => ({})
-      },
-      error: null
-    }),
+    getOutputPipelineEntry: (signature: string, code: string) => {
+      if (options.getOutputPipelineEntry) return options.getOutputPipelineEntry(signature, code)
+      return ({
+        cacheKey: signature,
+        pipeline: {
+          id: signature,
+          getBindGroupLayout: () => ({})
+        },
+        error: null
+      })
+    },
     getFallbackTexture: () => fallbackTexture,
     getFallbackStorageTexture: () => fallbackTexture,
     getTextureView: (_texture: GPUTexture, dimension: GPUTextureViewDimension = '2d') => {
@@ -508,6 +528,59 @@ describe('WebGPUOutputNode texture exposure', () => {
     expect(textureViewDimensions.includes('2d-array')).toBe(true)
   })
 
+  it('reuses cached bind groups across ping-pong output textures', () => {
+    let bindGroupCreations = 0
+    const pipelines = new Map<string, { id: string, getBindGroupLayout: () => unknown }>()
+    const renderer = createRendererMock({
+      onCreateBindGroup: () => {
+        bindGroupCreations += 1
+      },
+      getOutputPipelineEntry: (signature) => {
+        let pipeline = pipelines.get(signature)
+        if (!pipeline) {
+          pipeline = {
+            id: signature,
+            getBindGroupLayout: () => ({})
+          }
+          pipelines.set(signature, pipeline)
+        }
+        return {
+          cacheKey: signature,
+          pipeline,
+          error: null
+        }
+      }
+    })
+
+    const node = new WebGPUOutputNode({
+      renderer: renderer as never,
+      width: 2,
+      height: 2,
+      label: 'o-cache'
+    })
+
+    const pass: HydraCompiledPass = {
+      signature: 'bind-group-cache-pass',
+      wgsl: '@compute @workgroup_size(1, 1, 1) fn csMain() {}',
+      uniforms: [],
+      textures: [],
+      dispatch: {
+        mode: 'direct',
+        workgroupSize: [1, 1, 1]
+      }
+    }
+
+    node.render([pass])
+    const dispatches: DispatchLogEntry[] = []
+    const frame = { time: 0, bpm: 120, resolution: [2, 2], deltaMs: 16 } as unknown as Parameters<WebGPUOutputNode['tick']>[0]
+    node.tick(frame, createTestEncoder(dispatches))
+    node.tick({ ...frame, time: 0.016 }, createTestEncoder(dispatches))
+    node.tick({ ...frame, time: 0.032 }, createTestEncoder(dispatches))
+
+    expect(dispatches).toHaveLength(3)
+    expect(bindGroupCreations).toBe(2)
+  })
+
   it('falls back when required GPU features are unavailable', () => {
     const fallbackPass: HydraCompiledPass = {
       signature: 'fallback-feature',
@@ -569,7 +642,7 @@ describe('WebGPUOutputNode texture exposure', () => {
     expect(resolved?.[0]?.pass.signature).toBe('fallback-feature')
   })
 
-  it('allocates and uses internal indirect buffers when no external buffer is provided', () => {
+  it('allocates and reuses internal indirect dispatch buffers when dimensions are stable', () => {
     const renderer = createRendererMock() as unknown as {
       device: { queue: { writeBuffer: (buffer: GPUBuffer, offset: number, data: Uint32Array) => void } }
       createIndirectDispatchBuffer: (label: string) => GPUBuffer
@@ -606,11 +679,22 @@ describe('WebGPUOutputNode texture exposure', () => {
       { time: 0, bpm: 120, resolution: [2, 2], deltaMs: 16 } as unknown as Parameters<WebGPUOutputNode['tick']>[0],
       createTestEncoder(dispatches)
     )
+    node.tick(
+      { time: 0.016, bpm: 120, resolution: [2, 2], deltaMs: 16 } as unknown as Parameters<WebGPUOutputNode['tick']>[0],
+      createTestEncoder(dispatches)
+    )
+    node.resize(4, 2)
+    node.tick(
+      { time: 0.032, bpm: 120, resolution: [4, 2], deltaMs: 16 } as unknown as Parameters<WebGPUOutputNode['tick']>[0],
+      createTestEncoder(dispatches)
+    )
 
-    expect(dispatches).toHaveLength(1)
+    expect(dispatches).toHaveLength(3)
     expect(dispatches[0].mode).toBe('indirect')
     expect(dispatches[0].indirectBuffer).toBe(indirectBuffer)
     expect(writes[0]).toEqual([2, 2, 1])
+    expect(writes).toHaveLength(2)
+    expect(writes[1]).toEqual([4, 2, 1])
   })
 
   it('resolves prevN-style history texture bindings from frame history', () => {
@@ -678,6 +762,49 @@ describe('WebGPUOutputNode texture exposure', () => {
     const sampledEntry = sampledBindGroup.entries.find((entry) => entry.binding === 3)
     const historyTexture = (node as unknown as { historyTextures: Array<GPUTexture | null> }).historyTextures[0]
     expect(sampledEntry?.resource.texture).toBe(historyTexture)
+  })
+
+  it('reduces analysis readback textures to 1x1 on-GPU before CPU mapping', () => {
+    const readbackSizes: number[] = []
+    const copySizes: Array<{ width: number, height: number }> = []
+    const renderer = createRendererMock({
+      onCreateReadbackBuffer: (size) => {
+        readbackSizes.push(size)
+      }
+    })
+    const node = new WebGPUOutputNode({
+      renderer: renderer as never,
+      width: 4,
+      height: 4,
+      label: 'o12'
+    })
+
+    const analysisPass: HydraCompiledPass = {
+      signature: 'analysis-reduce-pass',
+      wgsl: '@compute @workgroup_size(1, 1, 1) fn csMain() {}',
+      uniforms: [],
+      textures: [],
+      analysisOut: [{ uniformName: 'analysis_luma', type: 'float' }],
+      dispatch: {
+        mode: 'direct',
+        workgroupSize: [1, 1, 1]
+      }
+    }
+
+    node.render([analysisPass])
+    const dispatches: DispatchLogEntry[] = []
+    node.tick(
+      { time: 0, bpm: 120, resolution: [4, 4], deltaMs: 16 } as unknown as Parameters<WebGPUOutputNode['tick']>[0],
+      createTestEncoder(dispatches, {
+        onCopyTextureToBuffer: (copySize) => {
+          copySizes.push({ width: Number(copySize.width), height: Number(copySize.height) })
+        }
+      })
+    )
+
+    expect(dispatches.map((entry) => entry.pipelineId)).toContain('__hydra-analysis-reduction-v1')
+    expect(copySizes[0]).toEqual({ width: 1, height: 1 })
+    expect(readbackSizes[0]).toBe(256)
   })
 
   it('feeds analysis readback averages into subsequent frame analysis state', async () => {
