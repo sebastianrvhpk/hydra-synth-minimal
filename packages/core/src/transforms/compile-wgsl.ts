@@ -31,6 +31,8 @@ interface ShaderParams {
   schedule: HydraPassSchedule
 }
 
+const DEFAULT_PASS_OUTPUT_FORMAT: HydraResourceFormat = 'rgba16float'
+
 const resolveWorkgroupSize = (transforms: HydraTransformCall[]): [number, number, number] => {
   if (transforms.length === 1) {
     const only = transforms[0]
@@ -94,7 +96,7 @@ const toStorageElementType = (value: HydraResourceElementType): string => {
 }
 
 const toStorageTextureFormat = (value?: HydraResourceFormat): string => {
-  if (!value) return 'rgba8unorm'
+  if (!value) return DEFAULT_PASS_OUTPUT_FORMAT
   return value
 }
 
@@ -266,7 +268,7 @@ const registerStorageTexture = (shaderParams: ShaderParams, resource: HydraTyped
     variableName: candidate,
     getTexture: resource.getTexture,
     access: resource.access,
-    format: resource.format ?? 'rgba8unorm',
+    format: resource.format ?? DEFAULT_PASS_OUTPUT_FORMAT,
     dimension: resource.type === 'storageTexture2DArray' ? '2d_array' : '2d',
     lifetime: resource.lifetime,
     stateKey: resource.stateKey,
@@ -504,7 +506,7 @@ struct DynamicUniforms {
 ${textureDeclarations}
 ${storageBufferDeclarations}
 ${storageTextureDeclarations}
-@group(0) @binding(${outputTextureBinding}) var outImage: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(${outputTextureBinding}) var outImage: texture_storage_2d<${DEFAULT_PASS_OUTPUT_FORMAT}, write>;
 
 fn hydraDynamicUniform(index: u32) -> f32 {
   let vecIndex = index / 4u;
@@ -575,7 +577,7 @@ fn csMain(@builtin(global_invocation_id) invocationId: vec3u) {
     output: {
       name: 'outImage',
       variableName: 'outImage',
-      format: 'rgba8unorm',
+      format: DEFAULT_PASS_OUTPUT_FORMAT,
       binding: outputTextureBinding
     },
     schedule: shaderInfo.schedule,
@@ -591,7 +593,7 @@ fn csMain(@builtin(global_invocation_id) invocationId: vec3u) {
       output: {
         name: 'outImage',
         variableName: 'outImage',
-        format: 'rgba8unorm',
+        format: DEFAULT_PASS_OUTPUT_FORMAT,
         binding: outputTextureBinding
       }
     })
@@ -822,7 +824,7 @@ struct GlobalUniforms {
 ${dynamicUniformDeclarations}
 @group(0) @binding(2) var hydraSampler: sampler;
 @group(0) @binding(3) var prevBuffer: texture_2d<f32>;
-@group(0) @binding(${outputBinding}) var outImage: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(${outputBinding}) var outImage: texture_storage_2d<${DEFAULT_PASS_OUTPUT_FORMAT}, write>;
 
 fn hydraSampleTexture(tex: texture_2d<f32>, uv: vec2f) -> vec4f {
   return textureSampleLevel(tex, hydraSampler, fract(uv), 0.0);
@@ -864,7 +866,7 @@ ${subgroupPrelude}${tiledBody}
   const output = {
     name: 'outImage',
     variableName: 'outImage',
-    format: 'rgba8unorm' as HydraResourceFormat,
+    format: DEFAULT_PASS_OUTPUT_FORMAT,
     binding: outputBinding
   }
   const compiled: HydraCompiledPass = {
@@ -1239,7 +1241,7 @@ struct GlobalUniforms {
 ${dynamicUniformDeclarations}
 @group(0) @binding(2) var hydraSampler: sampler;
 @group(0) @binding(3) var prevBuffer: texture_2d<f32>;
-@group(0) @binding(${outputBinding}) var outImage: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(${outputBinding}) var outImage: texture_storage_2d<${DEFAULT_PASS_OUTPUT_FORMAT}, write>;
 
 fn hydraSampleTexture(tex: texture_2d<f32>, uv: vec2f) -> vec4f {
   return textureSampleLevel(tex, hydraSampler, fract(uv), 0.0);
@@ -1289,7 +1291,7 @@ ${subgroupPrelude}${tiledBody}
   const output = {
     name: 'outImage',
     variableName: 'outImage',
-    format: 'rgba8unorm' as HydraResourceFormat,
+    format: DEFAULT_PASS_OUTPUT_FORMAT,
     binding: outputBinding
   }
   const compiled: HydraCompiledPass = {
@@ -1512,7 +1514,7 @@ struct GlobalUniforms {
 ${dynamicUniformDeclarations}
 @group(0) @binding(2) var hydraSampler: sampler;
 @group(0) @binding(3) var prevBuffer: texture_2d<f32>;
-@group(0) @binding(${outputBinding}) var outImage: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(${outputBinding}) var outImage: texture_storage_2d<${DEFAULT_PASS_OUTPUT_FORMAT}, write>;
 
 fn hydraSampleTexture(tex: texture_2d<f32>, uv: vec2f) -> vec4f {
   return textureSampleLevel(tex, hydraSampler, fract(uv), 0.0);
@@ -1559,7 +1561,7 @@ ${subgroupPrelude}${tiledBody}
   const output = {
     name: 'outImage',
     variableName: 'outImage',
-    format: 'rgba8unorm' as HydraResourceFormat,
+    format: DEFAULT_PASS_OUTPUT_FORMAT,
     binding: outputBinding
   }
   const compiled: HydraCompiledPass = {

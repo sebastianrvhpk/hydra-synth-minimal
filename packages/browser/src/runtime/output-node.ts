@@ -6,7 +6,7 @@ import type {
   HydraStorageBufferBinding,
   HydraStorageTextureBinding
 } from 'hydra-synth-core'
-import { MAX_DYNAMIC_UNIFORMS } from '../webgpu/constants.js'
+import { MAX_DYNAMIC_UNIFORMS, OUTPUT_TEXTURE_FORMAT } from '../webgpu/constants.js'
 import type { WebGPURenderer } from '../webgpu/renderer.js'
 
 interface PipelineEntry {
@@ -59,7 +59,7 @@ const ANALYSIS_REDUCTION_WORKGROUP_SIZE = 8
 const ANALYSIS_REDUCTION_PIPELINE_SIGNATURE = '__hydra-analysis-reduction-v1'
 const ANALYSIS_REDUCTION_WGSL = `
 @group(0) @binding(0) var inTex: texture_2d<f32>;
-@group(0) @binding(1) var outTex: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(1) var outTex: texture_storage_2d<${OUTPUT_TEXTURE_FORMAT}, write>;
 
 fn hydraLoadClamped(coord: vec2i, dims: vec2i) -> vec4f {
   let clamped = clamp(coord, vec2i(0), dims - vec2i(1));
