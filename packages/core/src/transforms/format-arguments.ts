@@ -116,6 +116,27 @@ export const formatArguments = (
     }
 
     if (input.type === 'sampler2D') {
+      if (transform.name === 'prevN') {
+        let historyOffset = 1
+        if (typeof typedArg.value === 'number' && Number.isFinite(typedArg.value)) {
+          historyOffset = Math.max(1, Math.floor(typedArg.value))
+        } else if (
+          typedArg.value &&
+          typeof typedArg.value === 'object' &&
+          'historyOffset' in typedArg.value &&
+          typeof (typedArg.value as { historyOffset?: unknown }).historyOffset === 'number' &&
+          Number.isFinite((typedArg.value as { historyOffset?: number }).historyOffset)
+        ) {
+          historyOffset = Math.max(1, Math.floor((typedArg.value as { historyOffset: number }).historyOffset))
+        }
+
+        typedArg.isTexture = true
+        typedArg.textureName = `${sanitizeName(input.name)}_${startIndex + index}`
+        typedArg.value = () => null
+        typedArg.textureSource = { historyOffset }
+        return typedArg
+      }
+
       if (
         !typedArg.value ||
         typeof typedArg.value !== 'object' ||

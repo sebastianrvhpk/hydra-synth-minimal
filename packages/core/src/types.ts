@@ -13,6 +13,7 @@ export interface HydraFrameState {
   bpm: number
   resolution: [number, number]
   deltaMs: number
+  analysis?: Record<string, number | number[]>
 }
 
 export interface RendererAdapter {
@@ -110,6 +111,15 @@ export type HydraResourceFormat =
 
 export type HydraResourceElementType = 'f32' | 'vec2f' | 'vec3f' | 'vec4f' | 'u32' | 'i32'
 
+export type HydraComputeKernelVariant = 'generic' | 'tiled' | 'subgroup'
+
+export interface HydraComputeKernelDescriptor {
+  kind: 'separableBlur'
+  axis: 'x' | 'y'
+  preferredVariant?: HydraComputeKernelVariant | 'auto'
+  allowSubgroups?: boolean
+}
+
 export type HydraPassUpdateRate =
   | 'everyFrame'
   | { everyNFrames: number }
@@ -143,6 +153,7 @@ export interface HydraTransformDefinition {
   inputs?: HydraTransformInput[]
   resources?: HydraTransformResource[]
   wgsl: string
+  computeKernel?: HydraComputeKernelDescriptor
   resolutionScale?: 1 | 0.5 | 0.25 | number
   updateRate?: HydraPassUpdateRate
   sparse?: boolean
@@ -249,6 +260,7 @@ export interface HydraDispatchConfig {
   getIndirectBuffer?: (() => unknown) | null
   indirectOffset?: number
   requiredWorkgroupStorageBytes?: number
+  requiredFeatures?: string[]
 }
 
 export interface HydraPassIRResourceRef {

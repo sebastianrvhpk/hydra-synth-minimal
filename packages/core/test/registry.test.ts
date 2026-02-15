@@ -77,6 +77,8 @@ describe('HydraTransformRegistry', () => {
     const expectedTransforms = [
       'blurTiledX',
       'blurTiledY',
+      'blurSubgroupX',
+      'blurSubgroupY',
       'blurFast',
       'blurBilateral',
       'sharpen',
@@ -179,6 +181,28 @@ describe('HydraTransformRegistry', () => {
     expect(tiledYPass.fallbackPass?.wgsl).toContain('fn blurTiledY')
   })
 
+  it('specializes blurSubgroupX/blurSubgroupY into subgroup variants with tiled fallback chains', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators.osc(8, 0.1, 0).blurSubgroupX(1).blurSubgroupY(1).out()
+
+    expect(output.passes.length).toBe(3)
+    const subgroupXPass = output.passes[1]
+    const subgroupYPass = output.passes[2]
+
+    expect(subgroupXPass.wgsl).toContain('subgroup_invocation_id')
+    expect(subgroupYPass.wgsl).toContain('subgroup_invocation_id')
+    expect(subgroupXPass.dispatch?.requiredFeatures).toEqual(['subgroups'])
+    expect(subgroupYPass.dispatch?.requiredFeatures).toEqual(['subgroups'])
+    expect(subgroupXPass.fallbackPass).toBeDefined()
+    expect(subgroupYPass.fallbackPass).toBeDefined()
+    expect(subgroupXPass.fallbackPass?.dispatch?.mode).toBe('indirect')
+    expect(subgroupYPass.fallbackPass?.dispatch?.mode).toBe('indirect')
+    expect(subgroupXPass.fallbackPass?.fallbackPass).toBeDefined()
+    expect(subgroupYPass.fallbackPass?.fallbackPass).toBeDefined()
+  })
+
   it('injects prev() when chaining non-src transforms after renderpass boundaries', () => {
     const output = new CaptureOutput()
     const registry = new HydraTransformRegistry({ defaultOutput: output })
@@ -203,6 +227,17 @@ describe('HydraTransformRegistry', () => {
     expect(output.passes.length).toBe(1)
     expect(output.passes[0].textures.length).toBe(1)
     expect(output.passes[0].textures[0].sourceRef).toBe(provider)
+  })
+
+  it('compiles prevN() sampler inputs into history-offset texture bindings', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators.prevN(3).out()
+
+    expect(output.passes.length).toBe(1)
+    expect(output.passes[0].textures.length).toBe(1)
+    expect(output.passes[0].textures[0].sourceRef).toEqual({ historyOffset: 3 })
   })
 
   it('prevents uniform name collisions when sequential transforms reuse argument names', () => {

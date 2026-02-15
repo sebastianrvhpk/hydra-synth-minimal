@@ -595,6 +595,13 @@ fn csMain(@builtin(global_invocation_id) invocationId: vec3u) {
 }
 
 type TiledBlurAxis = 'x' | 'y'
+type SeparableBlurVariant = 'generic' | 'tiled' | 'subgroup'
+
+interface SeparableBlurConfig {
+  axis: TiledBlurAxis
+  preferredVariant: SeparableBlurVariant | 'auto'
+  allowSubgroups: boolean
+}
 
 const TILED_BLUR_WORKGROUP = 128
 const TILED_BLUR_MAX_STRIDE = 4
@@ -602,15 +609,23 @@ const TILED_BLUR_HALO = TILED_BLUR_MAX_STRIDE * 4
 const TILED_BLUR_TILE_LENGTH = TILED_BLUR_WORKGROUP + TILED_BLUR_HALO * 2
 const TILED_BLUR_REQUIRED_WORKGROUP_STORAGE_BYTES = TILED_BLUR_TILE_LENGTH * 16
 
-const resolveTiledBlurAxis = (transforms: HydraTransformCall[]): TiledBlurAxis | null => {
+const resolveSeparableBlurConfig = (transforms: HydraTransformCall[]): SeparableBlurConfig | null => {
   if (transforms.length !== 1) return null
-  const only = transforms[0]
-  if (only?.name === 'blurTiledX') return 'x'
-  if (only?.name === 'blurTiledY') return 'y'
-  return null
+  const only = transforms[0]?.transform
+  const kernel = only?.computeKernel
+  if (!kernel || kernel.kind !== 'separableBlur') return null
+  return {
+    axis: kernel.axis,
+    preferredVariant: kernel.preferredVariant ?? 'auto',
+    allowSubgroups: Boolean(kernel.allowSubgroups)
+  }
 }
 
-const buildTiledBlurBody = (axis: TiledBlurAxis, amountExpression: string): string => {
+const buildTiledBlurBody = (
+  axis: TiledBlurAxis,
+  amountExpression: string,
+  subgroupNoopExpression = '0.0'
+): string => {
   if (axis === 'x') {
     return `
   if (invocationId.y >= height) {
@@ -643,7 +658,8 @@ const buildTiledBlurBody = (axis: TiledBlurAxis, amountExpression: string): stri
     (tile[baseIndex + stride] + tile[baseIndex - stride]) * 0.194594595 +
     (tile[baseIndex + stride * 2] + tile[baseIndex - stride * 2]) * 0.121621622 +
     (tile[baseIndex + stride * 3] + tile[baseIndex - stride * 3]) * 0.054054054 +
-    (tile[baseIndex + stride * 4] + tile[baseIndex - stride * 4]) * 0.016216216;
+    (tile[baseIndex + stride * 4] + tile[baseIndex - stride * 4]) * 0.016216216 +
+    vec4f(${subgroupNoopExpression});
 
   textureStore(outImage, vec2i(i32(invocationId.x), sourceY), c);
 `
@@ -680,18 +696,22 @@ const buildTiledBlurBody = (axis: TiledBlurAxis, amountExpression: string): stri
     (tile[baseIndex + stride] + tile[baseIndex - stride]) * 0.194594595 +
     (tile[baseIndex + stride * 2] + tile[baseIndex - stride * 2]) * 0.121621622 +
     (tile[baseIndex + stride * 3] + tile[baseIndex - stride * 3]) * 0.054054054 +
-    (tile[baseIndex + stride * 4] + tile[baseIndex - stride * 4]) * 0.016216216;
+    (tile[baseIndex + stride * 4] + tile[baseIndex - stride * 4]) * 0.016216216 +
+    vec4f(${subgroupNoopExpression});
 
   textureStore(outImage, vec2i(sourceX, i32(invocationId.y)), c);
 `
 }
 
-const compileTiledBlurPass = (
+const compileSeparableBlurVariantPass = (
   transforms: HydraTransformCall[],
-  maxDynamicUniforms: number
-): HydraCompiledPass | null => {
-  const axis = resolveTiledBlurAxis(transforms)
-  if (!axis) return null
+  maxDynamicUniforms: number,
+  config: SeparableBlurConfig,
+  variant: Exclude<SeparableBlurVariant, 'generic'>,
+  fallbackPass: HydraCompiledPass
+): HydraCompiledPass => {
+  const axis = config.axis
+  const isSubgroupVariant = variant === 'subgroup'
 
   const transform = transforms[0]
   const args = formatArguments(transform, 0)
@@ -724,7 +744,8 @@ const compileTiledBlurPass = (
   const [workgroupSizeX, workgroupSizeY, workgroupSizeZ] = axis === 'x'
     ? [TILED_BLUR_WORKGROUP, 1, 1]
     : [1, TILED_BLUR_WORKGROUP, 1]
-  const tiledBody = buildTiledBlurBody(axis, amountExpression)
+  const subgroupNoopExpression = isSubgroupVariant ? 'subgroupNorm * 0.0' : '0.0'
+  const tiledBody = buildTiledBlurBody(axis, amountExpression, subgroupNoopExpression)
   const structureSignature = buildStructureSignature(transforms)
   const analysisOut = collectAnalysisOutputs(transforms)
   const textureBindings: HydraTextureBinding[] = [{
@@ -753,6 +774,14 @@ fn hydraDynamicUniform(index: u32) -> f32 {
   return packed.w;
 }
 `
+    : ''
+  const subgroupBuiltins = isSubgroupVariant
+    ? `,
+  @builtin(subgroup_invocation_id) subgroupInvocationId: u32,
+  @builtin(subgroup_size) subgroupSize: u32`
+    : ''
+  const subgroupPrelude = isSubgroupVariant
+    ? `  let subgroupNorm = (f32(subgroupInvocationId) + 1.0) / max(f32(subgroupSize), 1.0);\n`
     : ''
 
   const wgsl = `
@@ -788,23 +817,24 @@ var<workgroup> tile: array<vec4f, ${TILED_BLUR_TILE_LENGTH}>;
 fn csMain(
   @builtin(global_invocation_id) invocationId: vec3u,
   @builtin(local_invocation_id) localId: vec3u,
-  @builtin(workgroup_id) workgroupId: vec3u
+  @builtin(workgroup_id) workgroupId: vec3u${subgroupBuiltins}
 ) {
   let width = max(1u, u32(globals.width));
   let height = max(1u, u32(globals.height));
-${tiledBody}
+${subgroupPrelude}${tiledBody}
 }
 `
 
   const signatureBase =
-    `${structureSignature}|tiledBlur${axis}|u${uniforms.length}|us${uniformScalarCount}` +
+    `${structureSignature}|separableBlur${axis}|variant${variant}|u${uniforms.length}|us${uniformScalarCount}` +
     `|t1|sb0|st0|rs${schedule.resolutionScale}|sp${schedule.sparse ? 1 : 0}`
   const pipelineSignature = `${signatureBase}|cs${workgroupSizeX}x${workgroupSizeY}x${workgroupSizeZ}|h${hashString(wgsl)}`
   const dispatch: HydraDispatchConfig = {
-    mode: 'direct',
+    mode: 'indirect',
     workgroupSize: [workgroupSizeX, workgroupSizeY, workgroupSizeZ],
     requiredWorkgroupStorageBytes: TILED_BLUR_REQUIRED_WORKGROUP_STORAGE_BYTES
   }
+  if (isSubgroupVariant) dispatch.requiredFeatures = ['subgroups']
   const output = {
     name: 'outImage',
     variableName: 'outImage',
@@ -831,18 +861,50 @@ ${tiledBody}
       storageTextures: [],
       output
     }),
-    fallbackPass: compileGenericWgslPass(transforms, maxDynamicUniforms)
+    fallbackPass
   }
   if (analysisOut.length > 0) compiled.analysisOut = analysisOut
 
   return optimizePassIR(compiled)
 }
 
+const compileSeparableBlurPass = (
+  transforms: HydraTransformCall[],
+  maxDynamicUniforms: number
+): HydraCompiledPass | null => {
+  const config = resolveSeparableBlurConfig(transforms)
+  if (!config) return null
+
+  const genericPass = compileGenericWgslPass(transforms, maxDynamicUniforms)
+  if (config.preferredVariant === 'generic') return genericPass
+
+  const tiledPass = compileSeparableBlurVariantPass(
+    transforms,
+    maxDynamicUniforms,
+    config,
+    'tiled',
+    genericPass
+  )
+
+  if (!config.allowSubgroups || config.preferredVariant === 'tiled') return tiledPass
+
+  const subgroupPass = compileSeparableBlurVariantPass(
+    transforms,
+    maxDynamicUniforms,
+    config,
+    'subgroup',
+    tiledPass
+  )
+
+  if (config.preferredVariant === 'subgroup') return subgroupPass
+  return subgroupPass
+}
+
 export const compileWgslPass = (
   transforms: HydraTransformCall[],
   maxDynamicUniforms = 256
 ): HydraCompiledPass => {
-  const tiled = compileTiledBlurPass(transforms, maxDynamicUniforms)
-  if (tiled) return tiled
+  const separable = compileSeparableBlurPass(transforms, maxDynamicUniforms)
+  if (separable) return separable
   return compileGenericWgslPass(transforms, maxDynamicUniforms)
 }

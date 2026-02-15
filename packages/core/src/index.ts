@@ -26,6 +26,8 @@ export type {
   HydraPassIRResourceRef,
   HydraPassSchedule,
   HydraPassUpdateRate,
+  HydraComputeKernelDescriptor,
+  HydraComputeKernelVariant,
   HydraResourceAccess,
   HydraResourceElementType,
   HydraResourceFormat,

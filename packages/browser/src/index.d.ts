@@ -144,6 +144,8 @@ export declare class WebGPURenderer {
   ): GPUTexture
   createDynamicUniformBuffer (label: string): GPUBuffer
   createStorageBuffer (label: string, byteLength: number): GPUBuffer
+  createIndirectDispatchBuffer (label: string): GPUBuffer
+  createReadbackBuffer (label: string, byteLength: number): GPUBuffer
   getCapabilities (): WebGPUCapabilities | null
   getFallbackTexture (): GPUTexture
   getFallbackStorageTexture (dimension?: '2d' | '2d_array'): GPUTexture

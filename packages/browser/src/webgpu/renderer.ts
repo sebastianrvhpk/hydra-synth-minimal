@@ -398,6 +398,25 @@ fn fsMain(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
     })
   }
 
+  createIndirectDispatchBuffer (label: string): GPUBuffer {
+    if (!this.device) throw new Error('Renderer not initialized.')
+    return this.device.createBuffer({
+      label,
+      size: 12,
+      usage: GPUBufferUsage.INDIRECT | GPUBufferUsage.COPY_DST
+    })
+  }
+
+  createReadbackBuffer (label: string, byteLength: number): GPUBuffer {
+    if (!this.device) throw new Error('Renderer not initialized.')
+    const aligned = Math.max(256, Math.ceil(Math.max(1, byteLength) / 256) * 256)
+    return this.device.createBuffer({
+      label,
+      size: aligned,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+    })
+  }
+
   getCapabilities (): WebGPUCapabilities | null {
     return this.capabilities
   }

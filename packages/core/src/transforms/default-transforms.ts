@@ -594,6 +594,12 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
   {
     name: 'blurX',
     type: 'renderpass',
+    computeKernel: {
+      kind: 'separableBlur',
+      axis: 'x',
+      preferredVariant: 'generic',
+      allowSubgroups: true
+    },
     inputs: [
       { type: 'float', name: 'amount', default: 1 }
     ],
@@ -620,6 +626,12 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
   {
     name: 'blurY',
     type: 'renderpass',
+    computeKernel: {
+      kind: 'separableBlur',
+      axis: 'y',
+      preferredVariant: 'generic',
+      allowSubgroups: true
+    },
     inputs: [
       { type: 'float', name: 'amount', default: 1 }
     ],
@@ -646,6 +658,12 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
   {
     name: 'blurTiledX',
     type: 'renderpass',
+    computeKernel: {
+      kind: 'separableBlur',
+      axis: 'x',
+      preferredVariant: 'tiled',
+      allowSubgroups: true
+    },
     inputs: [
       { type: 'float', name: 'amount', default: 1 }
     ],
@@ -672,6 +690,76 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
   {
     name: 'blurTiledY',
     type: 'renderpass',
+    computeKernel: {
+      kind: 'separableBlur',
+      axis: 'y',
+      preferredVariant: 'tiled',
+      allowSubgroups: true
+    },
+    inputs: [
+      { type: 'float', name: 'amount', default: 1 }
+    ],
+    wgsl: `
+  let stepY = amount / max(globals.height, 1.0);
+  let offset = vec2f(0.0, stepY);
+  let center = hydraSampleTexture(prevBuffer, fract(_st));
+  let s1 = hydraSampleTexture(prevBuffer, fract(_st + offset));
+  let s2 = hydraSampleTexture(prevBuffer, fract(_st - offset));
+  let s3 = hydraSampleTexture(prevBuffer, fract(_st + offset * 2.0));
+  let s4 = hydraSampleTexture(prevBuffer, fract(_st - offset * 2.0));
+  let s5 = hydraSampleTexture(prevBuffer, fract(_st + offset * 3.0));
+  let s6 = hydraSampleTexture(prevBuffer, fract(_st - offset * 3.0));
+  let s7 = hydraSampleTexture(prevBuffer, fract(_st + offset * 4.0));
+  let s8 = hydraSampleTexture(prevBuffer, fract(_st - offset * 4.0));
+  return
+    center * 0.227027027 +
+    (s1 + s2) * 0.194594595 +
+    (s3 + s4) * 0.121621622 +
+    (s5 + s6) * 0.054054054 +
+    (s7 + s8) * 0.016216216;
+  `
+  },
+  {
+    name: 'blurSubgroupX',
+    type: 'renderpass',
+    computeKernel: {
+      kind: 'separableBlur',
+      axis: 'x',
+      preferredVariant: 'subgroup',
+      allowSubgroups: true
+    },
+    inputs: [
+      { type: 'float', name: 'amount', default: 1 }
+    ],
+    wgsl: `
+  let stepX = amount / max(globals.width, 1.0);
+  let offset = vec2f(stepX, 0.0);
+  let center = hydraSampleTexture(prevBuffer, fract(_st));
+  let s1 = hydraSampleTexture(prevBuffer, fract(_st + offset));
+  let s2 = hydraSampleTexture(prevBuffer, fract(_st - offset));
+  let s3 = hydraSampleTexture(prevBuffer, fract(_st + offset * 2.0));
+  let s4 = hydraSampleTexture(prevBuffer, fract(_st - offset * 2.0));
+  let s5 = hydraSampleTexture(prevBuffer, fract(_st + offset * 3.0));
+  let s6 = hydraSampleTexture(prevBuffer, fract(_st - offset * 3.0));
+  let s7 = hydraSampleTexture(prevBuffer, fract(_st + offset * 4.0));
+  let s8 = hydraSampleTexture(prevBuffer, fract(_st - offset * 4.0));
+  return
+    center * 0.227027027 +
+    (s1 + s2) * 0.194594595 +
+    (s3 + s4) * 0.121621622 +
+    (s5 + s6) * 0.054054054 +
+    (s7 + s8) * 0.016216216;
+`
+  },
+  {
+    name: 'blurSubgroupY',
+    type: 'renderpass',
+    computeKernel: {
+      kind: 'separableBlur',
+      axis: 'y',
+      preferredVariant: 'subgroup',
+      allowSubgroups: true
+    },
     inputs: [
       { type: 'float', name: 'amount', default: 1 }
     ],
@@ -1419,6 +1507,16 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [],
     wgsl: `
   return hydraSampleTexture(prevBuffer, fract(_st));
+`
+  },
+  {
+    name: 'prevN',
+    type: 'src',
+    inputs: [
+      { type: 'sampler2D', name: 'historyTex', default: { historyOffset: 1 } }
+    ],
+    wgsl: `
+  return hydraSampleTexture(historyTex, fract(_st));
 `
   },
   {

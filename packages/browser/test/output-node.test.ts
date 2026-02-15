@@ -2,7 +2,20 @@ import { describe, expect, it } from 'vitest'
 import type { HydraCompiledPass } from 'hydra-synth-core'
 import { WebGPUOutputNode } from '../src/runtime/output-node.ts'
 
-const createTestEncoder = (dispatches: Array<{ pipelineId: string, bindGroup: unknown }>): GPUCommandEncoder => ({
+interface DispatchLogEntry {
+  pipelineId: string
+  bindGroup: unknown
+  mode: 'direct' | 'indirect'
+  indirectBuffer?: unknown
+}
+
+const createTestEncoder = (
+  dispatches: DispatchLogEntry[],
+  options: {
+    onCopyTextureToTexture?: () => void
+    onCopyTextureToBuffer?: () => void
+  } = {}
+): GPUCommandEncoder => ({
   beginComputePass: () => {
     let currentPipeline: { id: string } | null = null
     let currentBindGroup: unknown = null
@@ -16,17 +29,26 @@ const createTestEncoder = (dispatches: Array<{ pipelineId: string, bindGroup: un
       dispatchWorkgroups: () => {
         dispatches.push({
           pipelineId: currentPipeline?.id ?? 'unknown',
-          bindGroup: currentBindGroup
+          bindGroup: currentBindGroup,
+          mode: 'direct'
         })
       },
-      dispatchWorkgroupsIndirect: () => {
+      dispatchWorkgroupsIndirect: (indirectBuffer: unknown) => {
         dispatches.push({
           pipelineId: currentPipeline?.id ?? 'unknown',
-          bindGroup: currentBindGroup
+          bindGroup: currentBindGroup,
+          mode: 'indirect',
+          indirectBuffer
         })
       },
       end: () => {}
     }
+  },
+  copyTextureToTexture: () => {
+    options.onCopyTextureToTexture?.()
+  },
+  copyTextureToBuffer: () => {
+    options.onCopyTextureToBuffer?.()
   }
 }) as unknown as GPUCommandEncoder
 
@@ -89,6 +111,13 @@ const createRendererMock = (options: {
     },
     createDynamicUniformBuffer: () => ({ destroy: () => {} } as unknown as GPUBuffer),
     createStorageBuffer: () => ({ destroy: () => {} } as unknown as GPUBuffer),
+    createIndirectDispatchBuffer: () => ({ destroy: () => {} } as unknown as GPUBuffer),
+    createReadbackBuffer: () => ({
+      destroy: () => {},
+      mapAsync: async () => {},
+      getMappedRange: () => new Uint8Array(256).buffer,
+      unmap: () => {}
+    } as unknown as GPUBuffer),
     updateGlobalUniforms: () => {},
     getOutputPipelineEntry: (signature: string) => ({
       cacheKey: signature,
@@ -399,7 +428,7 @@ describe('WebGPUOutputNode texture exposure', () => {
     }
 
     node.render([passA, passB])
-    const dispatches: Array<{ pipelineId: string, bindGroup: unknown }> = []
+    const dispatches: DispatchLogEntry[] = []
     const encoder = createTestEncoder(dispatches)
     const frame = { time: 0, bpm: 120, resolution: [2, 2], deltaMs: 16 } as unknown as Parameters<WebGPUOutputNode['tick']>[0]
 
@@ -466,7 +495,7 @@ describe('WebGPUOutputNode texture exposure', () => {
     }
 
     node.render([pass])
-    const dispatches: Array<{ pipelineId: string, bindGroup: unknown }> = []
+    const dispatches: DispatchLogEntry[] = []
     node.tick(
       { time: 0, bpm: 120, resolution: [2, 2], deltaMs: 16 } as unknown as Parameters<WebGPUOutputNode['tick']>[0],
       createTestEncoder(dispatches)
@@ -477,5 +506,231 @@ describe('WebGPUOutputNode texture exposure', () => {
       entry.depthOrArrayLayers === 1 && entry.includeRenderAttachment === false
     )).toBe(true)
     expect(textureViewDimensions.includes('2d-array')).toBe(true)
+  })
+
+  it('falls back when required GPU features are unavailable', () => {
+    const fallbackPass: HydraCompiledPass = {
+      signature: 'fallback-feature',
+      wgsl: 'fallback',
+      uniforms: [],
+      textures: []
+    }
+
+    const primaryPass: HydraCompiledPass = {
+      signature: 'primary-feature',
+      wgsl: 'primary',
+      uniforms: [],
+      textures: [],
+      dispatch: {
+        mode: 'direct',
+        workgroupSize: [16, 16, 1],
+        requiredFeatures: ['subgroups']
+      },
+      fallbackPass
+    }
+
+    const renderer = {
+      ready: true,
+      capabilities: {
+        compute: {
+          maxComputeInvocationsPerWorkgroup: 256,
+          maxComputeWorkgroupStorageSize: 65536,
+          maxComputeWorkgroupSizeX: 256,
+          maxComputeWorkgroupSizeY: 256,
+          maxComputeWorkgroupSizeZ: 64
+        },
+        features: []
+      },
+      getOutputPipelineEntry: (signature: string, code: string) => ({
+        cacheKey: signature,
+        signature,
+        code,
+        pipeline: { id: signature },
+        error: null
+      })
+    } as unknown as {
+      ready: boolean
+      capabilities: {
+        compute: { maxComputeWorkgroupStorageSize: number }
+        features: string[]
+      }
+      getOutputPipelineEntry: (signature: string, code: string) => unknown
+    }
+
+    const node = new WebGPUOutputNode({
+      renderer: renderer as never,
+      width: 1,
+      height: 1,
+      label: 'o8'
+    })
+
+    node.render([primaryPass])
+    const resolved = (node as unknown as { resolvePasses: () => Array<{ pass: HydraCompiledPass }> | null }).resolvePasses()
+    expect(resolved?.[0]?.pass.signature).toBe('fallback-feature')
+  })
+
+  it('allocates and uses internal indirect buffers when no external buffer is provided', () => {
+    const renderer = createRendererMock() as unknown as {
+      device: { queue: { writeBuffer: (buffer: GPUBuffer, offset: number, data: Uint32Array) => void } }
+      createIndirectDispatchBuffer: (label: string) => GPUBuffer
+    } & ReturnType<typeof createRendererMock>
+
+    const indirectBuffer = { id: 'internal-indirect', destroy: () => {} } as unknown as GPUBuffer
+    const writes: number[][] = []
+    renderer.createIndirectDispatchBuffer = () => indirectBuffer
+    renderer.device.queue.writeBuffer = (_buffer: GPUBuffer, _offset: number, data: Uint32Array) => {
+      writes.push(Array.from(data))
+    }
+
+    const node = new WebGPUOutputNode({
+      renderer: renderer as never,
+      width: 2,
+      height: 2,
+      label: 'o9'
+    })
+
+    const pass: HydraCompiledPass = {
+      signature: 'indirect-pass',
+      wgsl: '@compute @workgroup_size(1, 1, 1) fn csMain() {}',
+      uniforms: [],
+      textures: [],
+      dispatch: {
+        mode: 'indirect',
+        workgroupSize: [1, 1, 1]
+      }
+    }
+
+    node.render([pass])
+    const dispatches: DispatchLogEntry[] = []
+    node.tick(
+      { time: 0, bpm: 120, resolution: [2, 2], deltaMs: 16 } as unknown as Parameters<WebGPUOutputNode['tick']>[0],
+      createTestEncoder(dispatches)
+    )
+
+    expect(dispatches).toHaveLength(1)
+    expect(dispatches[0].mode).toBe('indirect')
+    expect(dispatches[0].indirectBuffer).toBe(indirectBuffer)
+    expect(writes[0]).toEqual([2, 2, 1])
+  })
+
+  it('resolves prevN-style history texture bindings from frame history', () => {
+    const renderer = createRendererMock()
+    const node = new WebGPUOutputNode({
+      renderer: renderer as never,
+      width: 2,
+      height: 2,
+      label: 'o10'
+    })
+
+    const passA: HydraCompiledPass = {
+      signature: 'base-history',
+      wgsl: '@compute @workgroup_size(1, 1, 1) fn csMain() {}',
+      uniforms: [],
+      textures: [],
+      dispatch: {
+        mode: 'direct',
+        workgroupSize: [1, 1, 1]
+      }
+    }
+
+    const passB: HydraCompiledPass = {
+      signature: 'sample-history',
+      wgsl: '@compute @workgroup_size(1, 1, 1) fn csMain() {}',
+      uniforms: [],
+      textures: [
+        {
+          name: 'historyTex',
+          variableName: 'historyTex',
+          getTexture: () => null,
+          isPrev: false,
+          sourceRef: { historyOffset: 1 },
+          binding: 3
+        }
+      ],
+      dispatch: {
+        mode: 'direct',
+        workgroupSize: [1, 1, 1]
+      }
+    }
+
+    node.render([passA, passB])
+    const dispatches: DispatchLogEntry[] = []
+    let historyCopies = 0
+    const encoder = createTestEncoder(dispatches, {
+      onCopyTextureToTexture: () => {
+        historyCopies += 1
+      }
+    })
+    const frame = { time: 0, bpm: 120, resolution: [2, 2], deltaMs: 16 } as unknown as Parameters<WebGPUOutputNode['tick']>[0]
+
+    node.tick(frame, encoder)
+    node.tick({ ...frame, time: 0.016 }, encoder)
+
+    expect(dispatches.map((entry) => entry.pipelineId)).toEqual([
+      'base-history',
+      'sample-history',
+      'base-history',
+      'sample-history'
+    ])
+    expect(historyCopies).toBeGreaterThan(0)
+
+    const sampledBindGroup = dispatches[3].bindGroup as { entries: Array<{ binding: number, resource: { texture: GPUTexture } }> }
+    const sampledEntry = sampledBindGroup.entries.find((entry) => entry.binding === 3)
+    const historyTexture = (node as unknown as { historyTextures: Array<GPUTexture | null> }).historyTextures[0]
+    expect(sampledEntry?.resource.texture).toBe(historyTexture)
+  })
+
+  it('feeds analysis readback averages into subsequent frame analysis state', async () => {
+    const renderer = createRendererMock() as unknown as ReturnType<typeof createRendererMock> & {
+      createReadbackBuffer: (label: string, byteLength: number) => GPUBuffer
+    }
+    const packed = new Uint8Array(256)
+    packed[0] = 255
+    packed[1] = 0
+    packed[2] = 0
+    packed[3] = 255
+    renderer.createReadbackBuffer = () => ({
+      destroy: () => {},
+      mapAsync: async () => {},
+      getMappedRange: () => packed.buffer,
+      unmap: () => {}
+    } as unknown as GPUBuffer)
+
+    const node = new WebGPUOutputNode({
+      renderer: renderer as never,
+      width: 1,
+      height: 1,
+      label: 'o11'
+    })
+
+    const analysisPass: HydraCompiledPass = {
+      signature: 'analysis-pass',
+      wgsl: '@compute @workgroup_size(1, 1, 1) fn csMain() {}',
+      uniforms: [],
+      textures: [],
+      analysisOut: [{ uniformName: 'analysis_luma', type: 'float' }],
+      dispatch: {
+        mode: 'direct',
+        workgroupSize: [1, 1, 1]
+      }
+    }
+
+    node.render([analysisPass])
+    const dispatches: DispatchLogEntry[] = []
+    node.tick(
+      { time: 0, bpm: 120, resolution: [1, 1], deltaMs: 16 } as unknown as Parameters<WebGPUOutputNode['tick']>[0],
+      createTestEncoder(dispatches)
+    )
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    const frame = { time: 0.016, bpm: 120, resolution: [1, 1], deltaMs: 16, analysis: {} } as unknown as Parameters<WebGPUOutputNode['tick']>[0]
+    node.tick(frame, createTestEncoder(dispatches))
+
+    const luma = (frame.analysis as Record<string, number | number[]>)?.analysis_luma
+    expect(typeof luma).toBe('number')
+    expect(luma as number).toBeGreaterThan(0.2)
+    expect(luma as number).toBeLessThan(0.23)
   })
 })
