@@ -1496,6 +1496,58 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
  `
   },
   {
+    name: 'bufferFill',
+    type: 'kernel',
+    executionDomain: 'linear1d',
+    dispatchItems: 4096,
+    writesOutput: false,
+    inputs: [
+      { type: 'vec4', name: 'value', default: [0, 0, 0, 0] }
+    ],
+    resources: [
+      {
+        type: 'storageBuffer',
+        name: 'computeBuffer',
+        access: 'read_write',
+        elementType: 'vec4f',
+        minLength: 4096,
+        lifetime: 'persistent',
+        stateKey: 'compute-buffer'
+      }
+    ],
+    wgsl: `
+  let index = hydraLinearIndex();
+  computeBuffer[index] = value;
+  return vec4f(0.0);
+ `
+  },
+  {
+    name: 'bufferDecay',
+    type: 'kernel',
+    executionDomain: 'linear1d',
+    dispatchItems: 4096,
+    writesOutput: false,
+    inputs: [
+      { type: 'float', name: 'decay', default: 0.985 }
+    ],
+    resources: [
+      {
+        type: 'storageBuffer',
+        name: 'computeBuffer',
+        access: 'read_write',
+        elementType: 'vec4f',
+        minLength: 4096,
+        lifetime: 'persistent',
+        stateKey: 'compute-buffer'
+      }
+    ],
+    wgsl: `
+  let index = hydraLinearIndex();
+  computeBuffer[index] = computeBuffer[index] * vec4f(decay);
+  return vec4f(0.0);
+ `
+  },
+  {
     name: 'toneMap',
     type: 'color',
     inputs: [

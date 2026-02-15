@@ -215,6 +215,21 @@ interface ResolvedResourceOptions {
   stateKey: string | undefined
   elementType: HydraResourceElementType
   minLength: number
+  widthScale: number | undefined
+  heightScale: number | undefined
+  depthOrArrayLayers: number | undefined
+}
+
+const normalizeScale = (value: unknown): number | undefined => {
+  const numberValue = Number(value)
+  if (!Number.isFinite(numberValue) || numberValue <= 0) return undefined
+  return numberValue
+}
+
+const normalizeArrayLayers = (value: unknown): number | undefined => {
+  const numberValue = Number(value)
+  if (!Number.isFinite(numberValue) || numberValue <= 0) return undefined
+  return Math.max(1, Math.floor(numberValue))
 }
 
 const resolveResourceOptions = (
@@ -223,9 +238,12 @@ const resolveResourceOptions = (
     access?: HydraResourceAccess
     format?: HydraResourceFormat
     lifetime?: HydraResourceLifetime
-    stateKey?: string
-    elementType?: HydraResourceElementType
-    minLength?: number
+  stateKey?: string
+  elementType?: HydraResourceElementType
+  minLength?: number
+  widthScale?: number
+  heightScale?: number
+  depthOrArrayLayers?: number
   }
 ): ResolvedResourceOptions => ({
   access: input.access ?? (input.type === 'storageBuffer' ? 'read_write' : 'read_write'),
@@ -233,7 +251,10 @@ const resolveResourceOptions = (
   lifetime: input.lifetime ?? 'frame',
   stateKey: input.stateKey,
   elementType: input.elementType ?? 'vec4f',
-  minLength: Math.max(1, Number.isFinite(input.minLength) ? Math.floor(input.minLength ?? 1) : 1)
+  minLength: Math.max(1, Number.isFinite(input.minLength) ? Math.floor(input.minLength ?? 1) : 1),
+  widthScale: normalizeScale(input.widthScale),
+  heightScale: normalizeScale(input.heightScale),
+  depthOrArrayLayers: normalizeArrayLayers(input.depthOrArrayLayers)
 })
 
 const resolveResourceValue = (
@@ -274,6 +295,9 @@ export const formatResourceBindings = (
       format: options.format,
       elementType: options.elementType,
       minLength: options.minLength,
+      widthScale: options.widthScale,
+      heightScale: options.heightScale,
+      depthOrArrayLayers: options.depthOrArrayLayers,
       variableName,
       value,
       getTexture: null,

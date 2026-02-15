@@ -7,6 +7,9 @@ interface DispatchLogEntry {
   bindGroup: unknown
   mode: 'direct' | 'indirect'
   indirectBuffer?: unknown
+  x?: number
+  y?: number
+  z?: number
 }
 
 const createTestEncoder = (
@@ -26,11 +29,14 @@ const createTestEncoder = (
       setBindGroup: (_index: number, bindGroup: unknown) => {
         currentBindGroup = bindGroup
       },
-      dispatchWorkgroups: () => {
+      dispatchWorkgroups: (x: number, y = 1, z = 1) => {
         dispatches.push({
           pipelineId: currentPipeline?.id ?? 'unknown',
           bindGroup: currentBindGroup,
-          mode: 'direct'
+          mode: 'direct',
+          x,
+          y,
+          z
         })
       },
       dispatchWorkgroupsIndirect: (indirectBuffer: unknown) => {
@@ -280,6 +286,41 @@ describe('WebGPUOutputNode texture exposure', () => {
     node.render([pass])
 
     expect(node.getDependencyOutputIds()).toEqual([1])
+  })
+
+  it('extracts output dependencies from storage buffer source references', () => {
+    const node = new WebGPUOutputNode({
+      renderer: null,
+      width: 1,
+      height: 1,
+      label: 'o3b'
+    })
+    node.id = 3
+
+    const pass: HydraCompiledPass = {
+      signature: 'deps-storage-buffer',
+      wgsl: 'deps-storage-buffer',
+      uniforms: [],
+      textures: [],
+      storageBuffers: [
+        {
+          name: 'computeBuffer',
+          variableName: 'computeBuffer',
+          getBuffer: () => null,
+          access: 'read_write',
+          lifetime: 'persistent',
+          stateKey: 'compute-buffer',
+          sourceRef: { id: 2 },
+          elementType: 'vec4f',
+          minLength: 1024,
+          binding: 3
+        }
+      ]
+    }
+
+    node.render([pass])
+
+    expect(node.getDependencyOutputIds()).toEqual([2])
   })
 
   it('uses fallback pass when workgroup storage requirements exceed capabilities', () => {
@@ -552,6 +593,8 @@ describe('WebGPUOutputNode texture exposure', () => {
       },
       dispatch: {
         mode: 'direct',
+        domain: 'linear1d',
+        itemCount: 4,
         workgroupSize: [1, 1, 1]
       }
     }
@@ -568,6 +611,89 @@ describe('WebGPUOutputNode texture exposure', () => {
       entry.depthOrArrayLayers === 1 && entry.includeRenderAttachment === false
     )).toBe(true)
     expect(textureViewDimensions.includes('2d-array')).toBe(true)
+  })
+
+  it('reallocates persistent storage textures when allocation descriptors change', () => {
+    const createCalls: Array<{ label?: string, format?: string }> = []
+    const renderer = createRendererMock({
+      onCreateOutputTexture: (args) => {
+        createCalls.push({ label: args.label, format: args.format })
+      }
+    })
+
+    const node = new WebGPUOutputNode({
+      renderer: renderer as never,
+      width: 2,
+      height: 2,
+      label: 'o-compat'
+    })
+
+    const passA: HydraCompiledPass = {
+      signature: 'compat-a',
+      wgsl: '@compute @workgroup_size(1, 1, 1) fn csMain() {}',
+      uniforms: [],
+      textures: [],
+      storageTextures: [
+        {
+          name: 'compatTex',
+          variableName: 'compatTex',
+          getTexture: null,
+          access: 'read_write',
+          format: 'rgba8unorm',
+          dimension: '2d',
+          lifetime: 'persistent',
+          stateKey: 'compat-state',
+          binding: 3
+        }
+      ],
+      dispatch: {
+        mode: 'direct',
+        domain: 'linear1d',
+        itemCount: 4,
+        workgroupSize: [1, 1, 1]
+      }
+    }
+
+    const passB: HydraCompiledPass = {
+      signature: 'compat-b',
+      wgsl: '@compute @workgroup_size(1, 1, 1) fn csMain() {}',
+      uniforms: [],
+      textures: [],
+      storageTextures: [
+        {
+          name: 'compatTex',
+          variableName: 'compatTex',
+          getTexture: null,
+          access: 'read_write',
+          format: 'rgba16float',
+          dimension: '2d',
+          lifetime: 'persistent',
+          stateKey: 'compat-state',
+          binding: 3
+        }
+      ],
+      dispatch: {
+        mode: 'direct',
+        workgroupSize: [1, 1, 1]
+      }
+    }
+
+    node.render([passA])
+    node.tick(
+      { time: 0, bpm: 120, resolution: [2, 2], deltaMs: 16 } as unknown as Parameters<WebGPUOutputNode['tick']>[0],
+      createTestEncoder([])
+    )
+
+    node.render([passB])
+    node.tick(
+      { time: 0.016, bpm: 120, resolution: [2, 2], deltaMs: 16 } as unknown as Parameters<WebGPUOutputNode['tick']>[0],
+      createTestEncoder([])
+    )
+
+    const stateCalls = createCalls.filter((entry) => entry.label?.includes('state-compat-state'))
+    expect(stateCalls).toHaveLength(2)
+    expect(stateCalls[0].format).toBe('rgba8unorm')
+    expect(stateCalls[1].format).toBe('rgba16float')
   })
 
   it('reuses cached bind groups across ping-pong output textures', () => {
@@ -621,6 +747,58 @@ describe('WebGPUOutputNode texture exposure', () => {
 
     expect(dispatches).toHaveLength(3)
     expect(bindGroupCreations).toBe(2)
+  })
+
+  it('dispatches linear-domain data passes without output texture bindings', () => {
+    const renderer = createRendererMock()
+    const node = new WebGPUOutputNode({
+      renderer: renderer as never,
+      width: 2,
+      height: 2,
+      label: 'o-linear'
+    })
+
+    const externalBuffer = { id: 'external-buffer' } as unknown as GPUBuffer
+    const pass: HydraCompiledPass = {
+      signature: 'linear-data-pass',
+      wgsl: '@compute @workgroup_size(64, 1, 1) fn csMain() {}',
+      uniforms: [],
+      textures: [],
+      storageBuffers: [
+        {
+          name: 'computeBuffer',
+          variableName: 'computeBuffer',
+          getBuffer: () => externalBuffer,
+          access: 'read_write',
+          lifetime: 'frame',
+          elementType: 'vec4f',
+          minLength: 130,
+          binding: 3
+        }
+      ],
+      dispatch: {
+        mode: 'direct',
+        domain: 'linear1d',
+        itemCount: 130,
+        workgroupSize: [64, 1, 1]
+      }
+    }
+
+    node.render([pass])
+    const dispatches: DispatchLogEntry[] = []
+    node.tick(
+      { time: 0, bpm: 120, resolution: [2, 2], deltaMs: 16 } as unknown as Parameters<WebGPUOutputNode['tick']>[0],
+      createTestEncoder(dispatches)
+    )
+
+    expect(dispatches).toHaveLength(1)
+    expect(dispatches[0].pipelineId).toBe('linear-data-pass')
+    expect(dispatches[0].x).toBe(3)
+    expect(dispatches[0].y).toBe(1)
+    expect(dispatches[0].z).toBe(1)
+
+    const bindGroup = dispatches[0].bindGroup as { entries: Array<{ binding: number }> }
+    expect(bindGroup.entries.some((entry) => entry.binding === 4)).toBe(false)
   })
 
   it('falls back when required GPU features are unavailable', () => {
@@ -895,6 +1073,37 @@ describe('WebGPUOutputNode texture exposure', () => {
     expect(dispatches.map((entry) => entry.pipelineId)).toContain('__hydra-analysis-reduction-v1')
     expect(copySizes[0]).toEqual({ width: 1, height: 1 })
     expect(readbackSizes[0]).toBe(256)
+  })
+
+  it('tracks per-pass CPU encode stats', () => {
+    const renderer = createRendererMock()
+    const node = new WebGPUOutputNode({
+      renderer: renderer as never,
+      width: 2,
+      height: 2,
+      label: 'o-stats'
+    })
+
+    const pass: HydraCompiledPass = {
+      signature: 'stats-pass',
+      wgsl: '@compute @workgroup_size(1, 1, 1) fn csMain() {}',
+      uniforms: [],
+      textures: [],
+      dispatch: {
+        mode: 'direct',
+        workgroupSize: [1, 1, 1]
+      }
+    }
+
+    node.render([pass])
+    const frame = { time: 0, bpm: 120, resolution: [2, 2], deltaMs: 16 } as unknown as Parameters<WebGPUOutputNode['tick']>[0]
+    node.tick(frame, createTestEncoder([]))
+    node.tick({ ...frame, time: 0.016 }, createTestEncoder([]))
+
+    const stats = node.getPassStats()
+    expect(stats['stats-pass']?.dispatchCount).toBe(2)
+    expect((stats['stats-pass']?.lastCpuEncodeMs ?? -1) >= 0).toBe(true)
+    expect((stats['stats-pass']?.avgCpuEncodeMs ?? -1) >= 0).toBe(true)
   })
 
   it('feeds analysis readback averages into subsequent frame analysis state', async () => {

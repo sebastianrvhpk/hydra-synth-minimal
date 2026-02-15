@@ -1,5 +1,6 @@
 import {
   type HydraAnalysisOutputBinding,
+  type HydraDispatchDomain,
   type HydraDispatchConfig,
   HydraEngine,
   type HydraEngineBindingHost,
@@ -54,6 +55,7 @@ import {
 export { HydraEngine }
 export type {
   HydraAnalysisOutputBinding,
+  HydraDispatchDomain,
   HydraDispatchConfig,
   HydraEngineBindingHost,
   HydraEngineError,

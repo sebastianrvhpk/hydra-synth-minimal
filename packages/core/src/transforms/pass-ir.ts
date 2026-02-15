@@ -19,7 +19,7 @@ interface BuildPassIROptions {
   textures: HydraTextureBinding[]
   storageBuffers: HydraStorageBufferBinding[]
   storageTextures: HydraStorageTextureBinding[]
-  output: HydraOutputTextureBinding
+  output?: HydraOutputTextureBinding
 }
 
 const readSetFrom = (values: HydraPassIRResourceRef[]): string[] => {
@@ -118,18 +118,21 @@ export const buildPassIR = ({
     })
   })
 
-  resources.push({
-    name: output.name,
-    kind: 'outputTexture',
-    binding: output.binding,
-    access: 'write',
-    format: output.format,
-    lifetime: 'frame'
-  })
+  if (output) {
+    resources.push({
+      name: output.name,
+      kind: 'outputTexture',
+      binding: output.binding,
+      access: 'write',
+      format: output.format,
+      lifetime: 'frame'
+    })
+  }
 
   return {
     id: signature,
     signature,
+    kind: dispatch.domain === 'linear1d' || !output ? 'data' : 'image',
     schedule,
     workgroupSize: dispatch.workgroupSize,
     resources,

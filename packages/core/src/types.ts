@@ -145,6 +145,8 @@ export type HydraPassUpdateRate =
   | { everyNFrames: number }
   | { onEvent: string }
 
+export type HydraDispatchDomain = 'pixel2d' | 'linear1d'
+
 export interface HydraAnalysisOutputBinding {
   uniformName: string
   type: 'float' | 'vec2' | 'vec3' | 'vec4'
@@ -163,6 +165,9 @@ export interface HydraTransformResource {
   format?: HydraResourceFormat
   elementType?: HydraResourceElementType
   minLength?: number
+  widthScale?: number
+  heightScale?: number
+  depthOrArrayLayers?: number
   lifetime?: HydraResourceLifetime
   stateKey?: string
   default?: unknown
@@ -181,6 +186,9 @@ export interface HydraTransformDefinition {
   stateKey?: string
   lifetime?: HydraResourceLifetime
   analysisOut?: HydraAnalysisOutputBinding[]
+  executionDomain?: HydraDispatchDomain
+  writesOutput?: boolean
+  dispatchItems?: number
 }
 
 export interface ProcessedHydraTransform extends HydraTransformDefinition {
@@ -213,6 +221,9 @@ export interface HydraTypedResource {
   format?: HydraResourceFormat
   elementType: HydraResourceElementType
   minLength?: number
+  widthScale?: number
+  heightScale?: number
+  depthOrArrayLayers?: number
   variableName: string
   value: unknown
   getTexture: (() => unknown) | null
@@ -257,6 +268,9 @@ export interface HydraStorageTextureBinding {
   access: HydraResourceAccess
   format: HydraResourceFormat
   dimension: '2d' | '2d_array'
+  widthScale?: number
+  heightScale?: number
+  depthOrArrayLayers?: number
   lifetime: HydraResourceLifetime
   stateKey?: string
   sourceRef?: unknown
@@ -278,7 +292,9 @@ export interface HydraPassSchedule {
 
 export interface HydraDispatchConfig {
   mode: 'direct' | 'indirect'
+  domain?: HydraDispatchDomain
   workgroupSize: [number, number, number]
+  itemCount?: number
   getIndirectBuffer?: (() => unknown) | null
   indirectOffset?: number
   requiredWorkgroupStorageBytes?: number
@@ -298,6 +314,7 @@ export interface HydraPassIRResourceRef {
 export interface HydraPassIRNode {
   id: string
   signature: string
+  kind: 'image' | 'data'
   schedule: HydraPassSchedule
   workgroupSize: [number, number, number]
   resources: HydraPassIRResourceRef[]

@@ -12,6 +12,7 @@ export type {
   Disposable,
   HydraAnalysisOutputBinding,
   HydraCompiledPass,
+  HydraDispatchDomain,
   HydraDispatchConfig,
   HydraEngineBindingHost,
   HydraEngineError,

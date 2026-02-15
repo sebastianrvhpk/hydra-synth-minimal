@@ -122,6 +122,7 @@ export class HydraBrowserRuntime {
     this.synth.tick = this.tick.bind(this)
     this.synth.emitEvent = this.emitEvent.bind(this)
     this.synth.createSource = this.createSource.bind(this)
+    this.synth.getPassStats = this.getPassStats.bind(this)
 
     this.outputs.forEach((output, index) => {
       this.synth[`o${index}`] = output
@@ -215,6 +216,14 @@ export class HydraBrowserRuntime {
     if (this.renderer.ready) source.attachRenderer(this.renderer)
     this.synth[`s${sourceIndex}`] = source
     return source
+  }
+
+  getPassStats (): Record<string, ReturnType<WebGPUOutputNode['getPassStats']>> {
+    const stats: Record<string, ReturnType<WebGPUOutputNode['getPassStats']>> = {}
+    this.outputs.forEach((output, index) => {
+      stats[`o${index}`] = output.getPassStats()
+    })
+    return stats
   }
 
   hush (): void {

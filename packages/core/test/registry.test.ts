@@ -453,6 +453,8 @@ describe('HydraTransformRegistry', () => {
     expect(registered.has('rdStep')).toBe(true)
     expect(registered.has('lumaProbe')).toBe(true)
     expect(registered.has('trailScatter')).toBe(true)
+    expect(registered.has('bufferFill')).toBe(true)
+    expect(registered.has('bufferDecay')).toBe(true)
   })
 
   it('schedules simulation and analysis transforms as standalone compute passes', () => {
@@ -558,6 +560,104 @@ describe('HydraTransformRegistry', () => {
     expect(pass.storageTextures?.length).toBe(1)
     expect(pass.storageTextures?.[0].stateKey).toBe('trail-buffer')
     expect(pass.textures.some((texture) => texture.name === 'prevBuffer')).toBe(true)
+  })
+
+  it('compiles linear-domain kernels as data-only compute passes', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators
+      .solid(0.2, 0.3, 0.4, 1)
+      .bufferFill([1, 0, 0, 1])
+      .bufferDecay(0.95)
+      .out()
+
+    expect(output.passes.length).toBe(3)
+    const fillPass = output.passes[1]
+    const decayPass = output.passes[2]
+
+    expect(fillPass.dispatch?.domain).toBe('linear1d')
+    expect(fillPass.dispatch?.itemCount).toBe(4096)
+    expect(fillPass.output).toBeUndefined()
+    expect(fillPass.wgsl).toContain('fn hydraLinearIndex')
+    expect(fillPass.ir?.kind).toBe('data')
+    expect(fillPass.ir?.writes).toContain('computeBuffer')
+
+    expect(decayPass.dispatch?.domain).toBe('linear1d')
+    expect(decayPass.output).toBeUndefined()
+    expect(decayPass.wgsl).toContain('computeBuffer[index]')
+  })
+
+  it('merges everyNFrames update rates deterministically across transform order', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.registerTransform({
+      name: 'slowTick',
+      type: 'color',
+      updateRate: { everyNFrames: 5 },
+      wgsl: `
+  return _c0;
+`
+    })
+    registry.registerTransform({
+      name: 'fastTick',
+      type: 'color',
+      updateRate: { everyNFrames: 2 },
+      wgsl: `
+  return _c0;
+`
+    })
+
+    registry.generators.solid(0.1, 0.2, 0.3, 1).slowTick().fastTick().out()
+    const forwardRate = output.passes[0].schedule?.updateRate
+
+    registry.generators.solid(0.1, 0.2, 0.3, 1).fastTick().slowTick().out()
+    const reverseRate = output.passes[0].schedule?.updateRate
+
+    expect(forwardRate).toEqual({ everyNFrames: 5 })
+    expect(reverseRate).toEqual({ everyNFrames: 5 })
+  })
+
+  it('propagates storage texture allocation metadata into compiled bindings', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.registerTransform({
+      name: 'scaledState',
+      type: 'kernel',
+      resources: [
+        {
+          type: 'storageTexture2DArray',
+          name: 'scaledTrail',
+          access: 'read_write',
+          format: 'rgba8unorm',
+          lifetime: 'persistent',
+          stateKey: 'scaled-trail',
+          widthScale: 0.5,
+          heightScale: 0.25,
+          depthOrArrayLayers: 2
+        }
+      ],
+      wgsl: `
+  let dims = vec2f(max(globals.width, 1.0), max(globals.height, 1.0));
+  let pix = vec2i(
+    i32(clamp(floor(_st.x * dims.x), 0.0, dims.x - 1.0)),
+    i32(clamp(floor(_st.y * dims.y), 0.0, dims.y - 1.0))
+  );
+  let current = textureLoad(scaledTrail, pix, 0);
+  textureStore(scaledTrail, pix, 0, current);
+  return current;
+`
+    })
+
+    registry.generators.solid(0, 0, 0, 1).scaledState().out()
+
+    expect(output.passes.length).toBe(2)
+    const pass = output.passes[1]
+    expect(pass.storageTextures?.[0].widthScale).toBe(0.5)
+    expect(pass.storageTextures?.[0].heightScale).toBe(0.25)
+    expect(pass.storageTextures?.[0].depthOrArrayLayers).toBe(2)
   })
 
   it('supports vector dynamic uniforms and packs scalar lanes deterministically', () => {

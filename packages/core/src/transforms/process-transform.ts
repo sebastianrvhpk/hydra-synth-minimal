@@ -1,4 +1,5 @@
 import type {
+  HydraDispatchDomain,
   HydraTransformDefinition,
   HydraTransformInput,
   HydraPassSchedule,
@@ -76,6 +77,17 @@ const normalizeSchedule = (definition: HydraTransformDefinition): HydraPassSched
   }
 }
 
+const normalizeExecutionDomain = (definition: HydraTransformDefinition): HydraDispatchDomain => {
+  if (definition.executionDomain === 'linear1d') return 'linear1d'
+  return 'pixel2d'
+}
+
+const normalizeDispatchItems = (definition: HydraTransformDefinition): number | undefined => {
+  const count = Number(definition.dispatchItems)
+  if (!Number.isFinite(count) || count <= 0) return undefined
+  return Math.max(1, Math.floor(count))
+}
+
 export const processTransformDefinition = (definition: HydraTransformDefinition): ProcessedHydraTransform => {
   const typeConfig = typeLookup[definition.type]
   if (!typeConfig) {
@@ -94,12 +106,20 @@ ${definition.wgsl}
 }
 `
 
+  const executionDomain = normalizeExecutionDomain(definition)
+  const writesOutput = typeof definition.writesOutput === 'boolean'
+    ? definition.writesOutput
+    : executionDomain !== 'linear1d'
+
   return {
     ...definition,
     resources: definition.resources ?? [],
     inputs: inputs.slice(1),
     wgsl: wgslFunction,
     wgsl_return_type: typeConfig.returnType,
-    schedule: normalizeSchedule(definition)
+    schedule: normalizeSchedule(definition),
+    executionDomain,
+    writesOutput,
+    dispatchItems: normalizeDispatchItems(definition)
   }
 }
