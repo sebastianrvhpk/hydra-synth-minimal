@@ -827,6 +827,13 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'amount', default: 1.0 }
     ],
+    computeKernel: {
+      kind: 'convolution3x3',
+      weights: [0.0, 0.125, 0.0, 0.125, 0.5, 0.125, 0.0, 0.125, 0.0],
+      radiusInputIndex: 0,
+      preferredVariant: 'auto',
+      allowSubgroups: true
+    },
     wgsl: `
   let texel = vec2f(
     amount / max(globals.width, 1.0),

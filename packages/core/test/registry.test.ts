@@ -9,6 +9,16 @@ class CaptureOutput implements HydraOutputAdapter {
   }
 }
 
+const getFallbackTail = (pass: HydraCompiledPass | undefined): HydraCompiledPass | undefined => {
+  let current = pass
+  const visited = new Set<string>()
+  while (current?.fallbackPass && !visited.has(current.signature)) {
+    visited.add(current.signature)
+    current = current.fallbackPass
+  }
+  return current
+}
+
 describe('HydraTransformRegistry', () => {
   it('registers default transforms and compiles a pass', () => {
     const output = new CaptureOutput()
@@ -177,8 +187,10 @@ describe('HydraTransformRegistry', () => {
     expect((tiledYPass.dispatch?.requiredWorkgroupStorageBytes ?? 0) > 0).toBe(true)
     expect(tiledXPass.fallbackPass).toBeDefined()
     expect(tiledYPass.fallbackPass).toBeDefined()
-    expect(tiledXPass.fallbackPass?.wgsl).toContain('fn blurTiledX')
-    expect(tiledYPass.fallbackPass?.wgsl).toContain('fn blurTiledY')
+    expect(tiledXPass.fallbackPass?.dispatch?.mode).toBe('indirect')
+    expect(tiledYPass.fallbackPass?.dispatch?.mode).toBe('indirect')
+    expect(getFallbackTail(tiledXPass)?.wgsl).toContain('fn blurTiledX')
+    expect(getFallbackTail(tiledYPass)?.wgsl).toContain('fn blurTiledY')
   })
 
   it('specializes blurSubgroupX/blurSubgroupY into subgroup variants with tiled fallback chains', () => {
@@ -199,8 +211,27 @@ describe('HydraTransformRegistry', () => {
     expect(subgroupYPass.fallbackPass).toBeDefined()
     expect(subgroupXPass.fallbackPass?.dispatch?.mode).toBe('indirect')
     expect(subgroupYPass.fallbackPass?.dispatch?.mode).toBe('indirect')
-    expect(subgroupXPass.fallbackPass?.fallbackPass).toBeDefined()
-    expect(subgroupYPass.fallbackPass?.fallbackPass).toBeDefined()
+    expect(getFallbackTail(subgroupXPass)?.wgsl).toContain('fn blurSubgroupX')
+    expect(getFallbackTail(subgroupYPass)?.wgsl).toContain('fn blurSubgroupY')
+  })
+
+  it('specializes blurFast into convolution3x3 subgroup+tiled variants with fallback chains', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators.osc(8, 0.1, 0).blurFast(1).out()
+
+    expect(output.passes.length).toBe(2)
+    const blurPass = output.passes[1]
+
+    expect(blurPass.wgsl).toContain('subgroup_invocation_id')
+    expect(blurPass.wgsl).toContain('var<workgroup> tile')
+    expect(blurPass.dispatch?.workgroupSize).toEqual([16, 16, 1])
+    expect(blurPass.dispatch?.requiredFeatures).toEqual(['subgroups'])
+    expect((blurPass.dispatch?.requiredWorkgroupStorageBytes ?? 0) > 0).toBe(true)
+    expect(blurPass.fallbackPass).toBeDefined()
+    expect(blurPass.fallbackPass?.dispatch?.mode).toBe('indirect')
+    expect(getFallbackTail(blurPass)?.wgsl).toContain('fn blurFast')
   })
 
   it('specializes edgeDetect/edgeLaplacian into subgroup variants with tiled+generic fallback chains', () => {
@@ -227,10 +258,8 @@ describe('HydraTransformRegistry', () => {
     expect(edgeLaplacianPass.fallbackPass).toBeDefined()
     expect(edgeDetectPass.fallbackPass?.dispatch?.mode).toBe('indirect')
     expect(edgeLaplacianPass.fallbackPass?.dispatch?.mode).toBe('indirect')
-    expect(edgeDetectPass.fallbackPass?.fallbackPass).toBeDefined()
-    expect(edgeLaplacianPass.fallbackPass?.fallbackPass).toBeDefined()
-    expect(edgeDetectPass.fallbackPass?.fallbackPass?.wgsl).toContain('fn edgeDetect')
-    expect(edgeLaplacianPass.fallbackPass?.fallbackPass?.wgsl).toContain('fn edgeLaplacian')
+    expect(getFallbackTail(edgeDetectPass)?.wgsl).toContain('fn edgeDetect')
+    expect(getFallbackTail(edgeLaplacianPass)?.wgsl).toContain('fn edgeLaplacian')
   })
 
   it('injects prev() when chaining non-src transforms after renderpass boundaries', () => {
@@ -485,6 +514,37 @@ describe('HydraTransformRegistry', () => {
     expect(pass.storageTextures?.length).toBe(1)
     expect(pass.storageTextures?.[0].dimension).toBe('2d_array')
     expect(pass.wgsl).toContain('texture_storage_2d_array<rgba8unorm, read_write>')
+  })
+
+  it('propagates storage buffer minLength metadata', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.registerTransform({
+      name: 'bufferTrail',
+      type: 'kernel',
+      resources: [
+        {
+          type: 'storageBuffer',
+          name: 'trailData',
+          access: 'read_write',
+          elementType: 'vec4f',
+          minLength: 1024,
+          lifetime: 'persistent',
+          stateKey: 'trail-buffer'
+        }
+      ],
+      wgsl: `
+  trailData[0] = vec4f(0.0);
+  return vec4f(0.0);
+`
+    })
+
+    registry.generators.solid(0.2, 0.3, 0.4, 1).bufferTrail().out()
+
+    expect(output.passes.length).toBe(2)
+    const pass = output.passes[1]
+    expect(pass.storageBuffers?.[0].minLength).toBe(1024)
   })
 
   it('compiles persistent storage resources for built-in trailScatter()', () => {

@@ -117,9 +117,18 @@ export interface HydraStencil3x3KernelDescriptor {
   allowSubgroups?: boolean
 }
 
+export interface HydraConvolution3x3KernelDescriptor {
+  kind: 'convolution3x3'
+  weights: number[]
+  radiusInputIndex?: number
+  preferredVariant?: HydraComputeKernelVariant | 'auto'
+  allowSubgroups?: boolean
+}
+
 export type HydraComputeKernelDescriptor =
   | HydraSeparableBlurKernelDescriptor
   | HydraStencil3x3KernelDescriptor
+  | HydraConvolution3x3KernelDescriptor
 export type HydraPassUpdateRate = 'everyFrame' | { everyNFrames: number } | { onEvent: string }
 
 export interface HydraAnalysisOutputBinding {
@@ -139,6 +148,7 @@ export interface HydraTransformResource {
   access?: HydraResourceAccess
   format?: HydraResourceFormat
   elementType?: HydraResourceElementType
+  minLength?: number
   lifetime?: HydraResourceLifetime
   stateKey?: string
   default?: unknown
@@ -188,6 +198,7 @@ export interface HydraTypedResource {
   stateKey?: string
   format?: HydraResourceFormat
   elementType: HydraResourceElementType
+  minLength?: number
   variableName: string
   value: unknown
   getTexture: (() => unknown) | null

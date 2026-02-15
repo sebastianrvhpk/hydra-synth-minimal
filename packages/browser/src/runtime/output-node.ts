@@ -85,6 +85,13 @@ fn csMain(@builtin(global_invocation_id) invocationId: vec3u) {
 }
 `
 
+const getStorageElementStride = (elementType: HydraStorageBufferBinding['elementType']): number => {
+  if (elementType === 'f32' || elementType === 'u32' || elementType === 'i32') return 4
+  if (elementType === 'vec2f') return 8
+  if (elementType === 'vec3f') return 16
+  return 16
+}
+
 const getWorkgroupSize = (wgsl: string): [number, number, number] => {
   const match = WORKGROUP_SIZE_PATTERN.exec(wgsl)
   if (!match) return DEFAULT_WORKGROUP_SIZE
@@ -511,6 +518,16 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
 
   private meetsPassRequirements (pass: HydraCompiledPass): boolean {
     if (!this.hasRequiredFeatures(pass)) return false
+    const workgroupSize = pass.dispatch?.workgroupSize ?? pass.ir?.workgroupSize
+    const computeLimits = this.renderer?.capabilities?.compute
+    if (workgroupSize && computeLimits) {
+      const [x, y, z] = workgroupSize
+      if (computeLimits.maxComputeWorkgroupSizeX > 0 && x > computeLimits.maxComputeWorkgroupSizeX) return false
+      if (computeLimits.maxComputeWorkgroupSizeY > 0 && y > computeLimits.maxComputeWorkgroupSizeY) return false
+      if (computeLimits.maxComputeWorkgroupSizeZ > 0 && z > computeLimits.maxComputeWorkgroupSizeZ) return false
+      const maxInvocations = computeLimits.maxComputeInvocationsPerWorkgroup
+      if (maxInvocations > 0 && x * y * z > maxInvocations) return false
+    }
     const requiredStorage = pass.dispatch?.requiredWorkgroupStorageBytes
     if (!requiredStorage) return true
     const availableStorage = this.renderer?.capabilities?.compute.maxComputeWorkgroupStorageSize ?? 0
@@ -754,12 +771,17 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     const persistentKey = bufferBinding.stateKey ?? (bufferBinding.lifetime === 'persistent' ? bufferBinding.name : '')
     if (!persistentKey) return null
 
+    const minLength = Math.max(1, Math.floor(bufferBinding.minLength || 1))
+    const elementStride = getStorageElementStride(bufferBinding.elementType)
+    const requiredBytes = Math.max(16, minLength * elementStride)
+
     let buffer = this.persistentBuffers.get(persistentKey)
-    if (!buffer) {
-      buffer = this.renderer.createStorageBuffer(
-        `${this.label}-state-${persistentKey}`,
-        Math.max(16, bufferBinding.minLength * 16)
-      )
+    const existingSize = typeof (buffer as { size?: number } | null)?.size === 'number'
+      ? (buffer as { size: number }).size
+      : 0
+    if (!buffer || existingSize < requiredBytes) {
+      if (buffer) buffer.destroy()
+      buffer = this.renderer.createStorageBuffer(`${this.label}-state-${persistentKey}`, requiredBytes)
       this.persistentBuffers.set(persistentKey, buffer)
     }
     return buffer

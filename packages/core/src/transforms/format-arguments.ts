@@ -214,16 +214,26 @@ interface ResolvedResourceOptions {
   lifetime: HydraResourceLifetime
   stateKey: string | undefined
   elementType: HydraResourceElementType
+  minLength: number
 }
 
 const resolveResourceOptions = (
-  input: { type: string, access?: HydraResourceAccess, format?: HydraResourceFormat, lifetime?: HydraResourceLifetime, stateKey?: string, elementType?: HydraResourceElementType }
+  input: {
+    type: string
+    access?: HydraResourceAccess
+    format?: HydraResourceFormat
+    lifetime?: HydraResourceLifetime
+    stateKey?: string
+    elementType?: HydraResourceElementType
+    minLength?: number
+  }
 ): ResolvedResourceOptions => ({
   access: input.access ?? (input.type === 'storageBuffer' ? 'read_write' : 'read_write'),
   format: input.format,
   lifetime: input.lifetime ?? 'frame',
   stateKey: input.stateKey,
-  elementType: input.elementType ?? 'vec4f'
+  elementType: input.elementType ?? 'vec4f',
+  minLength: Math.max(1, Number.isFinite(input.minLength) ? Math.floor(input.minLength ?? 1) : 1)
 })
 
 const resolveResourceValue = (
@@ -263,6 +273,7 @@ export const formatResourceBindings = (
       stateKey: options.stateKey,
       format: options.format,
       elementType: options.elementType,
+      minLength: options.minLength,
       variableName,
       value,
       getTexture: null,

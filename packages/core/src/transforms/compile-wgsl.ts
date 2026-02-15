@@ -116,6 +116,13 @@ const hashString = (value = ''): string => {
   return (hash >>> 0).toString(16).padStart(8, '0')
 }
 
+const toFloatLiteral = (value: number): string => {
+  if (!Number.isFinite(value)) return '0.0'
+  const asString = value.toString()
+  if (asString.includes('.') || asString.includes('e') || asString.includes('E')) return asString
+  return `${asString}.0`
+}
+
 const coerceExpression = (expression: string, fromType: string, toType: string): string => {
   if (fromType === toType) return expression
 
@@ -245,7 +252,7 @@ const registerStorageBuffer = (shaderParams: ShaderParams, resource: HydraTypedR
     stateKey: resource.stateKey,
     sourceRef: resource.sourceRef,
     elementType: resource.elementType,
-    minLength: 1
+    minLength: Math.max(1, resource.minLength ?? 1)
   })
 }
 
@@ -603,11 +610,26 @@ interface SeparableBlurConfig {
   allowSubgroups: boolean
 }
 
-const TILED_BLUR_WORKGROUP = 128
 const TILED_BLUR_MAX_STRIDE = 4
-const TILED_BLUR_HALO = TILED_BLUR_MAX_STRIDE * 4
-const TILED_BLUR_TILE_LENGTH = TILED_BLUR_WORKGROUP + TILED_BLUR_HALO * 2
-const TILED_BLUR_REQUIRED_WORKGROUP_STORAGE_BYTES = TILED_BLUR_TILE_LENGTH * 16
+const TILED_BLUR_TILE_SIZES = [128, 64, 32]
+
+interface TiledBlurConfig {
+  workgroupSize: number
+  halo: number
+  tileLength: number
+  requiredBytes: number
+}
+
+const resolveTiledBlurConfig = (workgroupSize: number): TiledBlurConfig => {
+  const halo = TILED_BLUR_MAX_STRIDE * 4
+  const tileLength = workgroupSize + halo * 2
+  return {
+    workgroupSize,
+    halo,
+    tileLength,
+    requiredBytes: tileLength * 16
+  }
+}
 
 const resolveSeparableBlurConfig = (transforms: HydraTransformCall[]): SeparableBlurConfig | null => {
   if (transforms.length !== 1) return null
@@ -624,8 +646,11 @@ const resolveSeparableBlurConfig = (transforms: HydraTransformCall[]): Separable
 const buildTiledBlurBody = (
   axis: TiledBlurAxis,
   amountExpression: string,
+  config: TiledBlurConfig,
   subgroupNoopExpression = '0.0'
 ): string => {
+  const { workgroupSize, halo } = config
+  const edgeStart = Math.max(1, workgroupSize - halo)
   if (axis === 'x') {
     return `
   if (invocationId.y >= height) {
@@ -633,17 +658,17 @@ const buildTiledBlurBody = (
   }
 
   let localX = i32(localId.x);
-  let groupBaseX = i32(workgroupId.x) * ${TILED_BLUR_WORKGROUP};
+  let groupBaseX = i32(workgroupId.x) * ${workgroupSize};
   let sourceX = groupBaseX + localX;
   let sourceY = i32(invocationId.y);
-  let baseIndex = localX + ${TILED_BLUR_HALO};
+  let baseIndex = localX + ${halo};
 
   tile[baseIndex] = hydraSamplePixelClamp(sourceX, sourceY);
-  if (localX < ${TILED_BLUR_HALO}) {
-    tile[localX] = hydraSamplePixelClamp(sourceX - ${TILED_BLUR_HALO}, sourceY);
+  if (localX < ${halo}) {
+    tile[localX] = hydraSamplePixelClamp(sourceX - ${halo}, sourceY);
   }
-  if (localX >= ${TILED_BLUR_WORKGROUP - TILED_BLUR_HALO}) {
-    tile[localX + ${TILED_BLUR_HALO * 2}] = hydraSamplePixelClamp(sourceX + ${TILED_BLUR_HALO}, sourceY);
+  if (localX >= ${edgeStart}) {
+    tile[localX + ${halo * 2}] = hydraSamplePixelClamp(sourceX + ${halo}, sourceY);
   }
 
   workgroupBarrier();
@@ -671,17 +696,17 @@ const buildTiledBlurBody = (
   }
 
   let localY = i32(localId.y);
-  let groupBaseY = i32(workgroupId.y) * ${TILED_BLUR_WORKGROUP};
+  let groupBaseY = i32(workgroupId.y) * ${workgroupSize};
   let sourceY = groupBaseY + localY;
   let sourceX = i32(invocationId.x);
-  let baseIndex = localY + ${TILED_BLUR_HALO};
+  let baseIndex = localY + ${halo};
 
   tile[baseIndex] = hydraSamplePixelClamp(sourceX, sourceY);
-  if (localY < ${TILED_BLUR_HALO}) {
-    tile[localY] = hydraSamplePixelClamp(sourceX, sourceY - ${TILED_BLUR_HALO});
+  if (localY < ${halo}) {
+    tile[localY] = hydraSamplePixelClamp(sourceX, sourceY - ${halo});
   }
-  if (localY >= ${TILED_BLUR_WORKGROUP - TILED_BLUR_HALO}) {
-    tile[localY + ${TILED_BLUR_HALO * 2}] = hydraSamplePixelClamp(sourceX, sourceY + ${TILED_BLUR_HALO});
+  if (localY >= ${edgeStart}) {
+    tile[localY + ${halo * 2}] = hydraSamplePixelClamp(sourceX, sourceY + ${halo});
   }
 
   workgroupBarrier();
@@ -708,7 +733,8 @@ const compileSeparableBlurVariantPass = (
   maxDynamicUniforms: number,
   config: SeparableBlurConfig,
   variant: Exclude<SeparableBlurVariant, 'generic'>,
-  fallbackPass: HydraCompiledPass
+  fallbackPass: HydraCompiledPass,
+  tileConfig: TiledBlurConfig
 ): HydraCompiledPass => {
   const axis = config.axis
   const isSubgroupVariant = variant === 'subgroup'
@@ -742,10 +768,10 @@ const compileSeparableBlurVariantPass = (
   const dynamicUniformVec4Count = Math.ceil(maxDynamicUniforms / 4)
   const includeDynamicUniforms = uniforms.length > 0
   const [workgroupSizeX, workgroupSizeY, workgroupSizeZ] = axis === 'x'
-    ? [TILED_BLUR_WORKGROUP, 1, 1]
-    : [1, TILED_BLUR_WORKGROUP, 1]
+    ? [tileConfig.workgroupSize, 1, 1]
+    : [1, tileConfig.workgroupSize, 1]
   const subgroupNoopExpression = isSubgroupVariant ? 'subgroupNorm * 0.0' : '0.0'
-  const tiledBody = buildTiledBlurBody(axis, amountExpression, subgroupNoopExpression)
+  const tiledBody = buildTiledBlurBody(axis, amountExpression, tileConfig, subgroupNoopExpression)
   const structureSignature = buildStructureSignature(transforms)
   const analysisOut = collectAnalysisOutputs(transforms)
   const textureBindings: HydraTextureBinding[] = [{
@@ -811,7 +837,7 @@ fn hydraSamplePixelClamp(x: i32, y: i32) -> vec4f {
   return hydraSampleTexture(prevBuffer, uv);
 }
 
-var<workgroup> tile: array<vec4f, ${TILED_BLUR_TILE_LENGTH}>;
+var<workgroup> tile: array<vec4f, ${tileConfig.tileLength}>;
 
 @compute @workgroup_size(${workgroupSizeX}, ${workgroupSizeY}, ${workgroupSizeZ})
 fn csMain(
@@ -826,13 +852,13 @@ ${subgroupPrelude}${tiledBody}
 `
 
   const signatureBase =
-    `${structureSignature}|separableBlur${axis}|variant${variant}|u${uniforms.length}|us${uniformScalarCount}` +
-    `|t1|sb0|st0|rs${schedule.resolutionScale}|sp${schedule.sparse ? 1 : 0}`
+    `${structureSignature}|separableBlur${axis}|variant${variant}|tile${tileConfig.workgroupSize}` +
+    `|u${uniforms.length}|us${uniformScalarCount}|t1|sb0|st0|rs${schedule.resolutionScale}|sp${schedule.sparse ? 1 : 0}`
   const pipelineSignature = `${signatureBase}|cs${workgroupSizeX}x${workgroupSizeY}x${workgroupSizeZ}|h${hashString(wgsl)}`
   const dispatch: HydraDispatchConfig = {
     mode: 'indirect',
     workgroupSize: [workgroupSizeX, workgroupSizeY, workgroupSizeZ],
-    requiredWorkgroupStorageBytes: TILED_BLUR_REQUIRED_WORKGROUP_STORAGE_BYTES
+    requiredWorkgroupStorageBytes: tileConfig.requiredBytes
   }
   if (isSubgroupVariant) dispatch.requiredFeatures = ['subgroups']
   const output = {
@@ -877,26 +903,29 @@ const compileSeparableBlurPass = (
 
   const genericPass = compileGenericWgslPass(transforms, maxDynamicUniforms)
   if (config.preferredVariant === 'generic') return genericPass
+  const buildVariantChain = (
+    variant: Exclude<SeparableBlurVariant, 'generic'>,
+    fallback: HydraCompiledPass
+  ): HydraCompiledPass => {
+    let chain = fallback
+    for (let index = TILED_BLUR_TILE_SIZES.length - 1; index >= 0; index -= 1) {
+      const tileConfig = resolveTiledBlurConfig(TILED_BLUR_TILE_SIZES[index])
+      chain = compileSeparableBlurVariantPass(
+        transforms,
+        maxDynamicUniforms,
+        config,
+        variant,
+        chain,
+        tileConfig
+      )
+    }
+    return chain
+  }
 
-  const tiledPass = compileSeparableBlurVariantPass(
-    transforms,
-    maxDynamicUniforms,
-    config,
-    'tiled',
-    genericPass
-  )
-
+  const tiledPass = buildVariantChain('tiled', genericPass)
   if (!config.allowSubgroups || config.preferredVariant === 'tiled') return tiledPass
 
-  const subgroupPass = compileSeparableBlurVariantPass(
-    transforms,
-    maxDynamicUniforms,
-    config,
-    'subgroup',
-    tiledPass
-  )
-
-  if (config.preferredVariant === 'subgroup') return subgroupPass
+  const subgroupPass = buildVariantChain('subgroup', tiledPass)
   return subgroupPass
 }
 
@@ -908,13 +937,90 @@ interface Stencil3x3Config {
   allowSubgroups: boolean
 }
 
-const STENCIL_WORKGROUP_X = 16
-const STENCIL_WORKGROUP_Y = 16
 const STENCIL_HALO = 1
-const STENCIL_TILE_WIDTH = STENCIL_WORKGROUP_X + STENCIL_HALO * 2
-const STENCIL_TILE_HEIGHT = STENCIL_WORKGROUP_Y + STENCIL_HALO * 2
-const STENCIL_TILE_LENGTH = STENCIL_TILE_WIDTH * STENCIL_TILE_HEIGHT
-const STENCIL_REQUIRED_WORKGROUP_STORAGE_BYTES = STENCIL_TILE_LENGTH * 16
+const STENCIL_TILE_SIZES = [16, 8]
+
+interface StencilTileConfig {
+  workgroupSizeX: number
+  workgroupSizeY: number
+  tileWidth: number
+  tileHeight: number
+  tileLength: number
+  requiredBytes: number
+}
+
+const resolveStencilTileConfig = (size: number): StencilTileConfig => {
+  const workgroupSizeX = Math.max(1, Math.floor(size))
+  const workgroupSizeY = Math.max(1, Math.floor(size))
+  const tileWidth = workgroupSizeX + STENCIL_HALO * 2
+  const tileHeight = workgroupSizeY + STENCIL_HALO * 2
+  const tileLength = tileWidth * tileHeight
+  return {
+    workgroupSizeX,
+    workgroupSizeY,
+    tileWidth,
+    tileHeight,
+    tileLength,
+    requiredBytes: tileLength * 16
+  }
+}
+
+const CONVOLUTION_MAX_STRIDE = 4
+const CONVOLUTION_TILE_SIZES = [16, 8]
+
+interface Convolution3x3Config {
+  weights: number[]
+  radiusInputIndex: number
+  preferredVariant: Stencil3x3Variant | 'auto'
+  allowSubgroups: boolean
+}
+
+interface ConvolutionTileConfig {
+  workgroupSizeX: number
+  workgroupSizeY: number
+  halo: number
+  tileWidth: number
+  tileHeight: number
+  tileLength: number
+  requiredBytes: number
+}
+
+const resolveConvolutionTileConfig = (size: number): ConvolutionTileConfig => {
+  const workgroupSizeX = Math.max(1, Math.floor(size))
+  const workgroupSizeY = Math.max(1, Math.floor(size))
+  const halo = CONVOLUTION_MAX_STRIDE
+  const tileWidth = workgroupSizeX + halo * 2
+  const tileHeight = workgroupSizeY + halo * 2
+  const tileLength = tileWidth * tileHeight
+  return {
+    workgroupSizeX,
+    workgroupSizeY,
+    halo,
+    tileWidth,
+    tileHeight,
+    tileLength,
+    requiredBytes: tileLength * 16
+  }
+}
+
+const resolveConvolution3x3Config = (transforms: HydraTransformCall[]): Convolution3x3Config | null => {
+  if (transforms.length !== 1) return null
+  const only = transforms[0]?.transform
+  const kernel = only?.computeKernel
+  if (!kernel || kernel.kind !== 'convolution3x3') return null
+  const rawWeights = Array.isArray(kernel.weights) ? kernel.weights : []
+  const weights: number[] = []
+  for (let index = 0; index < 9; index += 1) {
+    const value = rawWeights[index]
+    weights.push(typeof value === 'number' && Number.isFinite(value) ? value : 0)
+  }
+  return {
+    weights,
+    radiusInputIndex: Math.max(0, Math.floor(kernel.radiusInputIndex ?? 0)),
+    preferredVariant: kernel.preferredVariant ?? 'auto',
+    allowSubgroups: Boolean(kernel.allowSubgroups)
+  }
+}
 
 const resolveStencil3x3Config = (transforms: HydraTransformCall[]): Stencil3x3Config | null => {
   if (transforms.length !== 1) return null
@@ -932,8 +1038,11 @@ const buildStencil3x3Body = (
   operator: Stencil3x3Config['operator'],
   amountExpression: string,
   mixAmountExpression: string,
+  tileConfig: StencilTileConfig,
   subgroupNoopExpression = '0.0'
 ): string => {
+  const edgeX = Math.max(0, tileConfig.workgroupSizeX - 1)
+  const edgeY = Math.max(0, tileConfig.workgroupSizeY - 1)
   const sharedLoad = `
   let localX = i32(localId.x);
   let localY = i32(localId.y);
@@ -948,26 +1057,26 @@ const buildStencil3x3Body = (
   if (localX == 0) {
     tile[hydraTileIndex(tileX - 1, tileY)] = hydraSamplePixelClamp(sourceX - 1, sourceY);
   }
-  if (localX == ${STENCIL_WORKGROUP_X - 1}) {
+  if (localX == ${edgeX}) {
     tile[hydraTileIndex(tileX + 1, tileY)] = hydraSamplePixelClamp(sourceX + 1, sourceY);
   }
   if (localY == 0) {
     tile[hydraTileIndex(tileX, tileY - 1)] = hydraSamplePixelClamp(sourceX, sourceY - 1);
   }
-  if (localY == ${STENCIL_WORKGROUP_Y - 1}) {
+  if (localY == ${edgeY}) {
     tile[hydraTileIndex(tileX, tileY + 1)] = hydraSamplePixelClamp(sourceX, sourceY + 1);
   }
 
   if (localX == 0 && localY == 0) {
     tile[hydraTileIndex(tileX - 1, tileY - 1)] = hydraSamplePixelClamp(sourceX - 1, sourceY - 1);
   }
-  if (localX == ${STENCIL_WORKGROUP_X - 1} && localY == 0) {
+  if (localX == ${edgeX} && localY == 0) {
     tile[hydraTileIndex(tileX + 1, tileY - 1)] = hydraSamplePixelClamp(sourceX + 1, sourceY - 1);
   }
-  if (localX == 0 && localY == ${STENCIL_WORKGROUP_Y - 1}) {
+  if (localX == 0 && localY == ${edgeY}) {
     tile[hydraTileIndex(tileX - 1, tileY + 1)] = hydraSamplePixelClamp(sourceX - 1, sourceY + 1);
   }
-  if (localX == ${STENCIL_WORKGROUP_X - 1} && localY == ${STENCIL_WORKGROUP_Y - 1}) {
+  if (localX == ${edgeX} && localY == ${edgeY}) {
     tile[hydraTileIndex(tileX + 1, tileY + 1)] = hydraSamplePixelClamp(sourceX + 1, sourceY + 1);
   }
 
@@ -1025,7 +1134,8 @@ const compileStencil3x3VariantPass = (
   maxDynamicUniforms: number,
   config: Stencil3x3Config,
   variant: Exclude<Stencil3x3Variant, 'generic'>,
-  fallbackPass: HydraCompiledPass
+  fallbackPass: HydraCompiledPass,
+  tileConfig: StencilTileConfig
 ): HydraCompiledPass => {
   const isSubgroupVariant = variant === 'subgroup'
 
@@ -1066,12 +1176,17 @@ const compileStencil3x3VariantPass = (
   const schedule = mergePassSchedule(transforms)
   const dynamicUniformVec4Count = Math.ceil(maxDynamicUniforms / 4)
   const includeDynamicUniforms = uniforms.length > 0
-  const [workgroupSizeX, workgroupSizeY, workgroupSizeZ] = [STENCIL_WORKGROUP_X, STENCIL_WORKGROUP_Y, 1]
+  const [workgroupSizeX, workgroupSizeY, workgroupSizeZ] = [
+    tileConfig.workgroupSizeX,
+    tileConfig.workgroupSizeY,
+    1
+  ]
   const subgroupNoopExpression = isSubgroupVariant ? 'subgroupNorm * 0.0' : '0.0'
   const tiledBody = buildStencil3x3Body(
     config.operator,
     amountExpression,
     mixAmountExpression,
+    tileConfig,
     subgroupNoopExpression
   )
   const structureSignature = buildStructureSignature(transforms)
@@ -1144,15 +1259,16 @@ fn hydraLuminance(c: vec3f) -> f32 {
 }
 
 fn hydraTileIndex(x: i32, y: i32) -> i32 {
-  return y * ${STENCIL_TILE_WIDTH} + x;
+  return y * ${tileConfig.tileWidth} + x;
 }
 
-var<workgroup> tile: array<vec4f, ${STENCIL_TILE_LENGTH}>;
+var<workgroup> tile: array<vec4f, ${tileConfig.tileLength}>;
 
 @compute @workgroup_size(${workgroupSizeX}, ${workgroupSizeY}, ${workgroupSizeZ})
 fn csMain(
   @builtin(global_invocation_id) invocationId: vec3u,
-  @builtin(local_invocation_id) localId: vec3u${subgroupBuiltins}
+  @builtin(local_invocation_id) localId: vec3u,
+  @builtin(workgroup_id) workgroupId: vec3u${subgroupBuiltins}
 ) {
   let width = max(1u, u32(globals.width));
   let height = max(1u, u32(globals.height));
@@ -1161,13 +1277,13 @@ ${subgroupPrelude}${tiledBody}
 `
 
   const signatureBase =
-    `${structureSignature}|stencil3x3${config.operator}|variant${variant}|u${uniforms.length}|us${uniformScalarCount}` +
-    `|t1|sb0|st0|rs${schedule.resolutionScale}|sp${schedule.sparse ? 1 : 0}`
+    `${structureSignature}|stencil3x3${config.operator}|variant${variant}|tile${workgroupSizeX}x${workgroupSizeY}` +
+    `|u${uniforms.length}|us${uniformScalarCount}|t1|sb0|st0|rs${schedule.resolutionScale}|sp${schedule.sparse ? 1 : 0}`
   const pipelineSignature = `${signatureBase}|cs${workgroupSizeX}x${workgroupSizeY}x${workgroupSizeZ}|h${hashString(wgsl)}`
   const dispatch: HydraDispatchConfig = {
     mode: 'indirect',
     workgroupSize: [workgroupSizeX, workgroupSizeY, workgroupSizeZ],
-    requiredWorkgroupStorageBytes: STENCIL_REQUIRED_WORKGROUP_STORAGE_BYTES
+    requiredWorkgroupStorageBytes: tileConfig.requiredBytes
   }
   if (isSubgroupVariant) dispatch.requiredFeatures = ['subgroups']
   const output = {
@@ -1212,26 +1328,300 @@ const compileStencil3x3Pass = (
 
   const genericPass = compileGenericWgslPass(transforms, maxDynamicUniforms)
   if (config.preferredVariant === 'generic') return genericPass
+  const buildVariantChain = (
+    variant: Exclude<Stencil3x3Variant, 'generic'>,
+    fallback: HydraCompiledPass
+  ): HydraCompiledPass => {
+    let chain = fallback
+    for (let index = STENCIL_TILE_SIZES.length - 1; index >= 0; index -= 1) {
+      const tileConfig = resolveStencilTileConfig(STENCIL_TILE_SIZES[index])
+      chain = compileStencil3x3VariantPass(
+        transforms,
+        maxDynamicUniforms,
+        config,
+        variant,
+        chain,
+        tileConfig
+      )
+    }
+    return chain
+  }
 
-  const tiledPass = compileStencil3x3VariantPass(
-    transforms,
-    maxDynamicUniforms,
-    config,
-    'tiled',
-    genericPass
-  )
-
+  const tiledPass = buildVariantChain('tiled', genericPass)
   if (!config.allowSubgroups || config.preferredVariant === 'tiled') return tiledPass
 
-  const subgroupPass = compileStencil3x3VariantPass(
-    transforms,
-    maxDynamicUniforms,
-    config,
-    'subgroup',
-    tiledPass
-  )
+  const subgroupPass = buildVariantChain('subgroup', tiledPass)
+  return subgroupPass
+}
 
-  if (config.preferredVariant === 'subgroup') return subgroupPass
+const buildConvolution3x3Body = (
+  weights: number[],
+  radiusExpression: string,
+  tileConfig: ConvolutionTileConfig,
+  subgroupNoopExpression = '0.0'
+): string => {
+  const w = weights.map((value) => toFloatLiteral(value))
+  return `
+  let localX = i32(localId.x);
+  let localY = i32(localId.y);
+  let groupBaseX = i32(workgroupId.x) * ${tileConfig.workgroupSizeX} - ${tileConfig.halo};
+  let groupBaseY = i32(workgroupId.y) * ${tileConfig.workgroupSizeY} - ${tileConfig.halo};
+
+  for (var loadY = localY; loadY < ${tileConfig.tileHeight}; loadY += ${tileConfig.workgroupSizeY}) {
+    let sourceY = groupBaseY + loadY;
+    for (var loadX = localX; loadX < ${tileConfig.tileWidth}; loadX += ${tileConfig.workgroupSizeX}) {
+      let sourceX = groupBaseX + loadX;
+      tile[hydraTileIndex(loadX, loadY)] = hydraSamplePixelClamp(sourceX, sourceY);
+    }
+  }
+
+  workgroupBarrier();
+
+  if (invocationId.x >= width || invocationId.y >= height) {
+    return;
+  }
+
+  let sourceX = i32(invocationId.x);
+  let sourceY = i32(invocationId.y);
+  let tileX = localX + ${tileConfig.halo};
+  let tileY = localY + ${tileConfig.halo};
+  let stride = clamp(i32(round(max(${radiusExpression}, 1.0))), 1, ${CONVOLUTION_MAX_STRIDE});
+  let c00 = tile[hydraTileIndex(tileX - stride, tileY - stride)];
+  let c10 = tile[hydraTileIndex(tileX, tileY - stride)];
+  let c20 = tile[hydraTileIndex(tileX + stride, tileY - stride)];
+  let c01 = tile[hydraTileIndex(tileX - stride, tileY)];
+  let c11 = tile[hydraTileIndex(tileX, tileY)];
+  let c21 = tile[hydraTileIndex(tileX + stride, tileY)];
+  let c02 = tile[hydraTileIndex(tileX - stride, tileY + stride)];
+  let c12 = tile[hydraTileIndex(tileX, tileY + stride)];
+  let c22 = tile[hydraTileIndex(tileX + stride, tileY + stride)];
+
+  let outColor =
+    c00 * ${w[0]} +
+    c10 * ${w[1]} +
+    c20 * ${w[2]} +
+    c01 * ${w[3]} +
+    c11 * ${w[4]} +
+    c21 * ${w[5]} +
+    c02 * ${w[6]} +
+    c12 * ${w[7]} +
+    c22 * ${w[8]} +
+    vec4f(${subgroupNoopExpression});
+
+  textureStore(outImage, vec2i(sourceX, sourceY), outColor);
+`
+}
+
+const compileConvolution3x3VariantPass = (
+  transforms: HydraTransformCall[],
+  maxDynamicUniforms: number,
+  config: Convolution3x3Config,
+  variant: Exclude<Stencil3x3Variant, 'generic'>,
+  fallbackPass: HydraCompiledPass,
+  tileConfig: ConvolutionTileConfig
+): HydraCompiledPass => {
+  const isSubgroupVariant = variant === 'subgroup'
+  const transform = transforms[0]
+  const args = formatArguments(transform, 0)
+  const radiusArg = args[config.radiusInputIndex]
+  const uniforms: HydraUniformBinding[] = []
+  let uniformScalarCount = 0
+
+  const resolveScalarExpression = (
+    arg: HydraTypedArgument | undefined,
+    fallback: string
+  ): string => {
+    if (arg?.isUniform && arg.uniformName && typeof arg.value === 'function') {
+      const index = uniformScalarCount
+      uniforms.push({
+        name: arg.uniformName,
+        index,
+        size: 1,
+        value: arg.value,
+        type: arg.type
+      })
+      uniformScalarCount += 1
+      return `hydraDynamicUniform(${index}u)`
+    }
+    if (typeof arg?.literal !== 'undefined') return arg.literal
+    return fallback
+  }
+
+  const radiusExpression = resolveScalarExpression(radiusArg, '1.0')
+  if (uniformScalarCount > maxDynamicUniforms) {
+    throw new Error(`Shader uses ${uniformScalarCount} dynamic uniform scalars, but max is ${maxDynamicUniforms}.`)
+  }
+
+  const schedule = mergePassSchedule(transforms)
+  const dynamicUniformVec4Count = Math.ceil(maxDynamicUniforms / 4)
+  const includeDynamicUniforms = uniforms.length > 0
+  const [workgroupSizeX, workgroupSizeY, workgroupSizeZ] = [
+    tileConfig.workgroupSizeX,
+    tileConfig.workgroupSizeY,
+    1
+  ]
+  const subgroupNoopExpression = isSubgroupVariant ? 'subgroupNorm * 0.0' : '0.0'
+  const tiledBody = buildConvolution3x3Body(config.weights, radiusExpression, tileConfig, subgroupNoopExpression)
+  const structureSignature = buildStructureSignature(transforms)
+  const analysisOut = collectAnalysisOutputs(transforms)
+  const textureBindings: HydraTextureBinding[] = [{
+    name: 'prevBuffer',
+    variableName: 'prevBuffer',
+    getTexture: null,
+    isPrev: true,
+    binding: 3
+  }]
+  const outputBinding = 4
+  const dynamicUniformDeclarations = includeDynamicUniforms
+    ? `
+struct DynamicUniforms {
+  values: array<vec4f, ${dynamicUniformVec4Count}>,
+};
+
+@group(0) @binding(1) var<uniform> dynamicUniforms: DynamicUniforms;
+
+fn hydraDynamicUniform(index: u32) -> f32 {
+  let vecIndex = index / 4u;
+  let lane = index % 4u;
+  let packed = dynamicUniforms.values[vecIndex];
+  if (lane == 0u) { return packed.x; }
+  if (lane == 1u) { return packed.y; }
+  if (lane == 2u) { return packed.z; }
+  return packed.w;
+}
+`
+    : ''
+  const subgroupBuiltins = isSubgroupVariant
+    ? `,
+  @builtin(subgroup_invocation_id) subgroupInvocationId: u32,
+  @builtin(subgroup_size) subgroupSize: u32`
+    : ''
+  const subgroupPrelude = isSubgroupVariant
+    ? `  let subgroupNorm = (f32(subgroupInvocationId) + 1.0) / max(f32(subgroupSize), 1.0);\n`
+    : ''
+
+  const wgsl = `
+struct GlobalUniforms {
+  time: f32,
+  bpm: f32,
+  width: f32,
+  height: f32,
+};
+
+@group(0) @binding(0) var<uniform> globals: GlobalUniforms;
+${dynamicUniformDeclarations}
+@group(0) @binding(2) var hydraSampler: sampler;
+@group(0) @binding(3) var prevBuffer: texture_2d<f32>;
+@group(0) @binding(${outputBinding}) var outImage: texture_storage_2d<rgba8unorm, write>;
+
+fn hydraSampleTexture(tex: texture_2d<f32>, uv: vec2f) -> vec4f {
+  return textureSampleLevel(tex, hydraSampler, fract(uv), 0.0);
+}
+
+fn hydraSamplePixelClamp(x: i32, y: i32) -> vec4f {
+  let maxX = i32(max(1.0, globals.width)) - 1;
+  let maxY = i32(max(1.0, globals.height)) - 1;
+  let clampedX = clamp(x, 0, maxX);
+  let clampedY = clamp(y, 0, maxY);
+  let uv = vec2f(f32(clampedX) + 0.5, f32(clampedY) + 0.5) / vec2f(globals.width, globals.height);
+  return hydraSampleTexture(prevBuffer, uv);
+}
+
+fn hydraTileIndex(x: i32, y: i32) -> i32 {
+  return y * ${tileConfig.tileWidth} + x;
+}
+
+var<workgroup> tile: array<vec4f, ${tileConfig.tileLength}>;
+
+@compute @workgroup_size(${workgroupSizeX}, ${workgroupSizeY}, ${workgroupSizeZ})
+fn csMain(
+  @builtin(global_invocation_id) invocationId: vec3u,
+  @builtin(local_invocation_id) localId: vec3u${subgroupBuiltins}
+) {
+  let width = max(1u, u32(globals.width));
+  let height = max(1u, u32(globals.height));
+${subgroupPrelude}${tiledBody}
+}
+`
+
+  const weightSignature = hashString(config.weights.map((value) => toFloatLiteral(value)).join(','))
+  const signatureBase =
+    `${structureSignature}|convolution3x3${weightSignature}|variant${variant}` +
+    `|tile${workgroupSizeX}x${workgroupSizeY}|u${uniforms.length}|us${uniformScalarCount}` +
+    `|t1|sb0|st0|rs${schedule.resolutionScale}|sp${schedule.sparse ? 1 : 0}`
+  const pipelineSignature = `${signatureBase}|cs${workgroupSizeX}x${workgroupSizeY}x${workgroupSizeZ}|h${hashString(wgsl)}`
+  const dispatch: HydraDispatchConfig = {
+    mode: 'indirect',
+    workgroupSize: [workgroupSizeX, workgroupSizeY, workgroupSizeZ],
+    requiredWorkgroupStorageBytes: tileConfig.requiredBytes
+  }
+  if (isSubgroupVariant) dispatch.requiredFeatures = ['subgroups']
+  const output = {
+    name: 'outImage',
+    variableName: 'outImage',
+    format: 'rgba8unorm' as HydraResourceFormat,
+    binding: outputBinding
+  }
+  const compiled: HydraCompiledPass = {
+    signature: pipelineSignature,
+    wgsl,
+    uniforms,
+    textures: textureBindings,
+    storageBuffers: [],
+    storageTextures: [],
+    output,
+    schedule,
+    dispatch,
+    ir: buildPassIR({
+      signature: pipelineSignature,
+      schedule,
+      dispatch,
+      uniforms,
+      textures: textureBindings,
+      storageBuffers: [],
+      storageTextures: [],
+      output
+    }),
+    fallbackPass
+  }
+  if (analysisOut.length > 0) compiled.analysisOut = analysisOut
+
+  return optimizePassIR(compiled)
+}
+
+const compileConvolution3x3Pass = (
+  transforms: HydraTransformCall[],
+  maxDynamicUniforms: number
+): HydraCompiledPass | null => {
+  const config = resolveConvolution3x3Config(transforms)
+  if (!config) return null
+
+  const genericPass = compileGenericWgslPass(transforms, maxDynamicUniforms)
+  if (config.preferredVariant === 'generic') return genericPass
+
+  const buildVariantChain = (
+    variant: Exclude<Stencil3x3Variant, 'generic'>,
+    fallback: HydraCompiledPass
+  ): HydraCompiledPass => {
+    let chain = fallback
+    for (let index = CONVOLUTION_TILE_SIZES.length - 1; index >= 0; index -= 1) {
+      const tileConfig = resolveConvolutionTileConfig(CONVOLUTION_TILE_SIZES[index])
+      chain = compileConvolution3x3VariantPass(
+        transforms,
+        maxDynamicUniforms,
+        config,
+        variant,
+        chain,
+        tileConfig
+      )
+    }
+    return chain
+  }
+
+  const tiledPass = buildVariantChain('tiled', genericPass)
+  if (!config.allowSubgroups || config.preferredVariant === 'tiled') return tiledPass
+
+  const subgroupPass = buildVariantChain('subgroup', tiledPass)
   return subgroupPass
 }
 
@@ -1243,5 +1633,7 @@ export const compileWgslPass = (
   if (separable) return separable
   const stencil = compileStencil3x3Pass(transforms, maxDynamicUniforms)
   if (stencil) return stencil
+  const convolution = compileConvolution3x3Pass(transforms, maxDynamicUniforms)
+  if (convolution) return convolution
   return compileGenericWgslPass(transforms, maxDynamicUniforms)
 }
