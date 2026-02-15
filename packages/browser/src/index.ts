@@ -40,7 +40,24 @@ import {
 } from './capture/frame-sequence.js'
 import { BrowserHost, type BrowserHostOptions } from './runtime/browser-host.js'
 import { HydraBrowserRuntime, type HydraBrowserRuntimeOptions } from './runtime/runtime.js'
+import {
+  HydraAutotunerV3,
+  type HydraAutotuneProfileV3,
+  type HydraAutotuneProfilerInputV3,
+  type HydraTuningPolicyV3
+} from './runtime/autotune-v3.js'
+import { HydraExecutorV3, type ExecutePlanV3Result, type HydraExecutePlanV3Options, type HydraExecutorQueueHooksV3 } from './runtime/executor-v3.js'
 import { WebGPUOutputNode } from './runtime/output-node.js'
+import { buildProfilerSnapshotV3, type HydraProfilerSnapshotV3 } from './runtime/profiler-v3.js'
+import {
+  decideQueueDispatchV3,
+  shouldTerminateQueueLoopV3,
+  toQueueIndirectArgsV3,
+  type HydraQueueDispatchDecisionV3,
+  type HydraQueueDispatchStateV3,
+  type HydraQueueIndirectArgsV3
+} from './runtime/queue-v3.js'
+import { HydraResourceManagerV3, type HydraResourceResidencySnapshotV3 } from './runtime/resource-manager-v3.js'
 import { HydraSourceNode, type PatchBayAdapter } from './runtime/source-node.js'
 import {
   WEBGPU_UNAVAILABLE_MESSAGE,
@@ -51,6 +68,24 @@ import {
   type WebGPURendererOptions,
   type WebGPUSubgroupCapabilities
 } from './webgpu/renderer.js'
+import {
+  BENCHMARK_CORPUS_V3,
+  getBenchmarkSceneDefinitionV3
+} from './benchmark/corpus.js'
+import {
+  buildBenchmarkReportV3,
+  validateBenchmarkReportV3,
+  type BuildBenchmarkReportOptions,
+  type ValidateBenchmarkReportResult
+} from './benchmark/runner.js'
+import type {
+  HydraBenchmarkAcceptanceGate,
+  HydraBenchmarkReport,
+  HydraBenchmarkSample,
+  HydraBenchmarkSceneDefinition,
+  HydraCapabilityMatrix,
+  HydraWorkloadClass
+} from './benchmark/types.js'
 
 export { HydraEngine }
 export type {
@@ -89,10 +124,47 @@ export type {
   WebGPUCapabilities,
   WebGPUComputeCapabilities,
   WebGPUStorageCapabilities,
-  WebGPUSubgroupCapabilities
+  WebGPUSubgroupCapabilities,
+  HydraProfilerSnapshotV3,
+  HydraTuningPolicyV3,
+  HydraAutotuneProfileV3,
+  HydraAutotuneProfilerInputV3,
+  ExecutePlanV3Result,
+  HydraExecutePlanV3Options,
+  HydraExecutorQueueHooksV3,
+  HydraResourceResidencySnapshotV3,
+  HydraQueueDispatchStateV3,
+  HydraQueueDispatchDecisionV3,
+  HydraQueueIndirectArgsV3,
+  HydraBenchmarkAcceptanceGate,
+  HydraBenchmarkReport,
+  HydraBenchmarkSample,
+  HydraBenchmarkSceneDefinition,
+  HydraCapabilityMatrix,
+  HydraWorkloadClass,
+  BuildBenchmarkReportOptions,
+  ValidateBenchmarkReportResult
 }
 
-export { WEBGPU_UNAVAILABLE_MESSAGE, WebGPURenderer, BrowserHost, HydraBrowserRuntime, HydraSourceNode, WebGPUOutputNode }
+export {
+  WEBGPU_UNAVAILABLE_MESSAGE,
+  WebGPURenderer,
+  BrowserHost,
+  HydraBrowserRuntime,
+  HydraSourceNode,
+  WebGPUOutputNode,
+  HydraExecutorV3,
+  HydraResourceManagerV3,
+  HydraAutotunerV3,
+  buildProfilerSnapshotV3,
+  decideQueueDispatchV3,
+  toQueueIndirectArgsV3,
+  shouldTerminateQueueLoopV3,
+  BENCHMARK_CORPUS_V3,
+  getBenchmarkSceneDefinitionV3,
+  buildBenchmarkReportV3,
+  validateBenchmarkReportV3
+}
 export type { BrowserHostOptions, HydraBrowserRuntimeOptions, PatchBayAdapter, WebGPURendererOptions }
 export { captureFrameSequence, captureHydraFrameSequence, buildFfmpegCommands }
 

@@ -1,5 +1,8 @@
 import { compileWgslPass } from './compile-wgsl.js'
+import { splitLegacyPasses } from './split-legacy-passes.js'
+import { compileGraphV3 } from '../compiler-v3/compile-graph-v3.js'
 import type { HydraCompiledPass, HydraOutputAdapter, HydraTransformCall } from '../types.js'
+import type { HydraExecutionPlanV3 } from '../compiler-v3/types.js'
 
 export interface HydraGraphNodeOptions {
   initialTransform: HydraTransformCall
@@ -32,7 +35,11 @@ export class HydraGraphNode {
 
   wgsl (): HydraCompiledPass[] {
     if (this.transforms.length === 0) return []
-    return this.splitIntoPasses(this.transforms).map((pass) => this.compile(pass))
+    return splitLegacyPasses(this.transforms).map((pass) => this.compile(pass))
+  }
+
+  planV3 (): HydraExecutionPlanV3 {
+    return compileGraphV3(this.transforms, { maxDynamicUniforms: this.maxDynamicUniforms })
   }
 
   private compile (transforms: HydraTransformCall[]): HydraCompiledPass {
@@ -45,51 +52,4 @@ export class HydraGraphNode {
     }
   }
 
-  private splitIntoPasses (transforms: HydraTransformCall[]): HydraTransformCall[][] {
-    const passes: HydraTransformCall[][] = []
-    let currentPass: HydraTransformCall[] = []
-    let shouldInjectPrev = false
-    const standalonePassTypes = new Set(['renderpass', 'simulation', 'analysis', 'kernel'])
-
-    const pushCurrentPass = (): void => {
-      if (currentPass.length === 0) return
-      passes.push(currentPass)
-      currentPass = []
-    }
-
-    for (const transform of transforms) {
-      if (standalonePassTypes.has(transform.transform.type)) {
-        pushCurrentPass()
-        const isIdentityRenderpass =
-          transform.transform.type === 'renderpass' && transform.name === 'renderpass'
-        if (!isIdentityRenderpass) passes.push([transform])
-        shouldInjectPrev = true
-        continue
-      }
-
-      if (currentPass.length === 0 && shouldInjectPrev && transform.transform.type !== 'src') {
-        const prevTransform = this.createPrevTransform(transform)
-        if (prevTransform) currentPass.push(prevTransform)
-      }
-
-      currentPass.push(transform)
-      shouldInjectPrev = false
-    }
-
-    pushCurrentPass()
-    return passes
-  }
-
-  private createPrevTransform (anchor: HydraTransformCall): HydraTransformCall | null {
-    const prevGenerator = anchor.synth.generators.prev
-    if (typeof prevGenerator !== 'function') return null
-
-    try {
-      const prevNode = prevGenerator()
-      if (!prevNode || !Array.isArray(prevNode.transforms) || prevNode.transforms.length === 0) return null
-      return prevNode.transforms[0]
-    } catch {
-      return null
-    }
-  }
 }

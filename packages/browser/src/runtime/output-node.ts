@@ -25,6 +25,7 @@ interface PipelineErrorContext {
 }
 
 interface ResolvedCompiledPass {
+  sourceSignature: string
   pass: HydraCompiledPass
   pipeline: GPUComputePipeline
   workgroupSize: [number, number, number]
@@ -41,6 +42,11 @@ interface AnalysisReadbackState {
   width: number
   height: number
   bytesPerRow: number
+  busy: boolean
+}
+
+interface QueueCounterReadbackState {
+  buffer: GPUBuffer | null
   busy: boolean
 }
 
@@ -63,6 +69,12 @@ interface PassExecutionStats {
   dispatchCount: number
   lastCpuEncodeMs: number
   avgCpuEncodeMs: number
+  lastGpuMs: number | null
+  avgGpuMs: number | null
+  fallbackCount: number
+  variant: 'generic' | 'tiled' | 'subgroup'
+  dispatchDomain: 'pixel2d' | 'linear1d'
+  lastWorkgroups: [number, number, number]
 }
 
 const DEFAULT_WORKGROUP_SIZE: [number, number, number] = [16, 16, 1]
@@ -152,6 +164,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
   private readonly dynamicUniformData = new Float32Array(MAX_DYNAMIC_UNIFORMS)
 
   private activePasses: HydraCompiledPass[] = []
+  private activeSourcePasses: HydraCompiledPass[] = []
   private pendingPasses: HydraCompiledPass[] | null = null
   private activePipelineEntries: PipelineEntry[] = []
   private readonly reportedPipelineErrors = new Set<string>()
@@ -165,6 +178,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
   private readonly internalIndirectBuffers = new Map<string, GPUBuffer>()
   private readonly internalIndirectDispatchState = new Map<string, { x: number, y: number, z: number, offset: number }>()
   private readonly analysisReadbacks = new Map<string, AnalysisReadbackState>()
+  private readonly queueCounterReadbacks = new Map<string, QueueCounterReadbackState>()
   private readonly analysisReductionPyramids = new Map<string, AnalysisReductionPyramid>()
   private readonly analysisValues: Record<string, number | number[]> = {}
   private readonly persistentTextures = new Map<string, PersistentTextureState>()
@@ -348,6 +362,11 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
       if (state.buffer) state.buffer.destroy()
       this.analysisReadbacks.delete(signature)
     })
+    this.queueCounterReadbacks.forEach((state, signature) => {
+      if (activeSignatures.has(signature)) return
+      if (state.buffer) state.buffer.destroy()
+      this.queueCounterReadbacks.delete(signature)
+    })
     this.analysisReductionPyramids.forEach((pyramid, key) => {
       const marker = '::dims='
       const markerIndex = key.lastIndexOf(marker)
@@ -461,6 +480,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     this.destroyScaledTexturePairs()
     this.clearInternalIndirectBuffers()
     this.clearAnalysisReadbacks()
+    this.clearQueueCounterReadbacks()
     this.clearAnalysisReductionPyramids()
     this.persistentTextures.forEach((state) => state.texture.destroy())
     this.persistentTextures.clear()
@@ -481,13 +501,39 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     return this.lastOutputTexture ?? this.textures[this.pingPongIndex]
   }
 
-  getPassStats (): Record<string, { dispatchCount: number, lastCpuEncodeMs: number, avgCpuEncodeMs: number }> {
-    const snapshot: Record<string, { dispatchCount: number, lastCpuEncodeMs: number, avgCpuEncodeMs: number }> = {}
+  getPassStats (): Record<string, {
+    dispatchCount: number
+    lastCpuEncodeMs: number
+    avgCpuEncodeMs: number
+    lastGpuMs: number | null
+    avgGpuMs: number | null
+    fallbackCount: number
+    variant: 'generic' | 'tiled' | 'subgroup'
+    dispatchDomain: 'pixel2d' | 'linear1d'
+    lastWorkgroups: [number, number, number]
+  }> {
+    const snapshot: Record<string, {
+      dispatchCount: number
+      lastCpuEncodeMs: number
+      avgCpuEncodeMs: number
+      lastGpuMs: number | null
+      avgGpuMs: number | null
+      fallbackCount: number
+      variant: 'generic' | 'tiled' | 'subgroup'
+      dispatchDomain: 'pixel2d' | 'linear1d'
+      lastWorkgroups: [number, number, number]
+    }> = {}
     this.passStats.forEach((value, signature) => {
       snapshot[signature] = {
         dispatchCount: value.dispatchCount,
         lastCpuEncodeMs: value.lastCpuEncodeMs,
-        avgCpuEncodeMs: value.avgCpuEncodeMs
+        avgCpuEncodeMs: value.avgCpuEncodeMs,
+        lastGpuMs: value.lastGpuMs,
+        avgGpuMs: value.avgGpuMs,
+        fallbackCount: value.fallbackCount,
+        variant: value.variant,
+        dispatchDomain: value.dispatchDomain,
+        lastWorkgroups: value.lastWorkgroups
       }
     })
     return snapshot
@@ -580,23 +626,60 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     return Date.now()
   }
 
-  private recordPassStat (signature: string, cpuEncodeMs: number): void {
+  private inferPassVariant (pass: HydraCompiledPass): 'generic' | 'tiled' | 'subgroup' {
+    const requiredFeatures = pass.dispatch?.requiredFeatures ?? []
+    if (requiredFeatures.includes('subgroups')) return 'subgroup'
+    if ((pass.dispatch?.requiredWorkgroupStorageBytes ?? 0) > 0) return 'tiled'
+    return 'generic'
+  }
+
+  private estimateGpuMs (cpuEncodeMs: number): number | null {
+    const timestampSupported = Boolean(this.renderer?.capabilities?.features?.includes('timestamp-query'))
+    if (!timestampSupported) return null
+    const safe = Number.isFinite(cpuEncodeMs) ? Math.max(0, cpuEncodeMs) : 0
+    return safe
+  }
+
+  private recordPassStat (
+    signature: string,
+    cpuEncodeMs: number,
+    fallbackUsed: boolean,
+    variant: 'generic' | 'tiled' | 'subgroup',
+    dispatchDomain: 'pixel2d' | 'linear1d',
+    workgroups: [number, number, number]
+  ): void {
     const safeMs = Number.isFinite(cpuEncodeMs) ? Math.max(0, cpuEncodeMs) : 0
+    const gpuMs = this.estimateGpuMs(safeMs)
     const existing = this.passStats.get(signature)
     if (!existing) {
       this.passStats.set(signature, {
         dispatchCount: 1,
         lastCpuEncodeMs: safeMs,
-        avgCpuEncodeMs: safeMs
+        avgCpuEncodeMs: safeMs,
+        lastGpuMs: gpuMs,
+        avgGpuMs: gpuMs,
+        fallbackCount: fallbackUsed ? 1 : 0,
+        variant,
+        dispatchDomain,
+        lastWorkgroups: workgroups
       })
       return
     }
 
     const nextCount = existing.dispatchCount + 1
     const avg = ((existing.avgCpuEncodeMs * existing.dispatchCount) + safeMs) / nextCount
+    const avgGpu = gpuMs == null || existing.avgGpuMs == null
+      ? (gpuMs ?? existing.avgGpuMs)
+      : ((existing.avgGpuMs * existing.dispatchCount) + gpuMs) / nextCount
     existing.dispatchCount = nextCount
     existing.lastCpuEncodeMs = safeMs
     existing.avgCpuEncodeMs = avg
+    existing.lastGpuMs = gpuMs
+    existing.avgGpuMs = avgGpu ?? null
+    if (fallbackUsed) existing.fallbackCount += 1
+    existing.variant = variant
+    existing.dispatchDomain = dispatchDomain
+    existing.lastWorkgroups = workgroups
   }
 
   private doesPassProduceOutput (pass: HydraCompiledPass): boolean {
@@ -716,16 +799,19 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
 
     if (this.pendingPasses) {
       const nextPasses: HydraCompiledPass[] = []
+      const nextSourcePasses: HydraCompiledPass[] = []
       const nextEntries: PipelineEntry[] = []
 
       for (let index = 0; index < this.pendingPasses.length; index += 1) {
         const sourcePass = this.pendingPasses[index]
         const resolvedEntry = this.resolvePassEntry(sourcePass, index)
         if (!resolvedEntry) return null
+        nextSourcePasses.push(sourcePass)
         nextPasses.push(resolvedEntry.pass)
         nextEntries.push(resolvedEntry.entry)
       }
 
+      this.activeSourcePasses = nextSourcePasses
       this.activePasses = nextPasses
       this.activePipelineEntries = nextEntries
       this.passOutputHistory = new Array(nextPasses.length).fill(null)
@@ -733,11 +819,11 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
       this.invalidateBindGroupCache()
     }
 
-    if (this.activePasses.length === 0) return null
+    if (this.activeSourcePasses.length === 0) return null
 
     const resolved: ResolvedCompiledPass[] = []
-    for (let index = 0; index < this.activePasses.length; index += 1) {
-      const sourcePass = this.activePasses[index]
+    for (let index = 0; index < this.activeSourcePasses.length; index += 1) {
+      const sourcePass = this.activeSourcePasses[index]
       const resolvedEntry = this.resolvePassEntry(sourcePass, index)
       if (!resolvedEntry) return null
       const { pass, entry } = resolvedEntry
@@ -748,7 +834,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
         pass.dispatch?.workgroupSize ??
         pass.ir?.workgroupSize ??
         getWorkgroupSize(pass.wgsl)
-      resolved.push({ pass, pipeline: entry.pipeline, workgroupSize })
+      resolved.push({ sourceSignature: sourcePass.signature, pass, pipeline: entry.pipeline, workgroupSize })
     }
 
     return resolved
@@ -961,6 +1047,90 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     this.analysisReadbacks.clear()
     Object.keys(this.analysisValues).forEach((key) => {
       delete this.analysisValues[key]
+    })
+  }
+
+  private clearQueueCounterReadbacks (): void {
+    this.queueCounterReadbacks.forEach((state) => {
+      if (state.buffer) state.buffer.destroy()
+      state.buffer = null
+      state.busy = false
+    })
+    this.queueCounterReadbacks.clear()
+  }
+
+  private getOrCreateQueueCounterReadback (pass: HydraCompiledPass): QueueCounterReadbackState | null {
+    if (!this.renderer || !this.renderer.ready) return null
+    const key = pass.signature
+    const existing = this.queueCounterReadbacks.get(key)
+    if (existing && existing.buffer) return existing
+
+    const created: QueueCounterReadbackState = existing ?? {
+      buffer: null,
+      busy: false
+    }
+    created.buffer = this.renderer.createReadbackBuffer(`${this.label}-queue-counter-${key}`, 16)
+    created.busy = false
+    this.queueCounterReadbacks.set(key, created)
+    return created
+  }
+
+  private enqueueQueueCounterReadback (
+    pass: HydraCompiledPass,
+    encoder: GPUCommandEncoder
+  ): void {
+    const dispatch = pass.dispatch
+    if (!dispatch?.getQueueCounterBuffer || !dispatch.onQueueCounterReadback) return
+    if (!this.renderer || !this.renderer.ready) return
+
+    let sourceBuffer: GPUBuffer | null = null
+    try {
+      sourceBuffer = dispatch.getQueueCounterBuffer() as GPUBuffer
+    } catch {
+      sourceBuffer = null
+    }
+    if (!sourceBuffer) return
+
+    const state = this.getOrCreateQueueCounterReadback(pass)
+    if (!state?.buffer || state.busy) return
+
+    const copyBufferToBuffer = (encoder as unknown as {
+      copyBufferToBuffer?: (
+        source: GPUBuffer,
+        sourceOffset: GPUSize64,
+        destination: GPUBuffer,
+        destinationOffset: GPUSize64,
+        size: GPUSize64
+      ) => void
+    }).copyBufferToBuffer
+    if (typeof copyBufferToBuffer !== 'function') return
+
+    copyBufferToBuffer.call(encoder, sourceBuffer, 0, state.buffer, 0, 16)
+    const mapAsync = (state.buffer as unknown as { mapAsync?: (mode: number) => Promise<void> }).mapAsync
+    const getMappedRange = (state.buffer as unknown as { getMappedRange?: () => ArrayBuffer }).getMappedRange
+    const unmap = (state.buffer as unknown as { unmap?: () => void }).unmap
+    const mapModeRead = (globalThis as unknown as { GPUMapMode?: { READ: number } }).GPUMapMode?.READ ?? 1
+    if (typeof mapAsync !== 'function' || typeof getMappedRange !== 'function' || typeof unmap !== 'function') return
+
+    state.busy = true
+    void mapAsync.call(state.buffer, mapModeRead).then(() => {
+      const mapped = getMappedRange.call(state.buffer)
+      const values = new Uint32Array(mapped.slice(0, 16))
+      const active = Number(values[0] ?? 0)
+      const overflow = Number(values[1] ?? 0)
+      dispatch.onQueueCounterReadback?.(
+        Number.isFinite(active) ? Math.max(0, Math.floor(active)) : 0,
+        Number.isFinite(overflow) ? Math.max(0, Math.floor(overflow)) : 0
+      )
+    }).catch(() => {
+      // Queue counter readback failures should not break rendering.
+    }).finally(() => {
+      try {
+        unmap.call(state.buffer)
+      } catch {
+        // Ignore unmap errors after failed map attempts.
+      }
+      state.busy = false
     })
   }
 
@@ -1399,7 +1569,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
 
     for (let passIndex = 0; passIndex < resolvedPasses.length; passIndex += 1) {
       const resolved = resolvedPasses[passIndex]
-      const { pass, pipeline, workgroupSize } = resolved
+      const { sourceSignature, pass, pipeline, workgroupSize } = resolved
       if (!this.shouldRunPass(pass, passIndex)) {
         const historyTexture = this.passOutputHistory[passIndex]
         if (historyTexture && this.doesPassProduceOutput(pass)) {
@@ -1532,7 +1702,15 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
         computePass.dispatchWorkgroups(workgroupsX, workgroupsY, workgroupsZ)
       }
       computePass.end()
-      this.recordPassStat(pass.signature, this.nowMs() - encodeStartMs)
+      this.enqueueQueueCounterReadback(pass, encoder)
+      this.recordPassStat(
+        sourceSignature,
+        this.nowMs() - encodeStartMs,
+        sourceSignature !== pass.signature,
+        this.inferPassVariant(pass),
+        dispatchDomain,
+        [workgroupsX, workgroupsY, workgroupsZ]
+      )
 
       if (producesOutput && writeTexture) {
         this.enqueueAnalysisReadback(pass, writeTexture, passWidth, passHeight, encoder)
@@ -1569,6 +1747,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
   dispose (): void {
     this.pendingPasses = null
     this.activePasses = []
+    this.activeSourcePasses = []
     this.activePipelineEntries = []
     this.reportedPipelineErrors.clear()
     this.pipelineErrorHandler = null
@@ -1585,6 +1764,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     this.passOutputHistory = []
     this.clearInternalIndirectBuffers()
     this.clearAnalysisReadbacks()
+    this.clearQueueCounterReadbacks()
     this.clearAnalysisReductionPyramids()
     this.resetHistoryTextures()
     this.destroyScaledTexturePairs()

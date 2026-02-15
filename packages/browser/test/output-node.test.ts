@@ -17,6 +17,7 @@ const createTestEncoder = (
   options: {
     onCopyTextureToTexture?: (copySize: GPUExtent3D) => void
     onCopyTextureToBuffer?: (copySize: GPUExtent3D) => void
+    onCopyBufferToBuffer?: (size: GPUSize64) => void
   } = {}
 ): GPUCommandEncoder => ({
   beginComputePass: () => {
@@ -63,6 +64,15 @@ const createTestEncoder = (
     copySize: GPUExtent3D
   ) => {
     options.onCopyTextureToBuffer?.(copySize)
+  },
+  copyBufferToBuffer: (
+    _source: GPUBuffer,
+    _sourceOffset: GPUSize64,
+    _destination: GPUBuffer,
+    _destinationOffset: GPUSize64,
+    size: GPUSize64
+  ) => {
+    options.onCopyBufferToBuffer?.(size)
   }
 }) as unknown as GPUCommandEncoder
 
@@ -1159,5 +1169,66 @@ describe('WebGPUOutputNode texture exposure', () => {
     expect(typeof luma).toBe('number')
     expect(luma as number).toBeGreaterThan(0.2)
     expect(luma as number).toBeLessThan(0.23)
+  })
+
+  it('reads queue counter buffers and reports active/overflow metrics via dispatch callback', async () => {
+    const renderer = createRendererMock() as unknown as ReturnType<typeof createRendererMock> & {
+      createReadbackBuffer: (label: string, byteLength: number) => GPUBuffer
+    }
+    const queueBytes = new ArrayBuffer(256)
+    const queueView = new Uint32Array(queueBytes)
+    queueView[0] = 12
+    queueView[1] = 3
+    renderer.createReadbackBuffer = () => ({
+      destroy: () => {},
+      mapAsync: async () => {},
+      getMappedRange: () => queueBytes,
+      unmap: () => {}
+    } as unknown as GPUBuffer)
+
+    const node = new WebGPUOutputNode({
+      renderer: renderer as never,
+      width: 1,
+      height: 1,
+      label: 'o-queue-counter'
+    })
+
+    const queueBuffer = {} as GPUBuffer
+    const readbackEvents: Array<{ active: number, overflow: number }> = []
+    const pass: HydraCompiledPass = {
+      signature: 'queue-counter-pass',
+      wgsl: '@compute @workgroup_size(1, 1, 1) fn csMain() {}',
+      uniforms: [],
+      textures: [],
+      dispatch: {
+        mode: 'indirect',
+        workgroupSize: [1, 1, 1],
+        getIndirectBuffer: () => ({} as GPUBuffer),
+        getQueueCounterBuffer: () => queueBuffer,
+        onQueueCounterReadback: (activeCount, overflowCount) => {
+          readbackEvents.push({ active: activeCount, overflow: overflowCount })
+        }
+      }
+    }
+
+    node.render([pass])
+    const dispatches: DispatchLogEntry[] = []
+    const copies: number[] = []
+    node.tick(
+      { time: 0, bpm: 120, resolution: [1, 1], deltaMs: 16 } as unknown as Parameters<WebGPUOutputNode['tick']>[0],
+      createTestEncoder(dispatches, {
+        onCopyBufferToBuffer: (size) => {
+          copies.push(Number(size))
+        }
+      })
+    )
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(dispatches.length).toBe(1)
+    expect(copies.length).toBe(1)
+    expect(copies[0]).toBe(16)
+    expect(readbackEvents).toEqual([{ active: 12, overflow: 3 }])
   })
 })

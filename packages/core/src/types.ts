@@ -297,6 +297,8 @@ export interface HydraDispatchConfig {
   itemCount?: number
   getIndirectBuffer?: (() => unknown) | null
   indirectOffset?: number
+  getQueueCounterBuffer?: (() => unknown) | null
+  onQueueCounterReadback?: ((activeCount: number, overflowCount: number) => void) | null
   requiredWorkgroupStorageBytes?: number
   requiredFeatures?: string[]
 }
@@ -360,6 +362,7 @@ export interface HydraGraphNode {
   transforms: HydraTransformCall[]
   out (output?: HydraOutputAdapter): void
   wgsl (): HydraCompiledPass[]
+  planV3? (): unknown
 }
 
 export interface HydraTransformRegistryChangeEvent {
