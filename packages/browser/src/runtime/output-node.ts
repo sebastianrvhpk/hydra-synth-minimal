@@ -57,6 +57,7 @@ const MAX_BIND_GROUP_CACHE_ENTRIES = 64
 const DEFAULT_HISTORY_DEPTH = 0
 const ANALYSIS_REDUCTION_WORKGROUP_SIZE = 8
 const ANALYSIS_REDUCTION_PIPELINE_SIGNATURE = '__hydra-analysis-reduction-v1'
+const ANALYSIS_BYTES_PER_PIXEL = OUTPUT_TEXTURE_FORMAT === 'rgba16float' ? 8 : 4
 const ANALYSIS_REDUCTION_WGSL = `
 @group(0) @binding(0) var inTex: texture_2d<f32>;
 @group(0) @binding(1) var outTex: texture_storage_2d<${OUTPUT_TEXTURE_FORMAT}, write>;
@@ -105,6 +106,22 @@ const getWorkgroupSize = (wgsl: string): [number, number, number] => {
     Number.isFinite(y) && y > 0 ? y : 16,
     Number.isFinite(z) && z > 0 ? z : 1
   ]
+}
+
+const decodeFloat16 = (packed: number): number => {
+  const sign = (packed & 0x8000) === 0 ? 1 : -1
+  const exponent = (packed >> 10) & 0x1f
+  const fraction = packed & 0x03ff
+
+  if (exponent === 0) {
+    if (fraction === 0) return sign * 0
+    return sign * Math.pow(2, -14) * (fraction / 1024)
+  }
+  if (exponent === 0x1f) {
+    if (fraction === 0) return sign * Number.POSITIVE_INFINITY
+    return Number.NaN
+  }
+  return sign * Math.pow(2, exponent - 15) * (1 + fraction / 1024)
 }
 
 export class WebGPUOutputNode implements HydraOutputAdapter {
@@ -333,7 +350,12 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     return this.historyTextures[index] ?? null
   }
 
-  private recordHistoryTexture (texture: GPUTexture | null, encoder: GPUCommandEncoder): void {
+  private recordHistoryTexture (
+    texture: GPUTexture | null,
+    sourceWidth: number,
+    sourceHeight: number,
+    encoder: GPUCommandEncoder
+  ): void {
     if (!texture || this.historyDepth <= 0) return
     if (!this.renderer || !this.renderer.ready) return
     this.ensureHistoryTextures()
@@ -353,14 +375,16 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     const nextCursor = (this.historyCursor + 1) % depth
     const destination = this.historyTextures[nextCursor]
     if (!destination) return
+    const copyWidth = Math.max(1, Math.min(this.width, Math.floor(sourceWidth)))
+    const copyHeight = Math.max(1, Math.min(this.height, Math.floor(sourceHeight)))
 
     copyTexture.call(
       encoder,
       { texture },
       { texture: destination },
       {
-        width: Math.max(1, this.width),
-        height: Math.max(1, this.height),
+        width: copyWidth,
+        height: copyHeight,
         depthOrArrayLayers: 1
       }
     )
@@ -714,8 +738,9 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     if (!pass.schedule?.sparse) return dueByRate
 
     if (!this.passOutputHistory[passIndex]) return true
+    if (updateRate === 'everyFrame') return this.frameEvents.size > 0
+    if ('onEvent' in updateRate) return dueByRate
     if (this.frameEvents.size > 0) return true
-    if (updateRate === 'everyFrame') return false
 
     return dueByRate
   }
@@ -826,7 +851,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     const key = pass.signature
     const existing = this.analysisReadbacks.get(key)
 
-    const bytesPerRow = Math.ceil((Math.max(1, width) * 4) / 256) * 256
+    const bytesPerRow = Math.ceil((Math.max(1, width) * ANALYSIS_BYTES_PER_PIXEL) / 256) * 256
     const bufferSize = Math.max(bytesPerRow * Math.max(1, height), 256)
 
     if (existing) {
@@ -981,6 +1006,57 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     })
   }
 
+  private decodeAnalysisAverages (
+    state: AnalysisReadbackState,
+    mapped: ArrayBuffer
+  ): [number, number, number, number] | null {
+    let sumR = 0
+    let sumG = 0
+    let sumB = 0
+    let sumA = 0
+    let count = 0
+
+    if (OUTPUT_TEXTURE_FORMAT === 'rgba16float') {
+      const view = new DataView(mapped)
+      for (let y = 0; y < state.height; y += 1) {
+        const rowOffset = y * state.bytesPerRow
+        for (let x = 0; x < state.width; x += 1) {
+          const pixelOffset = rowOffset + (x * 8)
+          const r = decodeFloat16(view.getUint16(pixelOffset, true))
+          const g = decodeFloat16(view.getUint16(pixelOffset + 2, true))
+          const b = decodeFloat16(view.getUint16(pixelOffset + 4, true))
+          const a = decodeFloat16(view.getUint16(pixelOffset + 6, true))
+          sumR += Number.isFinite(r) ? r : 0
+          sumG += Number.isFinite(g) ? g : 0
+          sumB += Number.isFinite(b) ? b : 0
+          sumA += Number.isFinite(a) ? a : 0
+          count += 1
+        }
+      }
+    } else {
+      const bytes = new Uint8Array(mapped)
+      for (let y = 0; y < state.height; y += 1) {
+        const rowOffset = y * state.bytesPerRow
+        for (let x = 0; x < state.width; x += 1) {
+          const pixelOffset = rowOffset + (x * 4)
+          sumR += bytes[pixelOffset] / 255
+          sumG += bytes[pixelOffset + 1] / 255
+          sumB += bytes[pixelOffset + 2] / 255
+          sumA += bytes[pixelOffset + 3] / 255
+          count += 1
+        }
+      }
+    }
+
+    if (count <= 0) return null
+    return [
+      sumR / count,
+      sumG / count,
+      sumB / count,
+      sumA / count
+    ]
+  }
+
   private enqueueAnalysisReadback (
     pass: HydraCompiledPass,
     texture: GPUTexture,
@@ -1039,33 +1115,8 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     state.busy = true
     void mapAsync.call(state.buffer, mapModeRead).then(() => {
       const mapped = getMappedRange.call(state.buffer)
-      const bytes = new Uint8Array(mapped)
-      let sumR = 0
-      let sumG = 0
-      let sumB = 0
-      let sumA = 0
-      let count = 0
-
-      for (let y = 0; y < state.height; y += 1) {
-        const rowOffset = y * state.bytesPerRow
-        for (let x = 0; x < state.width; x += 1) {
-          const pixelOffset = rowOffset + (x * 4)
-          sumR += bytes[pixelOffset] / 255
-          sumG += bytes[pixelOffset + 1] / 255
-          sumB += bytes[pixelOffset + 2] / 255
-          sumA += bytes[pixelOffset + 3] / 255
-          count += 1
-        }
-      }
-
-      if (count > 0) {
-        this.applyAnalysisBindings(analysisOut, [
-          sumR / count,
-          sumG / count,
-          sumB / count,
-          sumA / count
-        ])
-      }
+      const averages = this.decodeAnalysisAverages(state, mapped)
+      if (averages) this.applyAnalysisBindings(analysisOut, averages)
     }).catch(() => {
       // Analysis readback failures should not break frame rendering.
     }).finally(() => {
@@ -1212,13 +1263,20 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     this.frameCounter += 1
     this.frameOrdinal += 1
     let currentTexture = this.lastOutputTexture ?? this.textures[this.pingPongIndex] ?? this.renderer.getFallbackTexture()
+    let currentTextureWidth = this.width
+    let currentTextureHeight = this.height
 
     for (let passIndex = 0; passIndex < resolvedPasses.length; passIndex += 1) {
       const resolved = resolvedPasses[passIndex]
       const { pass, pipeline, workgroupSize } = resolved
       if (!this.shouldRunPass(pass, passIndex)) {
         const historyTexture = this.passOutputHistory[passIndex]
-        if (historyTexture) currentTexture = historyTexture
+        if (historyTexture) {
+          const [historyWidth, historyHeight] = this.getPassDimensions(pass)
+          currentTexture = historyTexture
+          currentTextureWidth = historyWidth
+          currentTextureHeight = historyHeight
+        }
         continue
       }
 
@@ -1338,11 +1396,13 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
         scaledPair.currentIndex = writeIndex
       }
       currentTexture = writeTexture
+      currentTextureWidth = passWidth
+      currentTextureHeight = passHeight
       this.passOutputHistory[passIndex] = writeTexture
       this.lastOutputTexture = writeTexture
     }
 
-    this.recordHistoryTexture(currentTexture, encoder)
+    this.recordHistoryTexture(currentTexture, currentTextureWidth, currentTextureHeight, encoder)
     this.pruneScaledTexturePairs()
 
     this.renderer.updateGlobalUniforms({

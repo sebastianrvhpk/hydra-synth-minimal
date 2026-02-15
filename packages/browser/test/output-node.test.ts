@@ -12,7 +12,7 @@ interface DispatchLogEntry {
 const createTestEncoder = (
   dispatches: DispatchLogEntry[],
   options: {
-    onCopyTextureToTexture?: () => void
+    onCopyTextureToTexture?: (copySize: GPUExtent3D) => void
     onCopyTextureToBuffer?: (copySize: GPUExtent3D) => void
   } = {}
 ): GPUCommandEncoder => ({
@@ -44,8 +44,12 @@ const createTestEncoder = (
       end: () => {}
     }
   },
-  copyTextureToTexture: () => {
-    options.onCopyTextureToTexture?.()
+  copyTextureToTexture: (
+    _source: GPUImageCopyTexture,
+    _destination: GPUImageCopyTexture,
+    copySize: GPUExtent3D
+  ) => {
+    options.onCopyTextureToTexture?.(copySize)
   },
   copyTextureToBuffer: (
     _source: GPUImageCopyTexture,
@@ -463,6 +467,44 @@ describe('WebGPUOutputNode texture exposure', () => {
     expect(sampledEntry?.resource.texture).toBe(historyTexture)
   })
 
+  it('does not rerun sparse onEvent passes for unrelated events', () => {
+    const renderer = createRendererMock()
+    const node = new WebGPUOutputNode({
+      renderer: renderer as never,
+      width: 2,
+      height: 2,
+      label: 'o6b'
+    })
+
+    const pass: HydraCompiledPass = {
+      signature: 'sparse-on-event',
+      wgsl: '@compute @workgroup_size(1, 1, 1) fn csMain() {}',
+      uniforms: [],
+      textures: [],
+      dispatch: {
+        mode: 'direct',
+        workgroupSize: [1, 1, 1]
+      },
+      schedule: {
+        resolutionScale: 1,
+        updateRate: { onEvent: 'beat' },
+        sparse: true
+      }
+    }
+
+    node.render([pass])
+    const dispatches: DispatchLogEntry[] = []
+    const frame = { time: 0, bpm: 120, resolution: [2, 2], deltaMs: 16 } as unknown as Parameters<WebGPUOutputNode['tick']>[0]
+
+    node.tick(frame, createTestEncoder(dispatches))
+    node.emitEvent('unrelated')
+    node.tick({ ...frame, time: 0.016 }, createTestEncoder(dispatches))
+    node.emitEvent('beat')
+    node.tick({ ...frame, time: 0.032 }, createTestEncoder(dispatches))
+
+    expect(dispatches.map((entry) => entry.pipelineId)).toEqual(['sparse-on-event', 'sparse-on-event'])
+  })
+
   it('binds storageTexture2DArray resources with 2d-array views', () => {
     const createdTextureArgs: Array<{ depthOrArrayLayers?: number, includeRenderAttachment?: boolean }> = []
     const textureViewDimensions: GPUTextureViewDimension[] = []
@@ -764,6 +806,54 @@ describe('WebGPUOutputNode texture exposure', () => {
     expect(sampledEntry?.resource.texture).toBe(historyTexture)
   })
 
+  it('copies only the produced pass extent into history when running scaled passes', () => {
+    const renderer = createRendererMock()
+    const node = new WebGPUOutputNode({
+      renderer: renderer as never,
+      width: 4,
+      height: 4,
+      label: 'o10b'
+    })
+
+    const pass: HydraCompiledPass = {
+      signature: 'scaled-history-pass',
+      wgsl: '@compute @workgroup_size(1, 1, 1) fn csMain() {}',
+      uniforms: [],
+      textures: [
+        {
+          name: 'historyTex',
+          variableName: 'historyTex',
+          getTexture: () => null,
+          isPrev: false,
+          sourceRef: { historyOffset: 1 },
+          binding: 3
+        }
+      ],
+      schedule: {
+        resolutionScale: 0.5,
+        updateRate: 'everyFrame',
+        sparse: false
+      },
+      dispatch: {
+        mode: 'direct',
+        workgroupSize: [1, 1, 1]
+      }
+    }
+
+    node.render([pass])
+    const dispatches: DispatchLogEntry[] = []
+    const historyCopies: Array<{ width: number, height: number }> = []
+    const frame = { time: 0, bpm: 120, resolution: [4, 4], deltaMs: 16 } as unknown as Parameters<WebGPUOutputNode['tick']>[0]
+
+    node.tick(frame, createTestEncoder(dispatches, {
+      onCopyTextureToTexture: (copySize) => {
+        historyCopies.push({ width: Number(copySize.width), height: Number(copySize.height) })
+      }
+    }))
+
+    expect(historyCopies[0]).toEqual({ width: 2, height: 2 })
+  })
+
   it('reduces analysis readback textures to 1x1 on-GPU before CPU mapping', () => {
     const readbackSizes: number[] = []
     const copySizes: Array<{ width: number, height: number }> = []
@@ -811,15 +901,16 @@ describe('WebGPUOutputNode texture exposure', () => {
     const renderer = createRendererMock() as unknown as ReturnType<typeof createRendererMock> & {
       createReadbackBuffer: (label: string, byteLength: number) => GPUBuffer
     }
-    const packed = new Uint8Array(256)
-    packed[0] = 255
-    packed[1] = 0
-    packed[2] = 0
-    packed[3] = 255
+    const packed = new ArrayBuffer(256)
+    const packedView = new DataView(packed)
+    packedView.setUint16(0, 0x3c00, true) // r = 1.0
+    packedView.setUint16(2, 0x0000, true) // g = 0.0
+    packedView.setUint16(4, 0x0000, true) // b = 0.0
+    packedView.setUint16(6, 0x3c00, true) // a = 1.0
     renderer.createReadbackBuffer = () => ({
       destroy: () => {},
       mapAsync: async () => {},
-      getMappedRange: () => packed.buffer,
+      getMappedRange: () => packed,
       unmap: () => {}
     } as unknown as GPUBuffer)
 

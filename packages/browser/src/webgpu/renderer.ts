@@ -96,7 +96,15 @@ export class WebGPURenderer {
       throw new Error('No compatible GPU adapter was found. Verify WebGPU is enabled and GPU acceleration is available.')
     }
 
-    this.device = await this.adapter.requestDevice()
+    const requiredFeatures: GPUFeatureName[] = []
+    if (this.adapter.features.has('subgroups' as GPUFeatureName)) {
+      requiredFeatures.push('subgroups' as GPUFeatureName)
+    }
+    this.device = await this.adapter.requestDevice(
+      requiredFeatures.length > 0
+        ? { requiredFeatures }
+        : undefined
+    )
     this.canvasFormat = navigator.gpu.getPreferredCanvasFormat()
     this.capabilities = this.inspectCapabilities()
 
@@ -123,7 +131,7 @@ export class WebGPURenderer {
       return typeof value === 'number' && Number.isFinite(value) ? value : fallback
     }
 
-    const features = Array.from(this.adapter.features.values()).map((entry) => `${entry}`)
+    const features = Array.from(this.device.features.values()).map((entry) => `${entry}`)
     const subgroupSupported = features.includes('subgroups')
 
     return {
