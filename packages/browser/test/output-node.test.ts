@@ -866,6 +866,48 @@ describe('WebGPUOutputNode texture exposure', () => {
     expect(bindGroup.entries.some((entry) => entry.binding === 4)).toBe(false)
   })
 
+  it('preserves image-domain prev-texture sampling across ping-pong frames', () => {
+    const renderer = createRendererMock()
+    const node = new WebGPUOutputNode({
+      renderer: renderer as never,
+      width: 2,
+      height: 2,
+      label: 'o-image-sampling'
+    })
+
+    const pass: HydraCompiledPass = {
+      signature: 'image-prev-pass',
+      wgsl: '@compute @workgroup_size(1, 1, 1) fn csMain() {}',
+      uniforms: [],
+      textures: [{
+        name: 'prevBuffer',
+        variableName: 'prevBuffer',
+        getTexture: null,
+        isPrev: true,
+        binding: 3
+      }],
+      dispatch: {
+        mode: 'direct',
+        domain: 'pixel2d',
+        workgroupSize: [1, 1, 1]
+      }
+    }
+
+    node.render([pass])
+    const dispatches: DispatchLogEntry[] = []
+    const frame = { time: 0, bpm: 120, resolution: [2, 2], deltaMs: 16 } as unknown as Parameters<WebGPUOutputNode['tick']>[0]
+    node.tick(frame, createTestEncoder(dispatches))
+    node.tick({ ...frame, time: 0.016 }, createTestEncoder(dispatches))
+
+    expect(dispatches).toHaveLength(2)
+    const firstBindGroup = dispatches[0].bindGroup as { entries: Array<{ binding: number, resource: { texture: GPUTexture } }> }
+    const secondBindGroup = dispatches[1].bindGroup as { entries: Array<{ binding: number, resource: { texture: GPUTexture } }> }
+    const firstOutputTexture = firstBindGroup.entries.find((entry) => entry.binding === 4)?.resource.texture
+    const secondReadTexture = secondBindGroup.entries.find((entry) => entry.binding === 3)?.resource.texture
+    expect(firstOutputTexture).toBeDefined()
+    expect(secondReadTexture).toBe(firstOutputTexture)
+  })
+
   it('prefers executor-injected storage resource providers when present', () => {
     const renderer = createRendererMock()
     const node = new WebGPUOutputNode({

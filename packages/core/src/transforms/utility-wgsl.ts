@@ -141,10 +141,44 @@ fn hydraNoise(v: vec3f) -> f32 {
 }
 `
   },
+  hydraSampleTextureWrapped: {
+    wgsl: `
+fn hydraSampleTextureWrapped(tex: texture_2d<f32>, uv: vec2f) -> vec4f {
+  return textureSampleLevel(tex, hydraSampler, fract(uv), 0.0);
+}
+`
+  },
+  hydraSampleTextureClamped: {
+    wgsl: `
+fn hydraSampleTextureClamped(tex: texture_2d<f32>, uv: vec2f) -> vec4f {
+  return textureSampleLevel(tex, hydraSampler, clamp(uv, vec2f(0.0), vec2f(1.0)), 0.0);
+}
+`
+  },
+  hydraUvFromLinearCoord: {
+    wgsl: `
+fn hydraUvFromLinearCoord(coord: vec2u, dims: vec2u) -> vec2f {
+  let safeDims = max(vec2u(1u), dims);
+  return (vec2f(f32(coord.x), f32(coord.y)) + vec2f(0.5, 0.5)) / vec2f(f32(safeDims.x), f32(safeDims.y));
+}
+`
+  },
+  hydraUvFromLinearIndex: {
+    dependencies: ['hydraUvFromLinearCoord'],
+    wgsl: `
+fn hydraUvFromLinearIndex(index: u32, dims: vec2u) -> vec2f {
+  let safeDims = max(vec2u(1u), dims);
+  let x = index % safeDims.x;
+  let y = index / safeDims.x;
+  return hydraUvFromLinearCoord(vec2u(x, y), safeDims);
+}
+`
+  },
   hydraSampleTexture: {
+    dependencies: ['hydraSampleTextureWrapped'],
     wgsl: `
 fn hydraSampleTexture(tex: texture_2d<f32>, uv: vec2f) -> vec4f {
-  return textureSampleLevel(tex, hydraSampler, fract(uv), 0.0);
+  return hydraSampleTextureWrapped(tex, uv);
 }
 `
   }
@@ -160,6 +194,10 @@ const UTILITY_ORDER = [
   'hydraPermute',
   'hydraTaylorInvSqrt',
   'hydraNoise',
+  'hydraSampleTextureWrapped',
+  'hydraSampleTextureClamped',
+  'hydraUvFromLinearCoord',
+  'hydraUvFromLinearIndex',
   'hydraSampleTexture'
 ]
 

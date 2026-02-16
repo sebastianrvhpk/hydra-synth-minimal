@@ -102,6 +102,7 @@ export type HydraResourceFormat = 'rgba8unorm' | 'rgba16float' | 'rgba32float' |
 export type HydraResourceElementType = 'f32' | 'vec2f' | 'vec3f' | 'vec4f' | 'u32' | 'i32'
 
 export type HydraComputeKernelVariant = 'generic' | 'tiled' | 'subgroup'
+export type HydraKernelSemantics = 'compat_uv' | 'index_first'
 
 export interface HydraSeparableBlurKernelDescriptor {
   kind: 'separableBlur'
@@ -167,6 +168,10 @@ export interface HydraTransformDefinition {
   stateKey?: string
   lifetime?: HydraResourceLifetime
   analysisOut?: HydraAnalysisOutputBinding[]
+  executionDomain?: HydraDispatchDomain
+  kernelSemantics?: HydraKernelSemantics
+  writesOutput?: boolean
+  dispatchItems?: number
 }
 
 export interface ProcessedHydraTransform extends HydraTransformDefinition {
@@ -264,9 +269,13 @@ export interface HydraPassSchedule {
 
 export interface HydraDispatchConfig {
   mode: 'direct' | 'indirect'
+  domain?: HydraDispatchDomain
   workgroupSize: [number, number, number]
+  itemCount?: number
   getIndirectBuffer?: (() => unknown) | null
   indirectOffset?: number
+  getQueueCounterBuffer?: (() => unknown) | null
+  onQueueCounterReadback?: ((activeCount: number, overflowCount: number) => void) | null
   requiredWorkgroupStorageBytes?: number
   requiredFeatures?: string[]
 }
@@ -275,6 +284,7 @@ export interface HydraPassIRResourceRef {
   name: string
   kind: 'uniform' | 'texture' | 'storageBuffer' | 'storageTexture' | 'outputTexture'
   binding: number
+  intent?: 'input' | 'state' | 'analysis' | 'output'
   access?: HydraResourceAccess
   format?: HydraResourceFormat
   lifetime?: HydraResourceLifetime
@@ -284,6 +294,7 @@ export interface HydraPassIRResourceRef {
 export interface HydraPassIRNode {
   id: string
   signature: string
+  kind: 'image' | 'data' | 'reduction'
   schedule: HydraPassSchedule
   workgroupSize: [number, number, number]
   resources: HydraPassIRResourceRef[]
@@ -442,6 +453,7 @@ export declare const buildPassIR: (options: {
   storageBuffers: HydraStorageBufferBinding[]
   storageTextures: HydraStorageTextureBinding[]
   output: HydraOutputTextureBinding
+  analysisOut?: HydraAnalysisOutputBinding[]
 }) => HydraPassIRNode
 export declare const optimizePassIR: (pass: HydraCompiledPass) => HydraCompiledPass
 export declare const compileWgslPass: (transforms: HydraTransformCall[], maxDynamicUniforms?: number) => HydraCompiledPass

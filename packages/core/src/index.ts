@@ -55,6 +55,7 @@ export type {
   HydraPassUpdateRate,
   HydraComputeKernelDescriptor,
   HydraComputeKernelVariant,
+  HydraKernelSemantics,
   HydraResourceAccess,
   HydraResourceElementType,
   HydraResourceFormat,

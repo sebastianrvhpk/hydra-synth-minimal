@@ -135,6 +135,68 @@ describe('v3 compute core foundation', () => {
     expect(plan.diagnostics.queueSegmentCount).toBeGreaterThanOrEqual(1)
   })
 
+  it('supports resolution-independent index-first linear kernels', () => {
+    const registry = new HydraTransformRegistry({ defaultOutput: new NullOutput() })
+    registry.registerTransform({
+      name: 'indexFirstKernel',
+      type: 'kernel',
+      executionDomain: 'linear1d',
+      kernelSemantics: 'index_first',
+      dispatchItems: 32,
+      writesOutput: false,
+      resources: [{
+        type: 'storageBuffer',
+        name: 'dataBuffer',
+        access: 'read_write',
+        elementType: 'vec4f',
+        minLength: 32,
+        lifetime: 'persistent',
+        stateKey: 'index-first-kernel'
+      }],
+      wgsl: `
+  let index = hydraLinearIndex();
+  let coord = hydraLinearCoord();
+  dataBuffer[index] = vec4f(f32(coord.x), f32(coord.y), 0.0, 1.0);
+  return vec4f(0.0);
+`
+    })
+
+    const node = registry.generators.solid(0, 0, 0, 1).indexFirstKernel()
+    const pass = node.wgsl()[1]
+    if (!pass) throw new Error('Expected linear pass missing.')
+
+    expect(pass.dispatch?.domain).toBe('linear1d')
+    expect(pass.wgsl).toContain('fn hydraLinearCoord() -> vec2u')
+    expect(pass.wgsl).toContain('var st = hydraLinearUv();')
+    expect(pass.wgsl.includes('/ max(f32(32), 1.0)')).toBe(false)
+  })
+
+  it('preserves compat UV kernels while allowing index-first semantics', () => {
+    const registry = new HydraTransformRegistry({ defaultOutput: new NullOutput() })
+    const compatPass = registry.generators.solid(0, 0, 0, 1).bufferFill([0, 0, 0, 0]).wgsl()[1]
+    const indexPass = registry.generators.solid(0, 0, 0, 1).bufferIndexProbe().wgsl()[1]
+    if (!compatPass || !indexPass) throw new Error('Expected linear passes are missing.')
+
+    expect(compatPass.wgsl).toContain('var st = vec2f((f32(linearIndex) + 0.5) / max(f32(4096), 1.0), 0.5);')
+    expect(indexPass.wgsl).toContain('var st = hydraLinearUv();')
+    expect(indexPass.wgsl).toContain('hydraUvFromLinearCoord')
+  })
+
+  it('marks analysis passes as reduction IR with explicit resource intent', () => {
+    const registry = new HydraTransformRegistry({ defaultOutput: new NullOutput() })
+    const passes = registry.generators.solid(1, 0, 0, 1).lumaProbe(1.0).wgsl()
+    const probePass = passes[passes.length - 1]
+    if (!probePass?.ir) throw new Error('Expected analysis pass IR missing.')
+
+    expect(probePass.ir.kind).toBe('reduction')
+    const outputIntent = probePass.ir.resources.find((resource) => resource.kind === 'outputTexture')?.intent
+    expect(outputIntent).toBe('output')
+    const uniformIntents = probePass.ir.resources
+      .filter((resource) => resource.kind === 'uniform')
+      .map((resource) => resource.intent)
+    expect(uniformIntents.every((intent) => intent === 'input')).toBe(true)
+  })
+
   it('reports validation errors for malformed execution plans', () => {
     const malformedPlan: HydraExecutionPlanV3 = {
       version: 'v3.0',

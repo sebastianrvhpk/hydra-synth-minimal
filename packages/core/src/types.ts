@@ -112,6 +112,7 @@ export type HydraResourceFormat =
 export type HydraResourceElementType = 'f32' | 'vec2f' | 'vec3f' | 'vec4f' | 'u32' | 'i32'
 
 export type HydraComputeKernelVariant = 'generic' | 'tiled' | 'subgroup'
+export type HydraKernelSemantics = 'compat_uv' | 'index_first'
 
 export interface HydraSeparableBlurKernelDescriptor {
   kind: 'separableBlur'
@@ -187,6 +188,7 @@ export interface HydraTransformDefinition {
   lifetime?: HydraResourceLifetime
   analysisOut?: HydraAnalysisOutputBinding[]
   executionDomain?: HydraDispatchDomain
+  kernelSemantics?: HydraKernelSemantics
   writesOutput?: boolean
   dispatchItems?: number
 }
@@ -307,6 +309,7 @@ export interface HydraPassIRResourceRef {
   name: string
   kind: 'uniform' | 'texture' | 'storageBuffer' | 'storageTexture' | 'outputTexture'
   binding: number
+  intent?: 'input' | 'state' | 'analysis' | 'output'
   access?: HydraResourceAccess
   format?: HydraResourceFormat
   lifetime?: HydraResourceLifetime
@@ -316,7 +319,7 @@ export interface HydraPassIRResourceRef {
 export interface HydraPassIRNode {
   id: string
   signature: string
-  kind: 'image' | 'data'
+  kind: 'image' | 'data' | 'reduction'
   schedule: HydraPassSchedule
   workgroupSize: [number, number, number]
   resources: HydraPassIRResourceRef[]

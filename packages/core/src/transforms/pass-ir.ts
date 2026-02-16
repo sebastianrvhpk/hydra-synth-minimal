@@ -1,4 +1,5 @@
 import type {
+  HydraAnalysisOutputBinding,
   HydraCompiledPass,
   HydraDispatchConfig,
   HydraOutputTextureBinding,
@@ -20,6 +21,7 @@ interface BuildPassIROptions {
   storageBuffers: HydraStorageBufferBinding[]
   storageTextures: HydraStorageTextureBinding[]
   output?: HydraOutputTextureBinding
+  analysisOut?: HydraAnalysisOutputBinding[]
 }
 
 const readSetFrom = (values: HydraPassIRResourceRef[]): string[] => {
@@ -74,7 +76,8 @@ export const buildPassIR = ({
   textures,
   storageBuffers,
   storageTextures,
-  output
+  output,
+  analysisOut
 }: BuildPassIROptions): HydraPassIRNode => {
   const resources: HydraPassIRResourceRef[] = []
 
@@ -82,7 +85,8 @@ export const buildPassIR = ({
     resources.push({
       name: uniform.name,
       kind: 'uniform',
-      binding: -1
+      binding: -1,
+      intent: 'input'
     })
   })
 
@@ -91,6 +95,7 @@ export const buildPassIR = ({
       name: texture.name,
       kind: 'texture',
       binding: texture.binding,
+      intent: 'input',
       access: 'read'
     })
   })
@@ -100,6 +105,7 @@ export const buildPassIR = ({
       name: buffer.name,
       kind: 'storageBuffer',
       binding: buffer.binding,
+      intent: buffer.lifetime === 'persistent' ? 'state' : 'input',
       access: buffer.access,
       lifetime: buffer.lifetime,
       stateKey: buffer.stateKey
@@ -111,6 +117,7 @@ export const buildPassIR = ({
       name: texture.name,
       kind: 'storageTexture',
       binding: texture.binding,
+      intent: texture.lifetime === 'persistent' ? 'state' : 'input',
       access: texture.access,
       format: texture.format,
       lifetime: texture.lifetime,
@@ -123,16 +130,21 @@ export const buildPassIR = ({
       name: output.name,
       kind: 'outputTexture',
       binding: output.binding,
+      intent: 'output',
       access: 'write',
       format: output.format,
       lifetime: 'frame'
     })
   }
 
+  const passKind: HydraPassIRNode['kind'] = analysisOut && analysisOut.length > 0
+    ? 'reduction'
+    : (dispatch.domain === 'linear1d' || !output ? 'data' : 'image')
+
   return {
     id: signature,
     signature,
-    kind: dispatch.domain === 'linear1d' || !output ? 'data' : 'image',
+    kind: passKind,
     schedule,
     workgroupSize: dispatch.workgroupSize,
     resources,

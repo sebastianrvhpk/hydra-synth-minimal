@@ -93,12 +93,14 @@ const mergeUpdateRates = (values: HydraPassSchedule['updateRate'][]): HydraPassS
 
 interface PassExecutionConfig {
   domain: 'pixel2d' | 'linear1d'
+  kernelSemantics: 'compat_uv' | 'index_first'
   writesOutput: boolean
   dispatchItems?: number
 }
 
 const resolvePassExecutionConfig = (transforms: HydraTransformCall[]): PassExecutionConfig => {
   const domains = new Set<'pixel2d' | 'linear1d'>()
+  const semantics = new Set<'compat_uv' | 'index_first'>()
   let writesOutput = false
   let dispatchItems = 0
   let largestResourceLength = 0
@@ -106,6 +108,7 @@ const resolvePassExecutionConfig = (transforms: HydraTransformCall[]): PassExecu
   transforms.forEach((call) => {
     const domain = call.transform.executionDomain === 'linear1d' ? 'linear1d' : 'pixel2d'
     domains.add(domain)
+    semantics.add(call.transform.kernelSemantics === 'index_first' ? 'index_first' : 'compat_uv')
     writesOutput = writesOutput || Boolean(call.transform.writesOutput)
     dispatchItems = Math.max(dispatchItems, Math.max(0, Math.floor(Number(call.transform.dispatchItems) || 0)))
     const resources = call.transform.resources ?? []
@@ -123,9 +126,13 @@ const resolvePassExecutionConfig = (transforms: HydraTransformCall[]): PassExecu
   const domain = domains.has('linear1d') ? 'linear1d' : 'pixel2d'
   const outputEnabled = writesOutput || domain === 'pixel2d'
   const resolvedItems = Math.max(dispatchItems, largestResourceLength)
+  const kernelSemantics = domain === 'linear1d' && semantics.has('index_first')
+    ? 'index_first'
+    : 'compat_uv'
 
   return {
     domain,
+    kernelSemantics,
     writesOutput: outputEnabled,
     dispatchItems: resolvedItems > 0 ? resolvedItems : undefined
   }
@@ -683,6 +690,7 @@ fn csMain(@builtin(global_invocation_id) invocationId: vec3u) {
       textures: textureBindings,
       storageBuffers: storageBufferBindings,
       storageTextures: storageTextureBindings,
+      analysisOut,
       output: {
         name: 'outImage',
         variableName: 'outImage',
@@ -767,7 +775,11 @@ const compileLinearWgslPass = (
     `${shaderInfo.structureSignature}|u${shaderInfo.uniforms.length}|us${shaderInfo.uniformScalarCount}` +
     `|t${textureBindings.length}|sb${storageBufferBindings.length}|st${storageTextureBindings.length}` +
     `|rs${shaderInfo.schedule.resolutionScale}|sp${shaderInfo.schedule.sparse ? 1 : 0}|f${functionSignature}` +
-    `|dlinear|n${itemCount}|o${execution.writesOutput ? 1 : 0}`
+    `|dlinear|ks${execution.kernelSemantics}|n${itemCount}|o${execution.writesOutput ? 1 : 0}`
+
+  const stAssignment = execution.kernelSemantics === 'index_first'
+    ? 'var st = hydraLinearUv();'
+    : `var st = vec2f((f32(linearIndex) + 0.5) / max(f32(${itemCount}), 1.0), 0.5);`
 
   const outputStoreSnippet = execution.writesOutput
     ? `
@@ -806,6 +818,20 @@ var<private> hydraLinearIndexValue: u32;
 
 fn hydraLinearIndex() -> u32 {
   return hydraLinearIndexValue;
+}
+
+fn hydraLinearCoord() -> vec2u {
+  let width = max(1u, u32(globals.width));
+  let x = hydraLinearIndexValue % width;
+  let y = hydraLinearIndexValue / width;
+  return vec2u(x, y);
+}
+
+fn hydraLinearUv() -> vec2f {
+  let coord = hydraLinearCoord();
+  let width = max(1.0, globals.width);
+  let height = max(1.0, globals.height);
+  return (vec2f(f32(coord.x), f32(coord.y)) + vec2f(0.5, 0.5)) / vec2f(width, height);
 }
 
 fn hydraDynamicUniform(index: u32) -> f32 {
@@ -853,7 +879,7 @@ fn csMain(@builtin(global_invocation_id) invocationId: vec3u) {
   }
 
   hydraLinearIndexValue = linearIndex;
-  var st = vec2f((f32(linearIndex) + 0.5) / max(f32(${itemCount}), 1.0), 0.5);
+  ${stAssignment}
   var c = vec4f(0.0);
   ${shaderInfo.fragColor}
 ${outputStoreSnippet}
@@ -895,6 +921,7 @@ ${outputStoreSnippet}
       textures: textureBindings,
       storageBuffers: storageBufferBindings,
       storageTextures: storageTextureBindings,
+      analysisOut,
       ...(output ? { output } : {})
     })
   }
@@ -1189,6 +1216,7 @@ ${subgroupPrelude}${tiledBody}
       textures: textureBindings,
       storageBuffers: [],
       storageTextures: [],
+      analysisOut,
       output
     }),
     fallbackPass
@@ -1615,6 +1643,7 @@ ${subgroupPrelude}${tiledBody}
       textures: textureBindings,
       storageBuffers: [],
       storageTextures: [],
+      analysisOut,
       output
     }),
     fallbackPass
@@ -1886,6 +1915,7 @@ ${subgroupPrelude}${tiledBody}
       textures: textureBindings,
       storageBuffers: [],
       storageTextures: [],
+      analysisOut,
       output
     }),
     fallbackPass

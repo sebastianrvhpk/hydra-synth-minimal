@@ -1,5 +1,6 @@
 import type {
   HydraDispatchDomain,
+  HydraKernelSemantics,
   HydraTransformDefinition,
   HydraTransformInput,
   HydraPassSchedule,
@@ -88,6 +89,11 @@ const normalizeDispatchItems = (definition: HydraTransformDefinition): number | 
   return Math.max(1, Math.floor(count))
 }
 
+const normalizeKernelSemantics = (definition: HydraTransformDefinition): HydraKernelSemantics => {
+  if (definition.kernelSemantics === 'index_first') return 'index_first'
+  return 'compat_uv'
+}
+
 export const processTransformDefinition = (definition: HydraTransformDefinition): ProcessedHydraTransform => {
   const typeConfig = typeLookup[definition.type]
   if (!typeConfig) {
@@ -110,6 +116,7 @@ ${definition.wgsl}
   const writesOutput = typeof definition.writesOutput === 'boolean'
     ? definition.writesOutput
     : executionDomain !== 'linear1d'
+  const kernelSemantics = normalizeKernelSemantics(definition)
 
   return {
     ...definition,
@@ -119,6 +126,7 @@ ${definition.wgsl}
     wgsl_return_type: typeConfig.returnType,
     schedule: normalizeSchedule(definition),
     executionDomain,
+    kernelSemantics,
     writesOutput,
     dispatchItems: normalizeDispatchItems(definition)
   }

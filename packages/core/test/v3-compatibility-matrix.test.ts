@@ -193,6 +193,17 @@ describe('v3 DSL compatibility matrix', () => {
     expect(planA.steps.length).toBe(planB.steps.length)
   })
 
+  it('keeps legacy linear kernel UV compatibility paths unchanged', () => {
+    const { registry, output } = createRegistry()
+    registry.generators.solid(0, 0, 0, 1).bufferFill([0, 0, 0, 0]).out()
+
+    expect(output.passes.length).toBe(2)
+    const linearPass = output.passes[1]
+    if (!linearPass) throw new Error('Expected linear compatibility pass missing.')
+    expect(linearPass.dispatch?.domain).toBe('linear1d')
+    expect(linearPass.wgsl).toContain('var st = vec2f((f32(linearIndex) + 0.5) / max(f32(4096), 1.0), 0.5);')
+  })
+
   it('uses graph-aware output hooks without breaking legacy render adapters', () => {
     const output = new GraphAwareCaptureOutput()
     const registry = new HydraTransformRegistry({ defaultOutput: output })

@@ -1548,6 +1548,32 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
  `
   },
   {
+    name: 'bufferIndexProbe',
+    type: 'kernel',
+    executionDomain: 'linear1d',
+    kernelSemantics: 'index_first',
+    dispatchItems: 4096,
+    writesOutput: false,
+    resources: [
+      {
+        type: 'storageBuffer',
+        name: 'computeBuffer',
+        access: 'read_write',
+        elementType: 'vec4f',
+        minLength: 4096,
+        lifetime: 'persistent',
+        stateKey: 'compute-buffer-index-probe'
+      }
+    ],
+    wgsl: `
+  let index = hydraLinearIndex();
+  let coord = hydraLinearCoord();
+  let uv = hydraUvFromLinearCoord(coord, vec2u(max(1u, u32(globals.width)), max(1u, u32(globals.height))));
+  computeBuffer[index] = vec4f(uv, f32(coord.x), 1.0);
+  return vec4f(0.0);
+ `
+  },
+  {
     name: 'toneMap',
     type: 'color',
     inputs: [

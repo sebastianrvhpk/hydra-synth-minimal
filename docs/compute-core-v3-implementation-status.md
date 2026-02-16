@@ -8,7 +8,7 @@ Last updated: 2026-02-16
 |---|---|---|
 | 1 | Completed | Unified runtime routing (`legacy`/`v3`/`auto`) with deterministic fallback diagnostics. |
 | 2 | Completed | Slot-backed resource resolver injection and external-preallocation controls are active. |
-| 3 | Not started | Data-first kernel semantics pending. |
+| 3 | Completed | Explicit index-first kernel semantics and reduction IR intent are active. |
 | 4 | Not started | Queue policy hardening pending. |
 | 5 | Not started | Measured autotune loop pending. |
 | 6 | Not started | Default flip + CI hard gates pending. |
@@ -132,6 +132,64 @@ All required Phase 1 gates passed:
 ### Validation Results
 
 All required Phase 2 gates passed:
+
+1. `pnpm test:unit -- packages/core/test/v3-core.test.ts packages/core/test/v3-compatibility-matrix.test.ts packages/core/test/registry.test.ts` [PASS]
+2. `pnpm test:unit -- packages/browser/test/v3-foundation.test.ts packages/browser/test/output-node.test.ts packages/browser/test/renderer-adapter.test.ts` [PASS]
+3. `pnpm test:browser -- packages/browser/test/playwright/runtime-smoke.spec.ts` [PASS]
+4. `pnpm --filter hydra-synth run typecheck` [PASS]
+5. `node scripts/bench-v3.mjs .tmp/bench/phase-samples.json` [PASS]
+
+### Benchmark Artifact
+
+- Reused deterministic sample corpus:
+  - `.tmp/bench/phase-samples.json`
+
+---
+
+## Phase 3 Report
+
+### Implemented Plan Items
+
+- `P3.1` `packages/core/src/transforms/process-transform.ts`
+  - Added explicit transform kernel semantics metadata:
+    - `compat_uv` (backward-compatible default)
+    - `index_first`
+- `P3.2` `packages/core/src/transforms/compile-wgsl.ts`
+  - Added index-first linear intrinsics:
+    - `hydraLinearCoord()`
+    - `hydraLinearUv()`
+  - Linear pass `st` assignment now depends on semantics:
+    - `compat_uv`: legacy normalized-by-item-count UV.
+    - `index_first`: index-to-resolution UV via `hydraLinearUv()`.
+- `P3.3` `packages/core/src/transforms/utility-wgsl.ts`
+  - Split utility helpers by intent:
+    - wrapped UV sampling: `hydraSampleTextureWrapped`
+    - clamped UV sampling: `hydraSampleTextureClamped`
+    - index/coord helpers: `hydraUvFromLinearCoord`, `hydraUvFromLinearIndex`
+  - Preserved compatibility alias: `hydraSampleTexture` delegates to wrapped helper.
+- `P3.4` `packages/core/src/transforms/pass-ir.ts`, `packages/core/src/types.ts`
+  - Improved pass IR intent:
+    - added resource `intent` metadata
+    - introduced reduction pass kind classification (`kind: 'reduction'`) when `analysisOut` is present.
+- `P3.5` `packages/core/src/transforms/default-transforms.ts`
+  - Preserved existing transforms.
+  - Added explicit data-first fixture transform:
+    - `bufferIndexProbe` (`executionDomain: linear1d`, `kernelSemantics: index_first`).
+
+### Tests Added/Updated
+
+- `packages/core/test/v3-core.test.ts`
+  - Added resolution-independent index-first linear kernel test.
+  - Added compat-UV vs index-first behavior test.
+  - Added reduction IR kind/resource-intent test.
+- `packages/core/test/v3-compatibility-matrix.test.ts`
+  - Added linear-compat regression test to lock legacy UV behavior.
+- `packages/browser/test/output-node.test.ts`
+  - Added image-domain prev-texture sampling regression coverage across ping-pong frames.
+
+### Validation Results
+
+All required Phase 3 gates passed:
 
 1. `pnpm test:unit -- packages/core/test/v3-core.test.ts packages/core/test/v3-compatibility-matrix.test.ts packages/core/test/registry.test.ts` [PASS]
 2. `pnpm test:unit -- packages/browser/test/v3-foundation.test.ts packages/browser/test/output-node.test.ts packages/browser/test/renderer-adapter.test.ts` [PASS]
