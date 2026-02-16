@@ -85,7 +85,7 @@ test.afterAll(async () => {
 
 const runFixture = async (
   page: import('@playwright/test').Page,
-  mode: 'legacy' | 'v3' | 'auto' | 'force-unavailable'
+  mode: 'default' | 'legacy' | 'v3' | 'auto' | 'force-unavailable'
 ) => {
   if (!fixtureServer) throw new Error('Fixture server was not initialized.')
   const target = `${fixtureServer.baseUrl}${fixturePath}?mode=${mode}`
@@ -93,6 +93,16 @@ const runFixture = async (
   await page.waitForFunction(() => (window as { __hydraSmokeDone?: boolean }).__hydraSmokeDone === true)
   return page.evaluate(() => (window as { __hydraSmokeResult: Record<string, unknown> }).__hydraSmokeResult)
 }
+
+test('browser runtime smoke: default mode is auto-v3-preferred', async ({ page }) => {
+  const result = await runFixture(page, 'default')
+  expect(['ok', 'no-webgpu'], `unexpected result: ${JSON.stringify(result)}`).toContain(result.status)
+  if (result.status === 'ok') {
+    expect(result.requestedMode).toBe('default')
+    expect(result.configuredMode).toBe('auto')
+    expect(['legacy', 'v3']).toContain(result.activeMode)
+  }
+})
 
 test('browser runtime smoke: legacy mode init + one frame + dispose', async ({ page }) => {
   const result = await runFixture(page, 'legacy')

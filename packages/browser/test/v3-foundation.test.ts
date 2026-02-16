@@ -236,13 +236,13 @@ describe('v3 browser foundation', () => {
     expect(normalizeRuntimeExecutionMode('legacy')).toBe('legacy')
     expect(normalizeRuntimeExecutionMode('V3')).toBe('v3')
     expect(normalizeRuntimeExecutionMode(' auto ')).toBe('auto')
-    expect(normalizeRuntimeExecutionMode('invalid')).toBe('legacy')
-    expect(normalizeRuntimeExecutionMode('invalid', 'auto')).toBe('auto')
+    expect(normalizeRuntimeExecutionMode('invalid')).toBe('auto')
+    expect(normalizeRuntimeExecutionMode('invalid', 'legacy')).toBe('legacy')
   })
 
-  it('defaults browser runtime execution mode to legacy', () => {
+  it('defaults browser runtime execution mode to auto', () => {
     const runtime = createRuntimeHarness()
-    expect(runtime.getExecutionMode()).toBe('legacy')
+    expect(runtime.getExecutionMode()).toBe('auto')
     runtime.dispose()
   })
 

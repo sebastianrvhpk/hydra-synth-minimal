@@ -53,6 +53,7 @@ import {
   type HydraRuntimeExecutionMode
 } from './runtime/runtime.js'
 import {
+  buildWorkgroupCandidateSignatureV3,
   HydraAutotunerV3,
   type HydraAutotuneProfileV3,
   type HydraAutotuneProfilerInputV3,
@@ -183,6 +184,7 @@ export {
   HydraExecutorV3,
   HydraResourceManagerV3,
   HydraAutotunerV3,
+  buildWorkgroupCandidateSignatureV3,
   buildProfilerSnapshotV3,
   normalizeRuntimeExecutionMode,
   createDefaultQueuePolicyV3,

@@ -39,7 +39,8 @@ import { createHydraBrowserRuntime } from 'hydra-synth'
 const runtime = createHydraBrowserRuntime({
   autoLoop: false,
   numSources: 4,
-  numOutputs: 4
+  numOutputs: 4,
+  // executionMode defaults to 'auto' (v3-preferred with deterministic legacy fallback)
 })
 
 await runtime.init()
@@ -47,6 +48,12 @@ runtime.synth.osc(8, 0.1, 0).out()
 runtime.tick(16)
 runtime.dispose()
 ```
+
+Execution mode controls:
+
+- `auto` (default): v3-preferred routing with deterministic legacy fallback.
+- `v3`: force v3 routing first with deterministic legacy fallback.
+- `legacy`: force legacy pass execution path.
 
 ### Multipass Signal Flow (`renderpass`)
 
@@ -148,6 +155,7 @@ pnpm typecheck
 pnpm test:unit
 pnpm build
 pnpm verify:pack
+pnpm bench:v3:ci
 ```
 
 Browser smoke tests (Playwright):

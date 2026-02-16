@@ -14,7 +14,7 @@
     "test:unit": "pnpm exec vitest run --config vitest.config.ts",
     "test:browser": "pnpm exec playwright test --config playwright.config.ts",
     "bench:v3": "node scripts/bench-v3.mjs",
-    "bench:v3:ci": "node scripts/bench-v3.mjs benchmark-samples.json",
+    "bench:v3:ci": "node scripts/bench-v3.mjs .tmp/bench/phase-samples.json",
     "typecheck": "pnpm -r --workspace-concurrency=1 --filter ./packages/* run typecheck",
     "verify:pack": "node scripts/verify-packages.mjs",
     "changeset:check": "changeset status --verbose",

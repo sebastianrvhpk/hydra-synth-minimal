@@ -21,7 +21,7 @@
       } from '/packages/browser/dist/index.js'
 
       const params = new URLSearchParams(window.location.search)
-      const mode = params.get('mode') ?? 'auto'
+      const mode = params.get('mode') ?? 'default'
 
       const publish = (result) => {
         window.__hydraSmokeResult = result
@@ -57,19 +57,19 @@
 
         const executionMode = mode === 'legacy' || mode === 'v3' || mode === 'auto'
           ? mode
-          : 'legacy'
+          : undefined
 
         const renderer = new WebGPURenderer({ canvas: host.canvas })
         const runtime = new HydraBrowserRuntime({
           host,
           renderer,
-          executionMode,
           autoLoop: false,
-          errorPolicy: 'throw'
+          errorPolicy: 'throw',
+          ...(executionMode ? { executionMode } : {})
         })
 
         try {
-          if ((mode === 'legacy' || mode === 'v3' || mode === 'auto') && !navigator.gpu) {
+          if ((mode === 'legacy' || mode === 'v3' || mode === 'auto' || mode === 'default') && !navigator.gpu) {
             publish({ status: 'no-webgpu', requestedMode: mode })
             return
           }
@@ -102,6 +102,15 @@
 
           runtime.dispose()
           if ((mode === 'legacy' || mode === 'v3' || mode === 'auto') && isUnavailableError) {
+            publish({
+              status: 'no-webgpu',
+              requestedMode: mode,
+              message,
+              causeMessage
+            })
+            return
+          }
+          if (mode === 'default' && isUnavailableError) {
             publish({
               status: 'no-webgpu',
               requestedMode: mode,

@@ -38,7 +38,7 @@ export type HydraRuntimeExecutionMode = 'legacy' | 'v3' | 'auto'
 
 export const normalizeRuntimeExecutionMode = (
   value: unknown,
-  fallback: HydraRuntimeExecutionMode = 'legacy'
+  fallback: HydraRuntimeExecutionMode = 'auto'
 ): HydraRuntimeExecutionMode => {
   if (typeof value !== 'string') return fallback
   const normalized = value.trim().toLowerCase()
@@ -104,14 +104,14 @@ export class HydraBrowserRuntime {
     fps,
     speed = 1,
     bpm = 30,
-    executionMode = 'legacy',
+    executionMode = 'auto',
     errorPolicy = 'emit',
     onError
   }: HydraBrowserRuntimeOptions) {
     this.host = host
     this.renderer = renderer
     this.patchbay = patchbay
-    this.executionMode = normalizeRuntimeExecutionMode(executionMode, 'legacy')
+    this.executionMode = normalizeRuntimeExecutionMode(executionMode, 'auto')
     this.routingDiagnostics = {
       configuredMode: this.executionMode,
       activeMode: 'legacy',

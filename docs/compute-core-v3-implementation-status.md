@@ -11,7 +11,7 @@ Last updated: 2026-02-16
 | 3 | Completed | Explicit index-first kernel semantics and reduction IR intent are active. |
 | 4 | Completed | Queue execution now uses explicit policy metadata with deterministic termination reasons and richer diagnostics. |
 | 5 | Completed | Autotune now uses measured candidate trials with runtime fingerprint caching and benchmark delta reporting. |
-| 6 | Not started | Default flip + CI hard gates pending. |
+| 6 | Completed | Runtime default is now `auto` (v3-preferred) with explicit legacy override and CI benchmark gating enabled. |
 
 ---
 
@@ -132,6 +132,57 @@ All required Phase 1 gates passed:
 ### Validation Results
 
 All required Phase 2 gates passed:
+
+1. `pnpm test:unit -- packages/core/test/v3-core.test.ts packages/core/test/v3-compatibility-matrix.test.ts packages/core/test/registry.test.ts` [PASS]
+2. `pnpm test:unit -- packages/browser/test/v3-foundation.test.ts packages/browser/test/output-node.test.ts packages/browser/test/renderer-adapter.test.ts` [PASS]
+3. `pnpm test:browser -- packages/browser/test/playwright/runtime-smoke.spec.ts` [PASS]
+4. `pnpm --filter hydra-synth run typecheck` [PASS]
+5. `node scripts/bench-v3.mjs .tmp/bench/phase-samples.json` [PASS]
+
+### Benchmark Artifact
+
+- Reused deterministic sample corpus:
+  - `.tmp/bench/phase-samples.json`
+
+---
+
+## Phase 6 Report
+
+### Implemented Plan Items
+
+- `P6.1` `packages/browser/src/runtime/runtime.ts`
+  - Flipped runtime default execution mode from `legacy` to `auto`.
+  - `normalizeRuntimeExecutionMode` now defaults to `auto`.
+  - Explicit `legacy` override path remains unchanged and functional.
+- `P6.2` `packages/browser/src/index.ts`, `packages/core/src/index.ts`
+  - Finalized export surface for execution-mode and tuning-adjacent controls, including:
+    - `buildWorkgroupCandidateSignatureV3`
+    - queue policy and queue diagnostics types
+- `P6.3` `docs/compute-core-v3-spec.md`, `docs/compute-core-v3-implementation-status.md`, `README.md`
+  - Updated docs to reflect Phase 6 default behavior and migration guidance:
+    - `auto` default
+    - v3-preferred routing + deterministic legacy fallback
+    - explicit legacy override and benchmark gate usage
+- `P6.4` `.github/workflows/ci.yml`, `scripts/bench-v3.mjs`, `package.json`
+  - Added benchmark gate step to CI:
+    - `pnpm bench:v3:ci`
+  - Updated benchmark CI script path to deterministic corpus:
+    - `.tmp/bench/phase-samples.json`
+  - Hardened benchmark gate messaging on regression failures.
+
+### Tests Added/Updated
+
+- `packages/browser/test/v3-foundation.test.ts`
+  - Updated default execution-mode assertions to `auto`.
+  - Kept explicit legacy override normalization coverage.
+- `packages/browser/test/playwright/runtime-smoke.spec.ts`
+  - Added default-mode smoke test asserting `auto` configured mode.
+- `packages/browser/test/playwright/fixtures/runtime-smoke.html`
+  - Added explicit `default` mode fixture routing that omits `executionMode` option.
+
+### Validation Results
+
+All required Phase 6 gates passed:
 
 1. `pnpm test:unit -- packages/core/test/v3-core.test.ts packages/core/test/v3-compatibility-matrix.test.ts packages/core/test/registry.test.ts` [PASS]
 2. `pnpm test:unit -- packages/browser/test/v3-foundation.test.ts packages/browser/test/output-node.test.ts packages/browser/test/renderer-adapter.test.ts` [PASS]

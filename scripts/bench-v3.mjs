@@ -71,7 +71,7 @@ const validateReport = (report) => {
 }
 
 const args = process.argv.slice(2)
-const samplesPath = args[0] || path.resolve(process.cwd(), 'benchmark-samples.json')
+const samplesPath = args[0] || path.resolve(process.cwd(), '.tmp/bench/phase-samples.json')
 if (!fs.existsSync(samplesPath)) {
   console.error(`Missing samples file: ${samplesPath}`)
   process.exit(1)
@@ -99,6 +99,10 @@ const summary = {
   totalScenes: results.length,
   passedScenes: results.filter((entry) => entry.validation.ok).length
 }
+const passed = summary.passedScenes === summary.totalScenes
 
 process.stdout.write(`${JSON.stringify({ summary, results }, null, 2)}\n`)
-process.exit(summary.passedScenes === summary.totalScenes ? 0 : 2)
+if (!passed) {
+  console.error(`Benchmark gate failed: ${summary.passedScenes}/${summary.totalScenes} scenes passed.`)
+}
+process.exit(passed ? 0 : 2)
