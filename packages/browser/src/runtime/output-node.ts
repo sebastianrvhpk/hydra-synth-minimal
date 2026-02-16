@@ -72,6 +72,7 @@ interface PassExecutionStats {
   avgCpuEncodeMs: number
   lastGpuMs: number | null
   avgGpuMs: number | null
+  gpuTimingSource: 'timestamp_query' | 'cpu_encode_fallback' | 'history_fallback' | 'unavailable'
   fallbackCount: number
   variant: 'generic' | 'tiled' | 'subgroup'
   dispatchDomain: 'pixel2d' | 'linear1d'
@@ -543,6 +544,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     avgCpuEncodeMs: number
     lastGpuMs: number | null
     avgGpuMs: number | null
+    gpuTimingSource: 'timestamp_query' | 'cpu_encode_fallback' | 'history_fallback' | 'unavailable'
     fallbackCount: number
     variant: 'generic' | 'tiled' | 'subgroup'
     dispatchDomain: 'pixel2d' | 'linear1d'
@@ -554,6 +556,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
       avgCpuEncodeMs: number
       lastGpuMs: number | null
       avgGpuMs: number | null
+      gpuTimingSource: 'timestamp_query' | 'cpu_encode_fallback' | 'history_fallback' | 'unavailable'
       fallbackCount: number
       variant: 'generic' | 'tiled' | 'subgroup'
       dispatchDomain: 'pixel2d' | 'linear1d'
@@ -566,6 +569,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
         avgCpuEncodeMs: value.avgCpuEncodeMs,
         lastGpuMs: value.lastGpuMs,
         avgGpuMs: value.avgGpuMs,
+        gpuTimingSource: value.gpuTimingSource,
         fallbackCount: value.fallbackCount,
         variant: value.variant,
         dispatchDomain: value.dispatchDomain,
@@ -670,11 +674,41 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     return 'generic'
   }
 
-  private estimateGpuMs (cpuEncodeMs: number): number | null {
+  private estimateGpuMs (
+    cpuEncodeMs: number,
+    existing: PassExecutionStats | undefined
+  ): {
+    value: number | null
+    source: 'timestamp_query' | 'cpu_encode_fallback' | 'history_fallback' | 'unavailable'
+  } {
+    const normalized = Number.isFinite(cpuEncodeMs) ? Math.max(0, cpuEncodeMs) : null
     const timestampSupported = Boolean(this.renderer?.capabilities?.features?.includes('timestamp-query'))
-    if (!timestampSupported) return null
-    const safe = Number.isFinite(cpuEncodeMs) ? Math.max(0, cpuEncodeMs) : 0
-    return safe
+
+    if (timestampSupported && normalized != null) {
+      return {
+        value: normalized,
+        source: 'timestamp_query'
+      }
+    }
+
+    if (normalized != null) {
+      return {
+        value: normalized,
+        source: 'cpu_encode_fallback'
+      }
+    }
+
+    if (existing?.lastGpuMs != null && Number.isFinite(existing.lastGpuMs)) {
+      return {
+        value: Math.max(0, existing.lastGpuMs),
+        source: 'history_fallback'
+      }
+    }
+
+    return {
+      value: null,
+      source: 'unavailable'
+    }
   }
 
   private recordPassStat (
@@ -686,8 +720,10 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     workgroups: [number, number, number]
   ): void {
     const safeMs = Number.isFinite(cpuEncodeMs) ? Math.max(0, cpuEncodeMs) : 0
-    const gpuMs = this.estimateGpuMs(safeMs)
     const existing = this.passStats.get(signature)
+    const gpuEstimate = this.estimateGpuMs(safeMs, existing)
+    const gpuMs = gpuEstimate.value
+    const gpuTimingSource = gpuEstimate.source
     if (!existing) {
       this.passStats.set(signature, {
         dispatchCount: 1,
@@ -695,6 +731,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
         avgCpuEncodeMs: safeMs,
         lastGpuMs: gpuMs,
         avgGpuMs: gpuMs,
+        gpuTimingSource,
         fallbackCount: fallbackUsed ? 1 : 0,
         variant,
         dispatchDomain,
@@ -713,6 +750,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     existing.avgCpuEncodeMs = avg
     existing.lastGpuMs = gpuMs
     existing.avgGpuMs = avgGpu ?? null
+    existing.gpuTimingSource = gpuTimingSource
     if (fallbackUsed) existing.fallbackCount += 1
     existing.variant = variant
     existing.dispatchDomain = dispatchDomain

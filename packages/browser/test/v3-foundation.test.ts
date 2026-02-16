@@ -159,6 +159,32 @@ describe('v3 browser foundation', () => {
     expect(validation.failures.length).toBeGreaterThan(0)
   })
 
+  it('reports benchmark deltas against a baseline report', () => {
+    const scene = BENCHMARK_CORPUS_V3[0]
+    if (!scene) throw new Error('Benchmark corpus is empty.')
+    const baseline = buildBenchmarkReportV3({
+      sceneId: scene.id,
+      samples: [
+        { frameMs: 14, cpuEncodeMs: 1.5, dispatchCount: 12, fallbackCount: 1, residentBytes: 4096 },
+        { frameMs: 13.5, cpuEncodeMs: 1.4, dispatchCount: 12, fallbackCount: 1, residentBytes: 4096 }
+      ],
+      capabilities: null
+    })
+    const tuned = buildBenchmarkReportV3({
+      sceneId: scene.id,
+      baseline,
+      samples: [
+        { frameMs: 10, cpuEncodeMs: 1.0, dispatchCount: 12, fallbackCount: 0, residentBytes: 4096 },
+        { frameMs: 9.8, cpuEncodeMs: 0.9, dispatchCount: 12, fallbackCount: 0, residentBytes: 4096 }
+      ],
+      capabilities: null
+    })
+
+    expect(tuned.deltaFromBaseline).not.toBeNull()
+    expect((tuned.deltaFromBaseline?.avgFrameMs ?? 1)).toBeLessThan(0)
+    expect((tuned.deltaFromBaseline?.fallbackRate ?? 1)).toBeLessThanOrEqual(0)
+  })
+
   it('provides queue dispatch decisions with overflow diagnostics', () => {
     const decision = decideQueueDispatchV3({
       activeCount: 130,
@@ -203,6 +229,7 @@ describe('v3 browser foundation', () => {
     expect(snapshot.scheduler.routingCompileFailures).toBe(0)
     expect(snapshot.scheduler.routingFallbackCount).toBe(0)
     expect(snapshot.passes['o0:passA']?.dispatchDomain).toBe('pixel2d')
+    expect(snapshot.passes['o0:passA']?.gpuTimingSource).toBe('unavailable')
   })
 
   it('normalizes runtime execution mode values and defaults', () => {
@@ -321,9 +348,65 @@ describe('v3 browser foundation', () => {
     expect(profile.policy).toBe('balanced_research')
     expect(profile.fingerprintKey).toContain('adapter-a')
     expect(profile.candidateCount).toBeGreaterThan(0)
+    expect(profile.candidateSignature.length).toBeGreaterThan(0)
+    expect(profile.warmupTrials).toBeGreaterThanOrEqual(0)
+    expect(profile.sampleTrials).toBeGreaterThan(0)
+    expect(profile.selectedMeasuredP95Ms).toBeGreaterThan(0)
     expect(tuner.getProfile('gpu-a')).not.toBeNull()
+    expect(tuner.getProfileByFingerprint('gpu-a', profile.fingerprintKey)?.profileKey).toBe('gpu-a')
     tuner.clear('gpu-a')
     expect(tuner.getProfile('gpu-a')).toBeNull()
+  })
+
+  it('selects measured candidate winners from sampled autotune trials', () => {
+    const tuner = new HydraAutotunerV3()
+    const measuredByCandidate = new Map<string, number[]>([
+      ['16x16x1', [8.5, 8.4, 8.6]],
+      ['8x8x1', [4.2, 4.1, 4.0]],
+      ['32x8x1', [6.7, 6.6, 6.8]]
+    ])
+
+    const profile = tuner.run({
+      profileKey: 'gpu-measured',
+      policy: 'throughput',
+      candidateWorkgroups: [[16, 16, 1], [8, 8, 1], [32, 8, 1]],
+      warmupTrials: 1,
+      sampleTrials: 3,
+      measureCandidate: ({ workgroup, phase, trialIndex }) => {
+        if (phase === 'warmup') return 100
+        const key = `${workgroup[0]}x${workgroup[1]}x${workgroup[2]}`
+        const samples = measuredByCandidate.get(key) ?? [10]
+        return samples[trialIndex] ?? samples[samples.length - 1]
+      }
+    })
+
+    expect(profile.selectedWorkgroupSize).toEqual([8, 8, 1])
+    expect(profile.selectedMeasuredP95Ms).toBeCloseTo(4.1, 5)
+  })
+
+  it('reuses fingerprint-scoped autotune profiles in runtime', () => {
+    const runtime = createRuntimeHarness('v3')
+    const autotuner = (runtime as unknown as {
+      autotuner: HydraAutotunerV3 & {
+        run: HydraAutotunerV3['run']
+      }
+    }).autotuner
+
+    let runCalls = 0
+    const originalRun = autotuner.run.bind(autotuner) as HydraAutotunerV3['run']
+    autotuner.run = ((options) => {
+      runCalls += 1
+      return originalRun(options)
+    }) as typeof autotuner.run
+
+    const first = runtime.autotune({ profileKey: 'runtime-persist', kernelSignature: 'kernel-a' })
+    const second = runtime.autotune({ profileKey: 'runtime-persist', kernelSignature: 'kernel-a' })
+    const third = runtime.autotune({ profileKey: 'runtime-persist', kernelSignature: 'kernel-b' })
+
+    expect(runCalls).toBe(2)
+    expect(second.evaluatedAt).toBe(first.evaluatedAt)
+    expect(third.fingerprintKey).not.toBe(first.fingerprintKey)
+    runtime.dispose()
   })
 
   it('injects slot-backed storage resolvers into compiled passes', () => {

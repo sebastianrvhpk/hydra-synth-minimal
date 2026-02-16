@@ -43,7 +43,19 @@ export interface HydraBenchmarkReport {
   avgDispatchCount: number
   fallbackRate: number
   peakResidentBytes: number
+  deltaFromBaseline?: HydraBenchmarkDelta | null
   capabilityMatrix: HydraCapabilityMatrix
+}
+
+export interface HydraBenchmarkDelta {
+  avgFrameMs: number
+  p95FrameMs: number
+  p99FrameMs: number
+  avgCpuEncodeMs: number
+  avgGpuMs: number | null
+  avgDispatchCount: number
+  fallbackRate: number
+  peakResidentBytes: number
 }
 
 export const buildCapabilityMatrix = (capabilities: WebGPUCapabilities | null | undefined): HydraCapabilityMatrix => {
@@ -55,4 +67,3 @@ export const buildCapabilityMatrix = (capabilities: WebGPUCapabilities | null | 
     timestampQuery: features.has('timestamp-query')
   }
 }
-

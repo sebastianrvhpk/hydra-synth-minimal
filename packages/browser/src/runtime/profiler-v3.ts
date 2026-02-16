@@ -17,6 +17,7 @@ export interface HydraProfilerSnapshotV3 {
     cpuEncodeMsLast: number
     gpuMsLast: number | null
     gpuMsAvg: number | null
+    gpuTimingSource: 'timestamp_query' | 'cpu_encode_fallback' | 'history_fallback' | 'unavailable'
     variant: 'generic' | 'tiled' | 'subgroup'
     dispatchDomain: 'pixel2d' | 'linear1d'
     lastWorkgroups: [number, number, number]
@@ -111,6 +112,7 @@ export const buildProfilerSnapshotV3 = ({
       const dispatchCount = Math.max(0, Number(value.dispatchCount ?? 0))
       const fallbackCount = Math.max(0, Number(value.fallbackCount ?? 0))
       const variant = value.variant ?? 'generic'
+      const gpuTimingSource = value.gpuTimingSource ?? (value.lastGpuMs != null ? 'cpu_encode_fallback' : 'unavailable')
       totalDispatchCount += dispatchCount
       totalFallbackCount += fallbackCount
       passes[key] = {
@@ -120,6 +122,7 @@ export const buildProfilerSnapshotV3 = ({
         cpuEncodeMsLast: value.lastCpuEncodeMs,
         gpuMsLast: value.lastGpuMs ?? null,
         gpuMsAvg: value.avgGpuMs ?? null,
+        gpuTimingSource,
         variant,
         dispatchDomain: value.dispatchDomain ?? 'pixel2d',
         lastWorkgroups: value.lastWorkgroups ?? [0, 0, 0]

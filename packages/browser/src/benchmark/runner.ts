@@ -24,15 +24,20 @@ export interface BuildBenchmarkReportOptions {
   sceneId: string
   samples: HydraBenchmarkSample[]
   capabilities?: WebGPUCapabilities | null
+  baseline?: HydraBenchmarkReport | null
 }
 
 export const buildBenchmarkReportV3 = ({
   sceneId,
   samples,
-  capabilities = null
+  capabilities = null,
+  baseline = null
 }: BuildBenchmarkReportOptions): HydraBenchmarkReport => {
   const scene = getBenchmarkSceneDefinitionV3(sceneId)
   if (!scene) throw new Error(`Unknown benchmark scene "${sceneId}".`)
+  if (baseline && baseline.sceneId !== scene.id) {
+    throw new Error(`Baseline scene "${baseline.sceneId}" does not match "${scene.id}".`)
+  }
 
   const frameTimes = samples.map((sample) => toFinite(sample.frameMs))
   const cpuTimes = samples.map((sample) => toFinite(sample.cpuEncodeMs))
@@ -47,7 +52,7 @@ export const buildBenchmarkReportV3 = ({
   const totalDispatchCount = dispatchCounts.reduce((sum, value) => sum + value, 0)
   const fallbackRate = totalDispatchCount > 0 ? totalFallbackCount / totalDispatchCount : 0
 
-  return {
+  const report: HydraBenchmarkReport = {
     sceneId: scene.id,
     workloadClass: scene.workloadClass,
     frameCount: samples.length,
@@ -61,6 +66,28 @@ export const buildBenchmarkReportV3 = ({
     peakResidentBytes: residentBytes.length > 0 ? Math.max(...residentBytes) : 0,
     capabilityMatrix: buildCapabilityMatrix(capabilities)
   }
+  if (baseline) {
+    report.deltaFromBaseline = {
+      avgFrameMs: report.avgFrameMs - baseline.avgFrameMs,
+      p95FrameMs: report.p95FrameMs - baseline.p95FrameMs,
+      p99FrameMs: report.p99FrameMs - baseline.p99FrameMs,
+      avgCpuEncodeMs: report.avgCpuEncodeMs - baseline.avgCpuEncodeMs,
+      avgGpuMs: (
+        typeof report.avgGpuMs === 'number' &&
+        Number.isFinite(report.avgGpuMs) &&
+        typeof baseline.avgGpuMs === 'number' &&
+        Number.isFinite(baseline.avgGpuMs)
+      )
+        ? report.avgGpuMs - baseline.avgGpuMs
+        : null,
+      avgDispatchCount: report.avgDispatchCount - baseline.avgDispatchCount,
+      fallbackRate: report.fallbackRate - baseline.fallbackRate,
+      peakResidentBytes: report.peakResidentBytes - baseline.peakResidentBytes
+    }
+  } else {
+    report.deltaFromBaseline = null
+  }
+  return report
 }
 
 export interface ValidateBenchmarkReportResult {
@@ -90,4 +117,3 @@ export const validateBenchmarkReportV3 = (report: HydraBenchmarkReport): Validat
     failures
   }
 }
-

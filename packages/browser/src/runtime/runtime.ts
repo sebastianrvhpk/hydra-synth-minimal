@@ -15,7 +15,12 @@ import type { BrowserHost } from './browser-host.js'
 import { WebGPUOutputNode } from './output-node.js'
 import { WebGPUFrameRendererAdapter } from './renderer-adapter.js'
 import { HydraSourceNode, type PatchBayAdapter } from './source-node.js'
-import { HydraAutotunerV3, type HydraAutotuneProfileV3, type HydraTuningPolicyV3 } from './autotune-v3.js'
+import {
+  HydraAutotunerV3,
+  buildWorkgroupCandidateSignatureV3,
+  type HydraAutotuneProfileV3,
+  type HydraTuningPolicyV3
+} from './autotune-v3.js'
 import { buildProfilerSnapshotV3, type HydraProfilerSnapshotV3 } from './profiler-v3.js'
 import { HydraExecutorV3, type HydraExecutePlanV3Options, type ExecutePlanV3Result } from './executor-v3.js'
 import { HydraResourceManagerV3 } from './resource-manager-v3.js'
@@ -470,6 +475,7 @@ export class HydraBrowserRuntime {
     kernelSignature?: string
   } = {}): HydraAutotuneProfileV3 {
     const snapshot = this.getProfilerSnapshot()
+    const activePolicy = policy ?? this.autotuner.getPolicy()
     const compute = this.capabilities?.compute
     const adapterFingerprint = this.capabilities
       ? [
@@ -482,11 +488,29 @@ export class HydraBrowserRuntime {
       ? `${navigator.userAgent}`
       : 'non-browser'
     const resolutionClass = `${this.host.canvas.width}x${this.host.canvas.height}`
+    const normalizedCandidates = (candidateWorkgroups && candidateWorkgroups.length > 0
+      ? candidateWorkgroups
+      : [[16, 16, 1], [8, 8, 1], [32, 8, 1]]
+    ).map((candidate) => [
+      Math.max(1, Math.floor(candidate[0] ?? 16)),
+      Math.max(1, Math.floor(candidate[1] ?? 16)),
+      Math.max(1, Math.floor(candidate[2] ?? 1))
+    ] as [number, number, number])
+    const fingerprintKey = [adapterFingerprint, browserFingerprint, kernelSignature, resolutionClass].join('|')
+    const candidateSignature = buildWorkgroupCandidateSignatureV3(normalizedCandidates)
+    const cached = this.autotuner.getProfileByFingerprint(profileKey, fingerprintKey)
+    if (
+      cached &&
+      cached.policy === activePolicy &&
+      cached.candidateSignature === candidateSignature
+    ) {
+      return cached
+    }
 
     return this.autotuner.run({
       profileKey,
-      policy,
-      candidateWorkgroups,
+      policy: activePolicy,
+      candidateWorkgroups: normalizedCandidates,
       profilerSnapshot: snapshot,
       adapterFingerprint,
       browserFingerprint,

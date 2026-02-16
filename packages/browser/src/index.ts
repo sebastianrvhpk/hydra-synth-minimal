@@ -96,6 +96,7 @@ import {
 } from './benchmark/runner.js'
 import type {
   HydraBenchmarkAcceptanceGate,
+  HydraBenchmarkDelta,
   HydraBenchmarkReport,
   HydraBenchmarkSample,
   HydraBenchmarkSceneDefinition,
@@ -161,6 +162,7 @@ export type {
   HydraQueueOverflowPolicyV3,
   HydraQueueConvergenceStrategyV3,
   HydraBenchmarkAcceptanceGate,
+  HydraBenchmarkDelta,
   HydraBenchmarkReport,
   HydraBenchmarkSample,
   HydraBenchmarkSceneDefinition,

@@ -10,7 +10,7 @@ Last updated: 2026-02-16
 | 2 | Completed | Slot-backed resource resolver injection and external-preallocation controls are active. |
 | 3 | Completed | Explicit index-first kernel semantics and reduction IR intent are active. |
 | 4 | Completed | Queue execution now uses explicit policy metadata with deterministic termination reasons and richer diagnostics. |
-| 5 | Not started | Measured autotune loop pending. |
+| 5 | Completed | Autotune now uses measured candidate trials with runtime fingerprint caching and benchmark delta reporting. |
 | 6 | Not started | Default flip + CI hard gates pending. |
 
 ---
@@ -132,6 +132,71 @@ All required Phase 1 gates passed:
 ### Validation Results
 
 All required Phase 2 gates passed:
+
+1. `pnpm test:unit -- packages/core/test/v3-core.test.ts packages/core/test/v3-compatibility-matrix.test.ts packages/core/test/registry.test.ts` [PASS]
+2. `pnpm test:unit -- packages/browser/test/v3-foundation.test.ts packages/browser/test/output-node.test.ts packages/browser/test/renderer-adapter.test.ts` [PASS]
+3. `pnpm test:browser -- packages/browser/test/playwright/runtime-smoke.spec.ts` [PASS]
+4. `pnpm --filter hydra-synth run typecheck` [PASS]
+5. `node scripts/bench-v3.mjs .tmp/bench/phase-samples.json` [PASS]
+
+### Benchmark Artifact
+
+- Reused deterministic sample corpus:
+  - `.tmp/bench/phase-samples.json`
+
+---
+
+## Phase 5 Report
+
+### Implemented Plan Items
+
+- `P5.1` `packages/browser/src/runtime/autotune-v3.ts`
+  - Replaced static-only candidate scoring with measured trial evaluation:
+    - explicit warmup trial window
+    - explicit sampled trial window
+    - deterministic tie-break ordering
+  - Added measured profile metadata:
+    - `candidateSignature`
+    - `warmupTrials`
+    - `sampleTrials`
+    - `selectedMeasuredMeanMs`
+    - `selectedMeasuredP95Ms`
+- `P5.2` `packages/browser/src/runtime/output-node.ts`, `packages/browser/src/runtime/profiler-v3.ts`
+  - Added explicit GPU timing fallback hierarchy with source labeling:
+    - `timestamp_query`
+    - `cpu_encode_fallback`
+    - `history_fallback`
+    - `unavailable`
+  - Exposed per-pass timing source in profiler snapshots.
+- `P5.3` `packages/browser/src/runtime/runtime.ts`
+  - Added runtime autotune cache reuse by:
+    - adapter/browser fingerprint
+    - kernel signature
+    - normalized candidate signature
+  - Runtime now returns cached measured profiles when policy and candidate signature match.
+- `P5.4` `packages/browser/src/benchmark/runner.ts`, `packages/browser/src/benchmark/types.ts`
+  - Added baseline delta reporting in benchmark reports via `deltaFromBaseline`:
+    - frame-time deltas
+    - encode-time deltas
+    - dispatch/fallback deltas
+    - memory delta
+
+### Tests Added/Updated
+
+- `packages/browser/test/v3-foundation.test.ts`
+  - Added measured candidate winner selection test with mocked trial samples.
+  - Added runtime fingerprint-cache reuse regression test.
+  - Added benchmark baseline-delta reporting test.
+  - Updated autotune profile assertions for measured metadata.
+- `packages/browser/test/output-node.test.ts`
+  - Added explicit timestamp-supported timing-source test.
+  - Added explicit unsupported-device CPU fallback timing-source test.
+- `packages/browser/test/v3-foundation.test.ts`
+  - Updated profiler snapshot assertions for pass timing-source reporting.
+
+### Validation Results
+
+All required Phase 5 gates passed:
 
 1. `pnpm test:unit -- packages/core/test/v3-core.test.ts packages/core/test/v3-compatibility-matrix.test.ts packages/core/test/registry.test.ts` [PASS]
 2. `pnpm test:unit -- packages/browser/test/v3-foundation.test.ts packages/browser/test/output-node.test.ts packages/browser/test/renderer-adapter.test.ts` [PASS]

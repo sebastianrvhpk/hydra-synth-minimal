@@ -93,6 +93,7 @@ const createRendererMock = (options: {
     pipeline: { id: string, getBindGroupLayout: () => unknown } | null
     error: unknown
   }
+  features?: string[]
 } = {}): unknown => {
   let textureCounter = 0
   const fallbackTexture = { id: 'fallback', destroy: () => {} } as unknown as GPUTexture
@@ -117,7 +118,8 @@ const createRendererMock = (options: {
         maxComputeWorkgroupSizeX: 256,
         maxComputeWorkgroupSizeY: 256,
         maxComputeWorkgroupSizeZ: 64
-      }
+      },
+      features: options.features ?? []
     },
     globalUniformBuffer: { id: 'globals' },
     linearSampler: { id: 'sampler' },
@@ -1246,7 +1248,7 @@ describe('WebGPUOutputNode texture exposure', () => {
     expect(readbackSizes[0]).toBe(256)
   })
 
-  it('tracks per-pass CPU encode stats', () => {
+  it('uses cpu timing fallback when timestamp-query is unavailable', () => {
     const renderer = createRendererMock()
     const node = new WebGPUOutputNode({
       renderer: renderer as never,
@@ -1275,6 +1277,39 @@ describe('WebGPUOutputNode texture exposure', () => {
     expect(stats['stats-pass']?.dispatchCount).toBe(2)
     expect((stats['stats-pass']?.lastCpuEncodeMs ?? -1) >= 0).toBe(true)
     expect((stats['stats-pass']?.avgCpuEncodeMs ?? -1) >= 0).toBe(true)
+    expect((stats['stats-pass']?.lastGpuMs ?? -1) >= 0).toBe(true)
+    expect(stats['stats-pass']?.gpuTimingSource).toBe('cpu_encode_fallback')
+  })
+
+  it('uses timestamp-query timing source when supported', () => {
+    const renderer = createRendererMock({
+      features: ['timestamp-query']
+    })
+    const node = new WebGPUOutputNode({
+      renderer: renderer as never,
+      width: 2,
+      height: 2,
+      label: 'o-stats-ts'
+    })
+
+    const pass: HydraCompiledPass = {
+      signature: 'stats-pass-ts',
+      wgsl: '@compute @workgroup_size(1, 1, 1) fn csMain() {}',
+      uniforms: [],
+      textures: [],
+      dispatch: {
+        mode: 'direct',
+        workgroupSize: [1, 1, 1]
+      }
+    }
+
+    node.render([pass])
+    const frame = { time: 0, bpm: 120, resolution: [2, 2], deltaMs: 16 } as unknown as Parameters<WebGPUOutputNode['tick']>[0]
+    node.tick(frame, createTestEncoder([]))
+
+    const stats = node.getPassStats()
+    expect((stats['stats-pass-ts']?.lastGpuMs ?? -1) >= 0).toBe(true)
+    expect(stats['stats-pass-ts']?.gpuTimingSource).toBe('timestamp_query')
   })
 
   it('feeds analysis readback averages into subsequent frame analysis state', async () => {
