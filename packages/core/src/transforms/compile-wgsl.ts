@@ -897,11 +897,11 @@ ${outputStoreSnippet}
 
   const output = execution.writesOutput
     ? {
-        name: 'outImage',
-        variableName: 'outImage',
-        format: DEFAULT_PASS_OUTPUT_FORMAT,
-        binding: outputTextureBinding
-      }
+      name: 'outImage',
+      variableName: 'outImage',
+      format: DEFAULT_PASS_OUTPUT_FORMAT,
+      binding: outputTextureBinding
+    }
     : undefined
 
   const compiled: HydraCompiledPass = {

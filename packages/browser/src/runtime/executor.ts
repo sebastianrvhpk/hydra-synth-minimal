@@ -160,11 +160,11 @@ export interface HydraExecutePlanOptions {
 export class HydraExecutor {
   private readonly resourceManager: HydraResourceManager | null
 
-  constructor ({ resourceManager = null }: { resourceManager?: HydraResourceManager | null } = {}) {
+  constructor({ resourceManager = null }: { resourceManager?: HydraResourceManager | null } = {}) {
     this.resourceManager = resourceManager
   }
 
-  private ensurePlanResources (
+  private ensurePlanResources(
     plan: HydraExecutionPlan,
     frame: HydraFrameState
   ): number {
@@ -202,7 +202,7 @@ export class HydraExecutor {
     return allocatedSlots.size
   }
 
-  private materializeStorageBufferBinding (
+  private materializeStorageBufferBinding(
     pass: HydraCompiledPass,
     frame: HydraFrameState,
     allocationByResourceId: Map<string, HydraExecutionPlan['resources'][number]>,
@@ -244,7 +244,7 @@ export class HydraExecutor {
     })
   }
 
-  private materializeStorageTextureBinding (
+  private materializeStorageTextureBinding(
     pass: HydraCompiledPass,
     frame: HydraFrameState,
     allocationByResourceId: Map<string, HydraExecutionPlan['resources'][number]>,
@@ -302,7 +302,7 @@ export class HydraExecutor {
     })
   }
 
-  private materializePassResources (
+  private materializePassResources(
     pass: HydraCompiledPass,
     frame: HydraFrameState,
     allocationByResourceId: Map<string, HydraExecutionPlan['resources'][number]>,
@@ -328,7 +328,7 @@ export class HydraExecutor {
     return materialized
   }
 
-  private expandQueueStepPasses (
+  private expandQueueStepPasses(
     step: HydraExecutionStep,
     iteration: number,
     {
@@ -379,7 +379,7 @@ export class HydraExecutor {
     }
   }
 
-  private expandQueueSegmentPasses (
+  private expandQueueSegmentPasses(
     steps: HydraExecutionStep[],
     frame: HydraFrameState,
     hooks?: HydraExecutorQueueHooks,
@@ -593,7 +593,7 @@ export class HydraExecutor {
     }
   }
 
-  executePlan (
+  executePlan(
     output: WebGPUOutputNode,
     plan: HydraExecutionPlan,
     frame: HydraFrameState,
@@ -682,17 +682,17 @@ export class HydraExecutor {
     }
   }
 
-  getResidentByteEstimate (): number {
+  getResidentByteEstimate(): number {
     if (!this.resourceManager) return 0
     return this.resourceManager.getResidentByteEstimate()
   }
 
-  getResidencySnapshot (): HydraResourceResidencySnapshot | null {
+  getResidencySnapshot(): HydraResourceResidencySnapshot | null {
     if (!this.resourceManager) return null
     return this.resourceManager.getResidencySnapshot()
   }
 
-  dispose (): void {
+  dispose(): void {
     this.resourceManager?.dispose()
   }
 }

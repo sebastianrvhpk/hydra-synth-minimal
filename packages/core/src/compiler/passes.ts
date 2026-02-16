@@ -146,8 +146,8 @@ const selectVariantCandidate = (
   policy: HydraExecutionPlanDiagnostics['selectedVariantPolicy']
 ): VariantPassCandidate => {
   const preferenceOrder: Record<
-  HydraExecutionPlanDiagnostics['selectedVariantPolicy'],
-  Array<HydraExecutionStep['variant']>
+    HydraExecutionPlanDiagnostics['selectedVariantPolicy'],
+    Array<HydraExecutionStep['variant']>
   > = {
     compat: ['generic', 'tiled', 'subgroup'],
     balanced: ['tiled', 'generic', 'subgroup'],
@@ -429,15 +429,15 @@ export const buildExecutionSteps = (
     const queueMaxIterations = Math.max(1, Math.floor(node.schedule.maxIterations ?? DEFAULT_QUEUE_MAX_ITERATIONS))
     const queueControl = isQueue
       ? {
-          modeHint: 'gpu_hybrid' as const,
-          convergenceCheckInterval: DEFAULT_QUEUE_CONVERGENCE_INTERVAL,
-          groupId: `queue-segment-${Math.max(0, queueSegmentIndex)}`,
-          policy: createQueuePolicy({
-            modeHint: 'gpu_hybrid',
-            maxIterations: queueMaxIterations,
-            convergenceCheckInterval: DEFAULT_QUEUE_CONVERGENCE_INTERVAL
-          })
-        }
+        modeHint: 'gpu_hybrid' as const,
+        convergenceCheckInterval: DEFAULT_QUEUE_CONVERGENCE_INTERVAL,
+        groupId: `queue-segment-${Math.max(0, queueSegmentIndex)}`,
+        policy: createQueuePolicy({
+          modeHint: 'gpu_hybrid',
+          maxIterations: queueMaxIterations,
+          convergenceCheckInterval: DEFAULT_QUEUE_CONVERGENCE_INTERVAL
+        })
+      }
       : undefined
     previousWasQueue = isQueue
 

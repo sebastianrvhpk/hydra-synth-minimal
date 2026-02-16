@@ -36,38 +36,38 @@ export class HydraResourceManager {
   private readonly resourceToSlot = new Map<string, string>()
   private readonly queueCounters = new Map<string, { active: number, overflow: number }>()
 
-  constructor (renderer: WebGPURenderer) {
+  constructor(renderer: WebGPURenderer) {
     this.renderer = renderer
   }
 
-  registerResourceSlot (resourceId: string, slot: string): void {
+  registerResourceSlot(resourceId: string, slot: string): void {
     if (!resourceId || !slot) return
     this.resourceToSlot.set(resourceId, slot)
   }
 
-  getSlotForResource (resourceId: string): string | null {
+  getSlotForResource(resourceId: string): string | null {
     return this.resourceToSlot.get(resourceId) ?? null
   }
 
-  hasResourceSlot (resourceId: string): boolean {
+  hasResourceSlot(resourceId: string): boolean {
     return this.resourceToSlot.has(resourceId)
   }
 
-  hasBufferSlot (slot: string): boolean {
+  hasBufferSlot(slot: string): boolean {
     return this.buffers.has(slot)
   }
 
-  hasTextureSlot (slot: string): boolean {
+  hasTextureSlot(slot: string): boolean {
     return this.textures.has(slot)
   }
 
-  allocateStorageBufferForResource (resourceId: string, requiredBytes: number): GPUBuffer | null {
+  allocateStorageBufferForResource(resourceId: string, requiredBytes: number): GPUBuffer | null {
     const slot = this.getSlotForResource(resourceId)
     if (!slot) return null
     return this.getOrCreateStorageBuffer(slot, requiredBytes)
   }
 
-  allocateStorageTextureForResource (
+  allocateStorageTextureForResource(
     resourceId: string,
     descriptor: {
       width: number
@@ -81,7 +81,7 @@ export class HydraResourceManager {
     return this.getOrCreateStorageTexture(slot, descriptor)
   }
 
-  getOrCreateStorageBuffer (slot: string, requiredBytes: number): GPUBuffer {
+  getOrCreateStorageBuffer(slot: string, requiredBytes: number): GPUBuffer {
     const minBytes = Math.max(16, Math.floor(requiredBytes))
     const existing = this.buffers.get(slot)
     if (existing && existing.bytes >= minBytes) return existing.buffer
@@ -92,7 +92,7 @@ export class HydraResourceManager {
     return created
   }
 
-  getOrCreateIndirectArgsBuffer (slot: string, offset = 0): GPUBuffer {
+  getOrCreateIndirectArgsBuffer(slot: string, offset = 0): GPUBuffer {
     const bytes = Math.max(16, Math.floor(offset) + 12)
     const existing = this.buffers.get(slot)
     if (existing && existing.bytes >= bytes && existing.usage === 'indirect') return existing.buffer
@@ -102,7 +102,7 @@ export class HydraResourceManager {
     return created
   }
 
-  getOrCreateQueueCounterBuffer (slot: string): GPUBuffer {
+  getOrCreateQueueCounterBuffer(slot: string): GPUBuffer {
     const bytes = 16
     const existing = this.buffers.get(slot)
     if (existing && existing.bytes >= bytes && existing.usage === 'queueCounter') return existing.buffer
@@ -112,7 +112,7 @@ export class HydraResourceManager {
     return created
   }
 
-  writeIndirectArgs (slot: string, x: number, y = 1, z = 1, offset = 0): void {
+  writeIndirectArgs(slot: string, x: number, y = 1, z = 1, offset = 0): void {
     const buffer = this.getOrCreateIndirectArgsBuffer(slot, offset)
     this.renderer.device?.queue.writeBuffer(
       buffer,
@@ -125,7 +125,7 @@ export class HydraResourceManager {
     )
   }
 
-  writeQueueCount (slot: string, activeCount: number, overflowCount = 0): void {
+  writeQueueCount(slot: string, activeCount: number, overflowCount = 0): void {
     const buffer = this.getOrCreateQueueCounterBuffer(slot)
     this.queueCounters.set(slot, {
       active: Math.max(0, Math.floor(activeCount)),
@@ -143,19 +143,19 @@ export class HydraResourceManager {
     )
   }
 
-  readQueueCount (slot: string): number | null {
+  readQueueCount(slot: string): number | null {
     const counter = this.queueCounters.get(slot)
     if (!counter) return null
     return counter.active
   }
 
-  readQueueOverflow (slot: string): number | null {
+  readQueueOverflow(slot: string): number | null {
     const counter = this.queueCounters.get(slot)
     if (!counter) return null
     return counter.overflow
   }
 
-  getOrCreateStorageTexture (
+  getOrCreateStorageTexture(
     slot: string,
     {
       width,
@@ -202,7 +202,7 @@ export class HydraResourceManager {
     return created
   }
 
-  getResidentByteEstimate (): number {
+  getResidentByteEstimate(): number {
     let bytes = 0
     this.buffers.forEach((entry) => {
       bytes += entry.bytes
@@ -214,7 +214,7 @@ export class HydraResourceManager {
     return bytes
   }
 
-  getResidencySnapshot (): HydraResourceResidencySnapshot {
+  getResidencySnapshot(): HydraResourceResidencySnapshot {
     let storageBufferSlots = 0
     let indirectSlots = 0
     let queueCounterSlots = 0
@@ -262,7 +262,7 @@ export class HydraResourceManager {
     }
   }
 
-  dispose (): void {
+  dispose(): void {
     this.buffers.forEach((entry) => entry.buffer.destroy())
     this.textures.forEach((entry) => entry.texture.destroy())
     this.buffers.clear()

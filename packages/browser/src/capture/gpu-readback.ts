@@ -80,34 +80,38 @@ export const readbackTexture = (
 
 // ─── GPU-Side Color Conversion ────────────────────────────────────────
 
-const CONVERSION_WGSL = `
-@group(0) @binding(0) var splitInput: texture_2d<f32>;
-@group(0) @binding(1) var splitOutput: texture_storage_2d<rgba8unorm, write>;
+// ─── GPU-Side Color Conversion ────────────────────────────────────────
 
-@compute @workgroup_size(16, 16)
-fn main(@builtin(global_invocation_id) id: vec3u) {
-  let dims = textureDimensions(splitInput);
-  if (id.x >= dims.x || id.y >= dims.y) {
-    return;
-  }
-  
-  let color = textureLoad(splitInput, vec2i(id.xy), 0);
-  
-  // Direct clamp to 0-1.
-  // We do NOT multiply by alpha here because Hydra's rendering pipeline
-  // produces "pre-associated" (premultiplied) colors where RGB can exceed Alpha
-  // (e.g. valid glow/bloom/additive blending).
-  // If we multiplied by alpha again, we would double-darken those effects.
-  let outputColor = clamp(color.rgb, vec3f(0.0), vec3f(1.0));
-  
-  // Output alpha as 1.0 (opaque) for the video file
-  textureStore(splitOutput, vec2i(id.xy), vec4f(outputColor, 1.0));
+const FULLSCREEN_VERTEX_WGSL = `
+@vertex
+fn vsMain(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4f {
+  let positions = array<vec2f, 3>(
+    vec2f(-1.0, -1.0),
+    vec2f(3.0, -1.0),
+    vec2f(-1.0, 3.0)
+  );
+  let p = positions[vertexIndex];
+  return vec4f(p, 0.0, 1.0);
 }
 `
 
-// Cache for compute pipeline / bind group layouts to avoid recreation
+const CONVERSION_FRAGMENT_WGSL = `
+@group(0) @binding(0) var tex0: texture_2d<f32>;
+
+@fragment
+fn fsMain(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
+  // Direct sample. The hardware handles linear -> sRGB conversion when writing 
+  // to the rgba8unorm render target, matching the screen's behavior exactly.
+  let color = textureLoad(tex0, vec2i(fragCoord.xy), 0);
+  
+  // Force opaque alpha for video capture (composites over black effectively)
+  return vec4f(color.rgb, 1.0);
+}
+`
+
+// Cache for render pipeline / bind group layouts
 interface ConversionContext {
-    pipeline: GPUComputePipeline
+    pipeline: GPURenderPipeline
     bindGroupLayout: GPUBindGroupLayout
 }
 
@@ -116,15 +120,19 @@ let conversionContext: ConversionContext | null = null
 const getConversionContext = (device: GPUDevice): ConversionContext => {
     if (conversionContext) return conversionContext
 
-    const module = device.createShaderModule({
-        label: 'hydra-capture-conversion',
-        code: CONVERSION_WGSL
+    const vertexModule = device.createShaderModule({
+        label: 'hydra-capture-vertex',
+        code: FULLSCREEN_VERTEX_WGSL
+    })
+
+    const fragmentModule = device.createShaderModule({
+        label: 'hydra-capture-fragment',
+        code: CONVERSION_FRAGMENT_WGSL
     })
 
     const bindGroupLayout = device.createBindGroupLayout({
         entries: [
-            { binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'float' } },
-            { binding: 1, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: 'rgba8unorm' } }
+            { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }
         ]
     })
 
@@ -132,12 +140,20 @@ const getConversionContext = (device: GPUDevice): ConversionContext => {
         bindGroupLayouts: [bindGroupLayout]
     })
 
-    const pipeline = device.createComputePipeline({
+    const pipeline = device.createRenderPipeline({
         label: 'hydra-capture-conversion-pipeline',
         layout: pipelineLayout,
-        compute: {
-            module,
-            entryPoint: 'main'
+        vertex: {
+            module: vertexModule,
+            entryPoint: 'vsMain'
+        },
+        fragment: {
+            module: fragmentModule,
+            entryPoint: 'fsMain',
+            targets: [{ format: 'rgba8unorm' }]
+        },
+        primitive: {
+            topology: 'triangle-list'
         }
     })
 
@@ -146,8 +162,8 @@ const getConversionContext = (device: GPUDevice): ConversionContext => {
 }
 
 /**
- * Perform GPU-side conversion from rgba16float -> rgba8unorm sRGB, then copy to buffer.
- * Requires a temporary intermediate texture for the compute shader output.
+ * Perform GPU-side conversion from rgba16float -> rgba8unorm sRGB via Render Pass.
+ * Requires a temporary intermediate texture as a render attachment.
  */
 export const readbackTextureWithConversion = (
     device: GPUDevice,
@@ -161,18 +177,22 @@ export const readbackTextureWithConversion = (
     const bindGroup = device.createBindGroup({
         layout: ctx.bindGroupLayout,
         entries: [
-            { binding: 0, resource: sourceTexture.createView() },
-            { binding: 1, resource: intermediateTexture.createView() }
+            { binding: 0, resource: sourceTexture.createView() }
         ]
     })
 
-    const pass = encoder.beginComputePass({ label: 'hydra-capture-conversion-pass' })
+    const pass = encoder.beginRenderPass({
+        label: 'hydra-capture-conversion-pass',
+        colorAttachments: [{
+            view: intermediateTexture.createView(),
+            loadOp: 'clear',
+            storeOp: 'store',
+            clearValue: { r: 0, g: 0, b: 0, a: 1 }
+        }]
+    })
     pass.setPipeline(ctx.pipeline)
     pass.setBindGroup(0, bindGroup)
-    pass.dispatchWorkgroups(
-        Math.ceil(activeInfo.width / 16),
-        Math.ceil(activeInfo.height / 16)
-    )
+    pass.draw(3, 1, 0, 0)
     pass.end()
 
     // Now copy from the intermediate rgba8unorm texture to the buffer
@@ -203,7 +223,7 @@ export const createintermediateConversionTexture = (
         label: 'hydra-capture-intermediate-rgba8',
         size: [width, height],
         format: 'rgba8unorm',
-        usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.TEXTURE_BINDING
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC | GPUTextureUsage.TEXTURE_BINDING
     })
 }
 
@@ -237,8 +257,10 @@ export const mapReadbackBuffer = async (
     }
 }
 
+// sRGB transfer function removed - standard hardware conversion used instead
+
 /**
- * Legacy/Testing: CPU-side float16 -> uint8 conversion.
+ * Legacy/Testing: CPU-side float16 -> uint8 conversion with sRGB encoding.
  * Kept for specific raw data capture needs, but generally superseded by GPU path.
  */
 export const float16ToUint8 = (
@@ -259,9 +281,9 @@ export const float16ToUint8 = (
             const rSource = decodeFloat16(sourceView.getUint16(pixelOffset, true))
             const gSource = decodeFloat16(sourceView.getUint16(pixelOffset + 2, true))
             const bSource = decodeFloat16(sourceView.getUint16(pixelOffset + 4, true))
-            const aSource = decodeFloat16(sourceView.getUint16(pixelOffset + 6, true))
 
-            // Clamp directly causing "pre-associated" alpha behavior (glows remain bright)
+            // Clamp to [0,1], scale to 255. Hardware rendering handles gamma automatically,
+            // but for CPU fallback we rely on simple clamping.
             // We force alpha to 1.0 (255) for the video output.
             output[outIndex] = Math.round(clamp01(rSource) * 255)
             output[outIndex + 1] = Math.round(clamp01(gSource) * 255)

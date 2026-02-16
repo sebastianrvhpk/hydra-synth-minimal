@@ -48,7 +48,7 @@ const createTestEncoder = (
           indirectBuffer
         })
       },
-      end: () => {}
+      end: () => { }
     }
   },
   copyTextureToTexture: (
@@ -96,7 +96,7 @@ const createRendererMock = (options: {
   features?: string[]
 } = {}): unknown => {
   let textureCounter = 0
-  const fallbackTexture = { id: 'fallback', destroy: () => {} } as unknown as GPUTexture
+  const fallbackTexture = { id: 'fallback', destroy: () => { } } as unknown as GPUTexture
   const objectIds = new WeakMap<object, number>()
   let nextObjectId = 1
 
@@ -125,7 +125,7 @@ const createRendererMock = (options: {
     linearSampler: { id: 'sampler' },
     device: {
       queue: {
-        writeBuffer: () => {}
+        writeBuffer: () => { }
       },
       createBindGroup: ({ entries }: { entries: unknown[] }) => {
         options.onCreateBindGroup?.()
@@ -143,21 +143,21 @@ const createRendererMock = (options: {
       options.onCreateOutputTexture?.(args)
       const id = `tex-${textureCounter}`
       textureCounter += 1
-      return { id, destroy: () => {} } as unknown as GPUTexture
+      return { id, destroy: () => { } } as unknown as GPUTexture
     },
-    createDynamicUniformBuffer: () => ({ destroy: () => {} } as unknown as GPUBuffer),
-    createStorageBuffer: () => ({ destroy: () => {} } as unknown as GPUBuffer),
-    createIndirectDispatchBuffer: () => ({ destroy: () => {} } as unknown as GPUBuffer),
+    createDynamicUniformBuffer: () => ({ destroy: () => { } } as unknown as GPUBuffer),
+    createStorageBuffer: () => ({ destroy: () => { } } as unknown as GPUBuffer),
+    createIndirectDispatchBuffer: () => ({ destroy: () => { } } as unknown as GPUBuffer),
     createReadbackBuffer: (_label: string, byteLength: number) => {
       options.onCreateReadbackBuffer?.(byteLength)
       return ({
-      destroy: () => {},
-      mapAsync: async () => {},
-      getMappedRange: () => new Uint8Array(256).buffer,
-      unmap: () => {}
+        destroy: () => { },
+        mapAsync: async () => { },
+        getMappedRange: () => new Uint8Array(256).buffer,
+        unmap: () => { }
       } as unknown as GPUBuffer)
     },
-    updateGlobalUniforms: () => {},
+    updateGlobalUniforms: () => { },
     getOutputPipelineEntry: (signature: string, code: string) => {
       if (options.getOutputPipelineEntry) return options.getOutputPipelineEntry(signature, code)
       return ({
@@ -190,13 +190,13 @@ describe('WebGPUOutputNode texture exposure', () => {
 
     const textureA = { id: 'a' } as unknown as GPUTexture
     const textureB = { id: 'b' } as unknown as GPUTexture
-    ;(node as unknown as { textures: Array<GPUTexture | null> }).textures = [textureA, textureB]
+      ; (node as unknown as { textures: Array<GPUTexture | null> }).textures = [textureA, textureB]
 
-    ;(node as unknown as { pingPongIndex: number }).pingPongIndex = 0
+      ; (node as unknown as { pingPongIndex: number }).pingPongIndex = 0
     expect(node.getCurrent()).toBe(textureA)
     expect(node.getTexture()).toBe(textureA)
 
-    ;(node as unknown as { pingPongIndex: number }).pingPongIndex = 1
+      ; (node as unknown as { pingPongIndex: number }).pingPongIndex = 1
     expect(node.getCurrent()).toBe(textureB)
     expect(node.getTexture()).toBe(textureB)
   })
@@ -919,7 +919,7 @@ describe('WebGPUOutputNode texture exposure', () => {
       label: 'o-slot-providers'
     })
     const providedBuffer = { id: 'slot-buffer' } as unknown as GPUBuffer
-    const providedTexture = { id: 'slot-texture', destroy: () => {} } as unknown as GPUTexture
+    const providedTexture = { id: 'slot-texture', destroy: () => { } } as unknown as GPUTexture
 
     const pass: HydraCompiledPass = {
       signature: 'slot-provider-pass',
@@ -1041,7 +1041,7 @@ describe('WebGPUOutputNode texture exposure', () => {
       createIndirectDispatchBuffer: (label: string) => GPUBuffer
     } & ReturnType<typeof createRendererMock>
 
-    const indirectBuffer = { id: 'internal-indirect', destroy: () => {} } as unknown as GPUBuffer
+    const indirectBuffer = { id: 'internal-indirect', destroy: () => { } } as unknown as GPUBuffer
     const writes: number[][] = []
     renderer.createIndirectDispatchBuffer = () => indirectBuffer
     renderer.device.queue.writeBuffer = (_buffer: GPUBuffer, _offset: number, data: Uint32Array) => {
@@ -1323,10 +1323,10 @@ describe('WebGPUOutputNode texture exposure', () => {
     packedView.setUint16(4, 0x0000, true) // b = 0.0
     packedView.setUint16(6, 0x3c00, true) // a = 1.0
     renderer.createReadbackBuffer = () => ({
-      destroy: () => {},
-      mapAsync: async () => {},
+      destroy: () => { },
+      mapAsync: async () => { },
       getMappedRange: () => packed,
-      unmap: () => {}
+      unmap: () => { }
     } as unknown as GPUBuffer)
 
     const node = new WebGPUOutputNode({
@@ -1376,10 +1376,10 @@ describe('WebGPUOutputNode texture exposure', () => {
     queueView[0] = 12
     queueView[1] = 3
     renderer.createReadbackBuffer = () => ({
-      destroy: () => {},
-      mapAsync: async () => {},
+      destroy: () => { },
+      mapAsync: async () => { },
       getMappedRange: () => queueBytes,
-      unmap: () => {}
+      unmap: () => { }
     } as unknown as GPUBuffer)
 
     const node = new WebGPUOutputNode({
