@@ -1,40 +1,59 @@
 # hydra-synth
 
-Browser host package for Hydra v2.
+Browser host/runtime package for Hydra v2.
 
-Includes:
+## Includes
 
-- `BrowserHost` (canvas + RAF ownership)
-- `WebGPURenderer` (WebGPU backend)
-- `HydraBrowserRuntime` (core + host + renderer composition)
-- `HydraSourceNode` / `WebGPUOutputNode` adapters
-- sequential multipass compute dispatch for compiled chains (`.out()` remains screen render/present)
-- dependency-aware output scheduling (topological when possible, stable fallback on cycles)
-- deterministic frame-sequence capture utilities for offline rendering (`captureFrameSequence`, `captureHydraFrameSequence`)
+- `BrowserHost` (canvas + RAF lifecycle)
+- `WebGPURenderer` (WebGPU device/context, output presentation)
+- `HydraBrowserRuntime` (core engine + registry + host + renderer composition)
+- `HydraSourceNode` and `WebGPUOutputNode` adapters
+- output dependency scheduling (topological when possible, stable order fallback on cycles)
+- compute-plan execution route (`compileGraph` + `HydraExecutor`) with deterministic legacy fallback
+- runtime profiler snapshots (`getProfilerSnapshot`) and autotune profile helpers
+- queue execution utilities and resource residency tracking helpers
+- benchmark utilities (`BENCHMARK_CORPUS`, report build/validation helpers)
 
-Use `createHydraBrowserRuntime()` for default composition, or wire `BrowserHost` + `WebGPURenderer` explicitly.
+Use `createHydraBrowserRuntime()` for default composition, or wire `BrowserHost` + `WebGPURenderer` manually.
 
-## Frame Sequence Capture
+## Execution Modes
+
+`HydraBrowserRuntime` supports:
+
+- `auto` (default): prefer compute-plan routing, fallback to legacy pass rendering on route failures
+- `compute`: force compute-plan routing first, same deterministic fallback behavior
+- `legacy`: always render legacy pass chains
+
+## Capture APIs
 
 ```ts
-import { captureHydraFrameSequence, buildFfmpegCommands, createHydraBrowserRuntime } from 'hydra-synth'
+import {
+  buildFfmpegCommands,
+  captureHydraFrameSequence,
+  captureHydraVideo,
+  createHydraBrowserRuntime
+} from 'hydra-synth'
 
-const runtime = createHydraBrowserRuntime({ autoLoop: true })
+const runtime = createHydraBrowserRuntime({ autoLoop: false })
 await runtime.init()
 
-const capture = await captureHydraFrameSequence({
+const sequence = await captureHydraFrameSequence({
   runtime,
   fps: 60,
-  duration: 4,
-  width: 1920,
-  height: 1080,
+  duration: 2,
   extension: 'png',
-  pickDirectory: true
+  gpuReadback: 'auto'
 })
 
-const ffmpeg = buildFfmpegCommands(capture)
+const videoBlob = await captureHydraVideo({
+  runtime,
+  fps: 60,
+  duration: 2
+})
+
+const ffmpeg = buildFfmpegCommands(sequence)
 console.log(ffmpeg.mp4)
-console.log(ffmpeg.webm)
+console.log(videoBlob.type)
 ```
 
-`captureHydraFrameSequence` pauses the runtime loop, steps frames deterministically, waits for submitted GPU work, and restores previous runtime state after capture.
+`captureHydraFrameSequence` and `captureHydraVideo` stop the runtime loop, step deterministically, optionally wait for GPU work completion, and restore runtime state after capture.

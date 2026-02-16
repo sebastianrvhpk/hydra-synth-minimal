@@ -463,7 +463,7 @@ export const captureHydraFrameSequence = async (options: CaptureHydraFrameSequen
 
   try {
     if (useGpuReadback && device) {
-      // ─── GPU readback capture path (double-buffered pipelining) ───
+      // GPU readback capture path (double-buffered pipelining)
       const fps = resolvePositiveNumber(captureOptions.fps, 30, 'fps')
       const extension = normalizeExtension(captureOptions.extension)
       const mimeType = resolveMimeType(extension)
@@ -619,7 +619,7 @@ export const captureHydraFrameSequence = async (options: CaptureHydraFrameSequen
       }
     }
 
-    // ─── Fallback: original canvas.toBlob() path ───
+    // Fallback: original canvas.toBlob() path
     return await captureFrameSequence({
       ...captureOptions,
       canvas: runtime.host.canvas,

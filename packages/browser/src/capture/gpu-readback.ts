@@ -3,14 +3,14 @@
  *
  * This module provides two paths:
  * 1. `readbackTexture` (original): Reads raw rgba16float data.
- * 2. `readbackTextureWithConversion` (new): Uses a compute shader to convert
- *    rgba16float -> rgba8unorm on the GPU (composite-over-black + clamped).
+ * 2. `readbackTextureWithConversion`: Uses a render pass to convert
+ *    rgba16float -> rgba8unorm on the GPU.
  */
 
 /** Result of creating a readback buffer with computed row alignment. */
 export interface ReadbackBufferInfo {
     buffer: GPUBuffer
-    /** Actual bytes per row of pixel data (width × bytesPerPixel). */
+    /** Actual bytes per row of pixel data (width * bytesPerPixel). */
     bytesPerRow: number
     /** Padded bytes per row aligned to 256 bytes (WebGPU requirement). */
     paddedBytesPerRow: number
@@ -78,9 +78,7 @@ export const readbackTexture = (
     )
 }
 
-// ─── GPU-Side Color Conversion ────────────────────────────────────────
-
-// ─── GPU-Side Color Conversion ────────────────────────────────────────
+// GPU-side color conversion
 
 const FULLSCREEN_VERTEX_WGSL = `
 @vertex
@@ -227,7 +225,7 @@ export const createintermediateConversionTexture = (
     })
 }
 
-// ─── CPU Readback Utilities ──────────────────────────────────────────
+// CPU readback utilities
 
 /**
  * Map the readback buffer for CPU access. Returns the raw ArrayBuffer.
@@ -260,8 +258,8 @@ export const mapReadbackBuffer = async (
 // sRGB transfer function removed - standard hardware conversion used instead
 
 /**
- * Legacy/Testing: CPU-side float16 -> uint8 conversion with sRGB encoding.
- * Kept for specific raw data capture needs, but generally superseded by GPU path.
+ * Legacy/testing fallback: CPU-side float16 -> uint8 conversion.
+ * Kept for raw-data workflows, but generally superseded by GPU conversion.
  */
 export const float16ToUint8 = (
     source: ArrayBuffer,
@@ -282,9 +280,7 @@ export const float16ToUint8 = (
             const gSource = decodeFloat16(sourceView.getUint16(pixelOffset + 2, true))
             const bSource = decodeFloat16(sourceView.getUint16(pixelOffset + 4, true))
 
-            // Clamp to [0,1], scale to 255. Hardware rendering handles gamma automatically,
-            // but for CPU fallback we rely on simple clamping.
-            // We force alpha to 1.0 (255) for the video output.
+            // Clamp to [0,1], scale to 255, and force opaque alpha.
             output[outIndex] = Math.round(clamp01(rSource) * 255)
             output[outIndex + 1] = Math.round(clamp01(gSource) * 255)
             output[outIndex + 2] = Math.round(clamp01(bSource) * 255)
@@ -322,7 +318,7 @@ export const stripRowPadding = (
     return output
 }
 
-// ─── Internal helpers ────────────────────────────────────────────────
+// Internal helpers
 
 const decodeFloat16 = (packed: number): number => {
     const sign = (packed & 0x8000) === 0 ? 1 : -1

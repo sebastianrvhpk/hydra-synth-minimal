@@ -55,7 +55,7 @@
           host.canvas.getContext = () => null
         }
 
-        const executionMode = mode === 'legacy' || mode === 'v3' || mode === 'auto'
+        const executionMode = mode === 'legacy' || mode === 'compute' || mode === 'auto'
           ? mode
           : undefined
 
@@ -69,7 +69,7 @@
         })
 
         try {
-          if ((mode === 'legacy' || mode === 'v3' || mode === 'auto' || mode === 'default') && !navigator.gpu) {
+          if ((mode === 'legacy' || mode === 'compute' || mode === 'auto' || mode === 'default') && !navigator.gpu) {
             publish({ status: 'no-webgpu', requestedMode: mode })
             return
           }
@@ -101,7 +101,7 @@
           )
 
           runtime.dispose()
-          if ((mode === 'legacy' || mode === 'v3' || mode === 'auto') && isUnavailableError) {
+          if ((mode === 'legacy' || mode === 'compute' || mode === 'auto') && isUnavailableError) {
             publish({
               status: 'no-webgpu',
               requestedMode: mode,
