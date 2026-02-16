@@ -153,6 +153,54 @@ const captureFormatConfigs = {
       '0',
       outputPath
     ]
+  },
+  mp4_10bit: {
+    outputExtension: 'mp4',
+    mimeType: 'video/mp4',
+    buildFfmpegArgs: ({ fps, inputPattern, outputPath }) => [
+      '-y',
+      '-framerate',
+      String(fps),
+      '-start_number',
+      '0',
+      '-i',
+      inputPattern,
+      '-vf',
+      'pad=ceil(iw/2)*2:ceil(ih/2)*2',
+      '-c:v',
+      'libx264',
+      '-preset',
+      'slow',
+      '-crf',
+      '12',
+      '-pix_fmt',
+      'yuv420p10le',
+      '-profile:v',
+      'high10',
+      '-movflags',
+      '+faststart',
+      outputPath
+    ]
+  },
+  prores: {
+    outputExtension: 'mov',
+    mimeType: 'video/quicktime',
+    buildFfmpegArgs: ({ fps, inputPattern, outputPath }) => [
+      '-y',
+      '-framerate',
+      String(fps),
+      '-start_number',
+      '0',
+      '-i',
+      inputPattern,
+      '-c:v',
+      'prores_ks',
+      '-profile:v',
+      '4',
+      '-pix_fmt',
+      'yuva444p10le',
+      outputPath
+    ]
   }
 }
 
