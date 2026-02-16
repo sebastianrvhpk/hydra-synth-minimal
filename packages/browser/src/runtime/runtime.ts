@@ -1,40 +1,41 @@
 import {
   HydraEngine,
   HydraTransformRegistry,
-  compileGraphV3,
-  type HydraExecutionPlanV3,
+  compileGraph,
+  type HydraExecutionPlan,
   type HydraEngineError,
   type HydraErrorPolicy,
   type HydraOutputGraphSource,
   type HydraOutputAdapter,
   type HydraTransformCall,
   type HydraTransformDefinition,
-  type ScriptPlugin
+  type ScriptPlugin,
+  type HydraDebugEvent
 } from 'hydra-synth-core'
 import type { BrowserHost } from './browser-host.js'
 import { WebGPUOutputNode } from './output-node.js'
 import { WebGPUFrameRendererAdapter } from './renderer-adapter.js'
 import { HydraSourceNode, type PatchBayAdapter } from './source-node.js'
 import {
-  HydraAutotunerV3,
-  buildWorkgroupCandidateSignatureV3,
-  type HydraAutotuneProfileV3,
-  type HydraTuningPolicyV3
-} from './autotune-v3.js'
-import { buildProfilerSnapshotV3, type HydraProfilerSnapshotV3 } from './profiler-v3.js'
-import { HydraExecutorV3, type HydraExecutePlanV3Options, type ExecutePlanV3Result } from './executor-v3.js'
-import { HydraResourceManagerV3 } from './resource-manager-v3.js'
+  HydraAutotuner,
+  buildWorkgroupCandidateSignature,
+  type HydraAutotuneProfile,
+  type HydraTuningPolicy
+} from './autotune.js'
+import { buildProfilerSnapshot, type HydraProfilerSnapshot } from './profiler.js'
+import { HydraExecutor, type HydraExecutePlanOptions, type ExecutePlanResult } from './executor.js'
+import { HydraResourceManager } from './resource-manager.js'
 import type { WebGPUCapabilities, WebGPURenderer } from '../webgpu/renderer.js'
 
 const mapTuningPolicyToVariantPolicy = (
-  policy: HydraTuningPolicyV3
+  policy: HydraTuningPolicy
 ): 'compat' | 'balanced' | 'aggressive' => {
   if (policy === 'throughput') return 'aggressive'
   if (policy === 'balanced_research') return 'balanced'
   return 'compat'
 }
 
-export type HydraRuntimeExecutionMode = 'legacy' | 'v3' | 'auto'
+export type HydraRuntimeExecutionMode = 'legacy' | 'compute' | 'auto'
 
 export const normalizeRuntimeExecutionMode = (
   value: unknown,
@@ -42,15 +43,15 @@ export const normalizeRuntimeExecutionMode = (
 ): HydraRuntimeExecutionMode => {
   if (typeof value !== 'string') return fallback
   const normalized = value.trim().toLowerCase()
-  if (normalized === 'legacy' || normalized === 'v3' || normalized === 'auto') return normalized
+  if (normalized === 'legacy' || normalized === 'compute' || normalized === 'auto') return normalized
   return fallback
 }
 
-const prefersV3Path = (mode: HydraRuntimeExecutionMode): boolean => mode !== 'legacy'
+const prefersComputePath = (mode: HydraRuntimeExecutionMode): boolean => mode !== 'legacy'
 
 interface HydraRuntimeRoutingDiagnostics {
   configuredMode: HydraRuntimeExecutionMode
-  activeMode: 'legacy' | 'v3'
+  activeMode: 'legacy' | 'compute'
   compileFailures: number
   fallbackCount: number
 }
@@ -69,6 +70,7 @@ export interface HydraBrowserRuntimeOptions {
   executionMode?: HydraRuntimeExecutionMode
   errorPolicy?: HydraErrorPolicy
   onError?: (error: HydraEngineError) => void
+  onDebug?: (event: HydraDebugEvent) => void
 }
 
 export class HydraBrowserRuntime {
@@ -80,6 +82,7 @@ export class HydraBrowserRuntime {
   readonly synth: Record<string, unknown>
   capabilities: WebGPUCapabilities | null = null
 
+  private readonly onDebugCallback?: (event: HydraDebugEvent) => void
   private readonly registry: HydraTransformRegistry
   private readonly patchbay: PatchBayAdapter | null
   private activeOutput: WebGPUOutputNode
@@ -87,13 +90,14 @@ export class HydraBrowserRuntime {
   private initPromise: Promise<void> | null = null
   private disposed = false
   private readonly frameTimesMs: number[] = []
-  private readonly autotuner = new HydraAutotunerV3()
+  private readonly autotuner = new HydraAutotuner()
   private executionMode: HydraRuntimeExecutionMode
-  private executorV3: HydraExecutorV3 | null = null
-  private lastExecuteResultV3: ExecutePlanV3Result | null = null
+  private executor: HydraExecutor | null = null
+  private lastExecuteResult: ExecutePlanResult | null = null
+  private lastPlan: HydraExecutionPlan | null = null
   private readonly routingDiagnostics: HydraRuntimeRoutingDiagnostics
 
-  constructor ({
+  constructor({
     host,
     renderer,
     patchbay = null,
@@ -106,12 +110,14 @@ export class HydraBrowserRuntime {
     bpm = 30,
     executionMode = 'auto',
     errorPolicy = 'emit',
-    onError
+    onError,
+    onDebug
   }: HydraBrowserRuntimeOptions) {
     this.host = host
     this.renderer = renderer
     this.patchbay = patchbay
     this.executionMode = normalizeRuntimeExecutionMode(executionMode, 'auto')
+    this.onDebugCallback = onDebug
     this.routingDiagnostics = {
       configuredMode: this.executionMode,
       activeMode: 'legacy',
@@ -185,13 +191,14 @@ export class HydraBrowserRuntime {
     this.synth.getPassStats = this.getPassStats.bind(this)
     this.synth.getExecutionMode = this.getExecutionMode.bind(this)
     this.synth.setExecutionMode = this.setExecutionMode.bind(this)
-    this.synth.compilePlanV3 = this.compilePlanV3.bind(this)
-    this.synth.executePlanV3 = this.executePlanV3.bind(this)
+    this.synth.compilePlan = this.compilePlan.bind(this)
+    this.synth.executePlan = this.executePlan.bind(this)
     this.synth.getProfilerSnapshot = this.getProfilerSnapshot.bind(this)
     this.synth.autotune = this.autotune.bind(this)
     this.synth.getAutotuneProfile = this.getAutotuneProfile.bind(this)
     this.synth.setTuningPolicy = this.setTuningPolicy.bind(this)
     this.synth.clearAutotuneProfiles = this.clearAutotuneProfiles.bind(this)
+    this.synth.dumpShaders = this.dumpShaders.bind(this)
 
     this.outputs.forEach((output, index) => {
       this.synth[`o${index}`] = output
@@ -217,30 +224,30 @@ export class HydraBrowserRuntime {
     this.registry.attachToBindings(this.synth)
 
     if (autoLoop) {
-      void this.start().catch(() => {})
+      void this.start().catch(() => { })
     }
   }
 
-  get bindings (): Readonly<Record<string, unknown>> {
+  get bindings(): Readonly<Record<string, unknown>> {
     return this.engine.getBindings()
   }
 
-  async init (): Promise<void> {
+  async init(): Promise<void> {
     if (this.disposed) return
     if (this.initPromise) return this.initPromise
     this.initPromise = this.engine.init().then(() => {
       this.capabilities = this.renderer.getCapabilities()
       this.synth.capabilities = this.capabilities
-      if (!this.executorV3) {
-        this.executorV3 = new HydraExecutorV3({
-          resourceManager: new HydraResourceManagerV3(this.renderer)
+      if (!this.executor) {
+        this.executor = new HydraExecutor({
+          resourceManager: new HydraResourceManager(this.renderer)
         })
       }
     })
     return this.initPromise
   }
 
-  async start (): Promise<void> {
+  async start(): Promise<void> {
     if (this.disposed) return
     await this.init()
     this.host.start((deltaMs) => {
@@ -248,11 +255,11 @@ export class HydraBrowserRuntime {
     })
   }
 
-  stop (): void {
+  stop(): void {
     this.host.stop()
   }
 
-  tick (deltaMs = 16): void {
+  tick(deltaMs = 16): void {
     if (this.disposed) return
     this.engine.tick(deltaMs)
     this.frameTimesMs.push(deltaMs)
@@ -261,12 +268,12 @@ export class HydraBrowserRuntime {
     stats.fps = deltaMs > 0 ? Math.ceil(1000 / deltaMs) : 0
   }
 
-  emitEvent (name: string): void {
+  emitEvent(name: string): void {
     if (!name) return
     this.outputs.forEach((output) => output.emitEvent(name))
   }
 
-  render (output?: WebGPUOutputNode): void {
+  render(output?: WebGPUOutputNode): void {
     if (output) {
       this.activeOutput = output
       this.renderAll = false
@@ -275,13 +282,13 @@ export class HydraBrowserRuntime {
     this.renderAll = true
   }
 
-  setResolution (width: number, height: number): void {
+  setResolution(width: number, height: number): void {
     this.host.setResolution(width, height)
     this.engine.setResolution(width, height)
     this.outputs.forEach((output) => output.resize(width, height))
   }
 
-  createSource (): HydraSourceNode {
+  createSource(): HydraSourceNode {
     const sourceIndex = this.sources.length
     const source = new HydraSourceNode({
       renderer: this.renderer.ready ? this.renderer : null,
@@ -294,7 +301,7 @@ export class HydraBrowserRuntime {
     return source
   }
 
-  getPassStats (): Record<string, ReturnType<WebGPUOutputNode['getPassStats']>> {
+  getPassStats(): Record<string, ReturnType<WebGPUOutputNode['getPassStats']>> {
     const stats: Record<string, ReturnType<WebGPUOutputNode['getPassStats']>> = {}
     this.outputs.forEach((output, index) => {
       stats[`o${index}`] = output.getPassStats()
@@ -302,26 +309,26 @@ export class HydraBrowserRuntime {
     return stats
   }
 
-  getExecutionMode (): HydraRuntimeExecutionMode {
+  getExecutionMode(): HydraRuntimeExecutionMode {
     return this.executionMode
   }
 
-  setExecutionMode (mode: HydraRuntimeExecutionMode | string): HydraRuntimeExecutionMode {
+  setExecutionMode(mode: HydraRuntimeExecutionMode | string): HydraRuntimeExecutionMode {
     this.executionMode = normalizeRuntimeExecutionMode(mode, this.executionMode)
     this.routingDiagnostics.configuredMode = this.executionMode
     return this.executionMode
   }
 
-  private ensureExecutorV3 (): HydraExecutorV3 {
-    if (!this.executorV3) {
-      this.executorV3 = new HydraExecutorV3({
-        resourceManager: new HydraResourceManagerV3(this.renderer)
+  private ensureExecutor(): HydraExecutor {
+    if (!this.executor) {
+      this.executor = new HydraExecutor({
+        resourceManager: new HydraResourceManager(this.renderer)
       })
     }
-    return this.executorV3
+    return this.executor
   }
 
-  private getCurrentFrameState (): {
+  private getCurrentFrameState(): {
     time: number
     bpm: number
     resolution: [number, number]
@@ -335,7 +342,7 @@ export class HydraBrowserRuntime {
     }
   }
 
-  private routeGraphFallback (
+  private routeGraphFallback(
     output: WebGPUOutputNode,
     graphSource: HydraOutputGraphSource,
     error: unknown,
@@ -345,26 +352,26 @@ export class HydraBrowserRuntime {
     this.routingDiagnostics.fallbackCount += 1
     this.routingDiagnostics.activeMode = 'legacy'
     try {
-      this.engine.reportCompileError(`${output.label}:v3-route`, error)
+      this.engine.reportCompileError(`${output.label}:compute-route`, error)
     } catch {
       // Fallback routing must remain deterministic even under throw-on-error policies.
     }
     output.render(graphSource.compileLegacyPasses())
   }
 
-  private routeGraphRender (output: WebGPUOutputNode, graphSource: HydraOutputGraphSource): void {
+  private routeGraphRender(output: WebGPUOutputNode, graphSource: HydraOutputGraphSource): void {
     this.routingDiagnostics.configuredMode = this.executionMode
-    if (!prefersV3Path(this.executionMode)) {
+    if (!prefersComputePath(this.executionMode)) {
       this.routingDiagnostics.activeMode = 'legacy'
       output.render(graphSource.compileLegacyPasses())
       return
     }
 
-    let plan: HydraExecutionPlanV3 | null = null
+    let plan: HydraExecutionPlan | null = null
     try {
-      plan = graphSource.compilePlanV3
-        ? (graphSource.compilePlanV3() as HydraExecutionPlanV3 | null)
-        : this.compilePlanV3({ transforms: graphSource.transforms })
+      plan = graphSource.compilePlan
+        ? (graphSource.compilePlan() as HydraExecutionPlan | null)
+        : this.compilePlan({ transforms: graphSource.transforms })
     } catch (error) {
       this.routeGraphFallback(output, graphSource, error, true)
       return
@@ -374,14 +381,14 @@ export class HydraBrowserRuntime {
       this.routeGraphFallback(
         output,
         graphSource,
-        new Error('V3 plan compilation produced no plan for the current graph output.'),
+        new Error('Plan compilation produced no plan for the current graph output.'),
         true
       )
       return
     }
 
     try {
-      this.lastExecuteResultV3 = this.ensureExecutorV3().executePlan(
+      this.lastExecuteResult = this.ensureExecutor().executePlan(
         output,
         plan,
         this.getCurrentFrameState(),
@@ -390,69 +397,72 @@ export class HydraBrowserRuntime {
           queuePolicy: plan.executionPolicy?.queuePolicyDefault
         }
       )
-      this.routingDiagnostics.activeMode = 'v3'
+      this.lastPlan = plan
+      this.routingDiagnostics.activeMode = 'compute'
     } catch (error) {
       this.routeGraphFallback(output, graphSource, error)
     }
   }
 
-  compilePlanV3 (graphNode: { transforms?: HydraTransformCall[] } | null | undefined): HydraExecutionPlanV3 | null {
+  compilePlan(graphNode: { transforms?: HydraTransformCall[] } | null | undefined): HydraExecutionPlan | null {
     const transforms = Array.isArray(graphNode?.transforms) ? graphNode?.transforms : null
     if (!transforms || transforms.length === 0) return null
     const capabilities = this.capabilities
-    return compileGraphV3(transforms, {
-      graphId: 'runtime-v3-plan',
+    return compileGraph(transforms, {
+      graphId: 'runtime-plan',
       selectedVariantPolicy: mapTuningPolicyToVariantPolicy(this.autotuner.getPolicy()),
       capabilityProfile: {
         supportedFeatures: capabilities?.features ?? [],
         hasSubgroups: Boolean(capabilities?.subgroups?.supported),
         maxWorkgroupStorageBytes: capabilities?.compute?.maxComputeWorkgroupStorageSize ?? 0
-      }
+      },
+      onDebug: this.onDebugCallback
     })
   }
 
-  executePlanV3 (
+  executePlan(
     graphNode: { transforms?: HydraTransformCall[] } | null | undefined,
     output: WebGPUOutputNode = this.activeOutput,
-    options: HydraExecutePlanV3Options = {}
-  ): HydraExecutionPlanV3 | null {
-    const plan = this.compilePlanV3(graphNode)
+    options: HydraExecutePlanOptions = {}
+  ): HydraExecutionPlan | null {
+    const plan = this.compilePlan(graphNode)
     if (!plan) return null
-    this.lastExecuteResultV3 = this.ensureExecutorV3().executePlan(output, plan, this.getCurrentFrameState(), {
+    this.lastExecuteResult = this.ensureExecutor().executePlan(output, plan, this.getCurrentFrameState(), {
       queueMode: options.queueMode ?? plan.executionPolicy?.queueModeDefault,
       queueConvergenceCheckInterval: options.queueConvergenceCheckInterval,
       queueHooks: options.queueHooks,
       forceQueueIndirect: options.forceQueueIndirect,
       queuePolicy: options.queuePolicy ?? plan.executionPolicy?.queuePolicyDefault
     })
-    this.routingDiagnostics.activeMode = 'v3'
+    this.routingDiagnostics.activeMode = 'compute'
+    this.lastPlan = plan
     return plan
   }
 
-  getProfilerSnapshot (): HydraProfilerSnapshotV3 {
-    const residentBytesEstimate = this.executorV3?.getResidentByteEstimate() ?? this.outputs
+  getProfilerSnapshot(): HydraProfilerSnapshot {
+    const residentBytesEstimate = this.executor?.getResidentByteEstimate() ?? this.outputs
       .map((output) => output.getPassStats())
       .reduce((sum, outputStats) => {
         const outputBytes = Object.values(outputStats).reduce((local, stats) => local + (stats.dispatchCount * 16), 0)
         return sum + outputBytes
       }, 0)
 
-    return buildProfilerSnapshotV3({
+    return buildProfilerSnapshot({
       frameTimesMs: this.frameTimesMs,
       outputs: this.outputs,
       capabilities: this.capabilities,
       residentBytesEstimate,
-      residency: this.executorV3?.getResidencySnapshot() ?? null,
-      queueMetrics: this.lastExecuteResultV3
+      residency: this.executor?.getResidencySnapshot() ?? null,
+      queueMetrics: this.lastExecuteResult
         ? {
-            iterations: this.lastExecuteResultV3.queueIterations,
-            overflowCount: this.lastExecuteResultV3.queueOverflowCount,
-            overflowEvents: this.lastExecuteResultV3.queueOverflowEvents,
-            indirectDispatches: this.lastExecuteResultV3.queueIndirectDispatches,
-            convergenceChecks: this.lastExecuteResultV3.queueConvergenceChecks,
-            terminationReasons: this.lastExecuteResultV3.queueTerminationReasons,
-            checksPerSegment: this.lastExecuteResultV3.queueChecksPerSegment
-          }
+          iterations: this.lastExecuteResult.queueIterations,
+          overflowCount: this.lastExecuteResult.queueOverflowCount,
+          overflowEvents: this.lastExecuteResult.queueOverflowEvents,
+          indirectDispatches: this.lastExecuteResult.queueIndirectDispatches,
+          convergenceChecks: this.lastExecuteResult.queueConvergenceChecks,
+          terminationReasons: this.lastExecuteResult.queueTerminationReasons,
+          checksPerSegment: this.lastExecuteResult.queueChecksPerSegment
+        }
         : null,
       routingMetrics: {
         configuredMode: this.routingDiagnostics.configuredMode,
@@ -463,26 +473,26 @@ export class HydraBrowserRuntime {
     })
   }
 
-  autotune ({
+  autotune({
     profileKey = 'default',
     policy,
     candidateWorkgroups,
     kernelSignature = 'runtime-default'
   }: {
     profileKey?: string
-    policy?: HydraTuningPolicyV3
+    policy?: HydraTuningPolicy
     candidateWorkgroups?: Array<[number, number, number]>
     kernelSignature?: string
-  } = {}): HydraAutotuneProfileV3 {
+  } = {}): HydraAutotuneProfile {
     const snapshot = this.getProfilerSnapshot()
     const activePolicy = policy ?? this.autotuner.getPolicy()
     const compute = this.capabilities?.compute
     const adapterFingerprint = this.capabilities
       ? [
-          `features:${(this.capabilities.features ?? []).join(',')}`,
-          `invocations:${compute?.maxComputeInvocationsPerWorkgroup ?? 0}`,
-          `storage:${compute?.maxComputeWorkgroupStorageSize ?? 0}`
-        ].join('|')
+        `features:${(this.capabilities.features ?? []).join(',')}`,
+        `invocations:${compute?.maxComputeInvocationsPerWorkgroup ?? 0}`,
+        `storage:${compute?.maxComputeWorkgroupStorageSize ?? 0}`
+      ].join('|')
       : 'unknown-adapter'
     const browserFingerprint = typeof navigator !== 'undefined'
       ? `${navigator.userAgent}`
@@ -497,7 +507,7 @@ export class HydraBrowserRuntime {
       Math.max(1, Math.floor(candidate[2] ?? 1))
     ] as [number, number, number])
     const fingerprintKey = [adapterFingerprint, browserFingerprint, kernelSignature, resolutionClass].join('|')
-    const candidateSignature = buildWorkgroupCandidateSignatureV3(normalizedCandidates)
+    const candidateSignature = buildWorkgroupCandidateSignature(normalizedCandidates)
     const cached = this.autotuner.getProfileByFingerprint(profileKey, fingerprintKey)
     if (
       cached &&
@@ -519,19 +529,26 @@ export class HydraBrowserRuntime {
     })
   }
 
-  getAutotuneProfile (profileKey = 'default'): HydraAutotuneProfileV3 | null {
+  getAutotuneProfile(profileKey = 'default'): HydraAutotuneProfile | null {
     return this.autotuner.getProfile(profileKey)
   }
 
-  setTuningPolicy (policy: HydraTuningPolicyV3): void {
+  setTuningPolicy(policy: HydraTuningPolicy): void {
     this.autotuner.setPolicy(policy)
   }
 
-  clearAutotuneProfiles (profileKey?: string): void {
+  clearAutotuneProfiles(profileKey?: string): void {
     this.autotuner.clear(profileKey)
   }
 
-  hush (): void {
+  dumpShaders(): string[] {
+    if (this.lastPlan) {
+      return this.lastPlan.steps.map((step) => `// Signature: ${step.signature}\n${step.compiledPass.wgsl}`)
+    }
+    return []
+  }
+
+  hush(): void {
     this.sources.forEach((source) => source.clear())
 
     const solid = this.registry.generators.solid
@@ -542,22 +559,22 @@ export class HydraBrowserRuntime {
     }
 
     this.render(this.outputs[0])
-    this.synth.update = () => {}
-    this.synth.afterUpdate = () => {}
+    this.synth.update = () => { }
+    this.synth.afterUpdate = () => { }
   }
 
-  attachPlugin (plugin: ScriptPlugin): () => void {
+  attachPlugin(plugin: ScriptPlugin): () => void {
     return this.engine.attachPlugin(plugin)
   }
 
-  dispose (): void {
+  dispose(): void {
     if (this.disposed) return
     this.disposed = true
     this.stop()
     this.outputs.forEach((output) => output.setGraphRenderHandler(null))
-    this.executorV3?.dispose()
-    this.executorV3 = null
-    this.lastExecuteResultV3 = null
+    this.executor?.dispose()
+    this.executor = null
+    this.lastExecuteResult = null
     this.engine.dispose()
     this.host.dispose()
   }

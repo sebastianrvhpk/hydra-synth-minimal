@@ -1,6 +1,6 @@
 import type { HydraBenchmarkSceneDefinition } from './types.js'
 
-export const BENCHMARK_CORPUS_V3: HydraBenchmarkSceneDefinition[] = [
+export const BENCHMARK_CORPUS: HydraBenchmarkSceneDefinition[] = [
   {
     id: 'img_chain_4k_postfx',
     workloadClass: 'image',
@@ -51,6 +51,6 @@ export const BENCHMARK_CORPUS_V3: HydraBenchmarkSceneDefinition[] = [
   }
 ]
 
-export const getBenchmarkSceneDefinitionV3 = (id: string): HydraBenchmarkSceneDefinition | undefined =>
-  BENCHMARK_CORPUS_V3.find((scene) => scene.id === id)
+export const getBenchmarkSceneDefinition = (id: string): HydraBenchmarkSceneDefinition | undefined =>
+  BENCHMARK_CORPUS.find((scene) => scene.id === id)
 

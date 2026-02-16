@@ -20,6 +20,7 @@ export class HydraEngine implements HydraEngineBindingHost {
   private updateCallback: (deltaMs: number) => void
   private afterUpdateCallback: (deltaMs: number) => void
   private readonly onErrorCallback
+  private readonly onDebugCallback
   private readonly errorPolicy
   private readonly bindings: Record<string, unknown>
   private readonly errorListeners = new Set<(error: HydraEngineError) => void>()
@@ -35,12 +36,14 @@ export class HydraEngine implements HydraEngineBindingHost {
   private speed: number
   private fps: number | undefined
 
-  constructor (options: HydraEngineOptions) {
+  constructor(options: HydraEngineOptions) {
     this.renderer = options.renderer
     this.sources = options.sources ?? []
-    this.updateCallback = options.update ?? (() => {})
-    this.afterUpdateCallback = options.afterUpdate ?? (() => {})
+    this.updateCallback = options.update ?? (() => { })
+    this.afterUpdateCallback = options.afterUpdate ?? (() => { })
+    this.afterUpdateCallback = options.afterUpdate ?? (() => { })
     this.onErrorCallback = options.onError
+    this.onDebugCallback = options.onDebug
     this.errorPolicy = options.errorPolicy ?? 'emit'
 
     const width = options.width ?? 1280
@@ -79,15 +82,15 @@ export class HydraEngine implements HydraEngineBindingHost {
     for (const source of this.sources) this.addDisposable(source)
   }
 
-  get isDisposed (): boolean {
+  get isDisposed(): boolean {
     return this.disposed
   }
 
-  get isInitialized (): boolean {
+  get isInitialized(): boolean {
     return this.initialized
   }
 
-  async init (): Promise<void> {
+  async init(): Promise<void> {
     if (this.disposed) return
     if (this.initialized) return
     if (this.initPromise) return this.initPromise
@@ -111,7 +114,7 @@ export class HydraEngine implements HydraEngineBindingHost {
     return this.initPromise
   }
 
-  reportCompileError (transformName: string, cause: unknown): void {
+  reportCompileError(transformName: string, cause: unknown): void {
     this.handleError(
       'compile',
       `Transform compile failed: ${transformName}`,
@@ -120,7 +123,7 @@ export class HydraEngine implements HydraEngineBindingHost {
     )
   }
 
-  tick (deltaMs = 16): void {
+  tick(deltaMs = 16): void {
     if (this.disposed || !this.initialized || this.initError) return
 
     this.pullBindingOverrides()
@@ -158,11 +161,11 @@ export class HydraEngine implements HydraEngineBindingHost {
     this.callRuntimeCallback('afterUpdate', this.afterUpdateCallback, elapsed)
   }
 
-  getBindings (): Readonly<Record<string, unknown>> {
+  getBindings(): Readonly<Record<string, unknown>> {
     return this.bindings
   }
 
-  setBinding (name: string, value: unknown): void {
+  setBinding(name: string, value: unknown): void {
     if (this.disposed) return
 
     this.bindings[name] = value
@@ -172,11 +175,11 @@ export class HydraEngine implements HydraEngineBindingHost {
       this.bindings.fps = this.fps
     }
     if (name === 'update') {
-      this.updateCallback = typeof value === 'function' ? value as (deltaMs: number) => void : () => {}
+      this.updateCallback = typeof value === 'function' ? value as (deltaMs: number) => void : () => { }
       this.bindings.update = this.updateCallback
     }
     if (name === 'afterUpdate') {
-      this.afterUpdateCallback = typeof value === 'function' ? value as (deltaMs: number) => void : () => {}
+      this.afterUpdateCallback = typeof value === 'function' ? value as (deltaMs: number) => void : () => { }
       this.bindings.afterUpdate = this.afterUpdateCallback
     }
     if (name === 'bpm' && typeof value === 'number') this.frameState.bpm = value
@@ -184,7 +187,7 @@ export class HydraEngine implements HydraEngineBindingHost {
     if (name === 'height' && typeof value === 'number') this.frameState.resolution[1] = value
   }
 
-  setResolution (width: number, height: number): void {
+  setResolution(width: number, height: number): void {
     if (this.disposed) return
     this.frameState.resolution[0] = width
     this.frameState.resolution[1] = height
@@ -193,8 +196,8 @@ export class HydraEngine implements HydraEngineBindingHost {
     this.renderer.setResolution?.(width, height)
   }
 
-  addSource (source: SourceAdapter): () => void {
-    if (this.disposed) return () => {}
+  addSource(source: SourceAdapter): () => void {
+    if (this.disposed) return () => { }
 
     this.sources.push(source)
     const removeDisposable = this.addDisposable(source)
@@ -211,8 +214,8 @@ export class HydraEngine implements HydraEngineBindingHost {
     }
   }
 
-  attachPlugin (plugin: ScriptPlugin): () => void {
-    if (this.disposed) return () => {}
+  attachPlugin(plugin: ScriptPlugin): () => void {
+    if (this.disposed) return () => { }
 
     this.plugins.add(plugin)
     plugin.attach(this)
@@ -230,15 +233,15 @@ export class HydraEngine implements HydraEngineBindingHost {
     return detach
   }
 
-  onError (listener: (error: HydraEngineError) => void): () => void {
+  onError(listener: (error: HydraEngineError) => void): () => void {
     this.errorListeners.add(listener)
     return () => {
       this.errorListeners.delete(listener)
     }
   }
 
-  addDisposable (candidate: Disposable | (() => void)): () => void {
-    if (this.disposed) return () => {}
+  addDisposable(candidate: Disposable | (() => void)): () => void {
+    if (this.disposed) return () => { }
 
     let done = false
     const disposable: Disposable = {
@@ -259,7 +262,7 @@ export class HydraEngine implements HydraEngineBindingHost {
     }
   }
 
-  dispose (): void {
+  dispose(): void {
     if (this.disposed) return
     this.disposed = true
 
@@ -275,7 +278,7 @@ export class HydraEngine implements HydraEngineBindingHost {
     }
   }
 
-  private callRuntimeCallback (stage: string, callback: (deltaMs: number) => void, elapsed: number): void {
+  private callRuntimeCallback(stage: string, callback: (deltaMs: number) => void, elapsed: number): void {
     try {
       callback(elapsed)
     } catch (error) {
@@ -283,7 +286,7 @@ export class HydraEngine implements HydraEngineBindingHost {
     }
   }
 
-  private syncBindings (): void {
+  private syncBindings(): void {
     this.bindings.time = this.frameState.time
     this.bindings.bpm = this.frameState.bpm
     this.bindings.width = this.frameState.resolution[0]
@@ -292,7 +295,7 @@ export class HydraEngine implements HydraEngineBindingHost {
     this.bindings.fps = this.fps
   }
 
-  private pullBindingOverrides (): void {
+  private pullBindingOverrides(): void {
     if (typeof this.bindings.speed === 'number') this.speed = this.bindings.speed
     if (typeof this.bindings.fps === 'number') this.fps = this.bindings.fps
     else if (typeof this.bindings.fps === 'undefined' || this.bindings.fps === null) this.fps = undefined

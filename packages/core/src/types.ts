@@ -1,10 +1,19 @@
 export type HydraEngineErrorType = 'init' | 'compile' | 'runtime'
 
+
 export interface HydraEngineError<TContext extends Record<string, unknown> = Record<string, unknown>> {
   type: HydraEngineErrorType
   message: string
   context: TContext
   cause?: unknown
+  timestamp: number
+}
+
+export interface HydraDebugEvent {
+  type: 'shader-generated'
+  nodeId: string
+  signature: string
+  wgsl: string
   timestamp: number
 }
 
@@ -17,28 +26,28 @@ export interface HydraFrameState {
 }
 
 export interface RendererAdapter {
-  init (): Promise<void>
-  beginFrame (frame: HydraFrameState): unknown
-  renderFrame (frameHandle: unknown, frame: HydraFrameState): void
-  submitFrame (frameHandle: unknown): void
-  setResolution? (width: number, height: number): void
-  dispose (): void
+  init(): Promise<void>
+  beginFrame(frame: HydraFrameState): unknown
+  renderFrame(frameHandle: unknown, frame: HydraFrameState): void
+  submitFrame(frameHandle: unknown): void
+  setResolution?(width: number, height: number): void
+  dispose(): void
 }
 
 export interface SourceAdapter {
-  tick (frame: HydraFrameState): void
-  dispose (): void
+  tick(frame: HydraFrameState): void
+  dispose(): void
 }
 
 export interface HydraEngineBindingHost {
-  getBindings (): Readonly<Record<string, unknown>>
-  setBinding (name: string, value: unknown): void
+  getBindings(): Readonly<Record<string, unknown>>
+  setBinding(name: string, value: unknown): void
 }
 
 export interface ScriptPlugin {
-  attach (host: HydraEngineBindingHost): void
-  run? (code: string): unknown
-  dispose (): void
+  attach(host: HydraEngineBindingHost): void
+  run?(code: string): unknown
+  dispose(): void
 }
 
 export type HydraErrorPolicy = 'emit' | 'throw'
@@ -56,10 +65,11 @@ export interface HydraEngineOptions {
   initialBindings?: Record<string, unknown>
   errorPolicy?: HydraErrorPolicy
   onError?: (error: HydraEngineError) => void
+  onDebug?: (event: HydraDebugEvent) => void
 }
 
 export interface Disposable {
-  dispose (): void
+  dispose(): void
 }
 
 export type HydraTransformType =
@@ -345,16 +355,16 @@ export interface HydraCompiledPass {
 export interface HydraOutputGraphSource {
   transforms: HydraTransformCall[]
   compileLegacyPasses: () => HydraCompiledPass[]
-  compilePlanV3?: () => unknown
+  compilePlan?: () => unknown
 }
 
 export interface HydraOutputAdapter {
-  render (passes: HydraCompiledPass[]): void
-  renderGraph? (source: HydraOutputGraphSource): void
+  render(passes: HydraCompiledPass[]): void
+  renderGraph?(source: HydraOutputGraphSource): void
 }
 
 export interface HydraTextureProvider {
-  getTexture (): unknown
+  getTexture(): unknown
 }
 
 export interface HydraTransformCall {
@@ -370,9 +380,9 @@ export interface HydraTransformRegistryHost {
 
 export interface HydraGraphNode {
   transforms: HydraTransformCall[]
-  out (output?: HydraOutputAdapter): void
-  wgsl (): HydraCompiledPass[]
-  planV3? (): unknown
+  out(output?: HydraOutputAdapter): void
+  wgsl(): HydraCompiledPass[]
+  plan?(): unknown
 }
 
 export interface HydraTransformRegistryChangeEvent {

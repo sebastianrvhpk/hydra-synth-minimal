@@ -1,4 +1,4 @@
-import { getBenchmarkSceneDefinitionV3 } from './corpus.js'
+import { getBenchmarkSceneDefinition } from './corpus.js'
 import { buildCapabilityMatrix, type HydraBenchmarkReport, type HydraBenchmarkSample } from './types.js'
 import type { WebGPUCapabilities } from '../webgpu/renderer.js'
 
@@ -27,13 +27,13 @@ export interface BuildBenchmarkReportOptions {
   baseline?: HydraBenchmarkReport | null
 }
 
-export const buildBenchmarkReportV3 = ({
+export const buildBenchmarkReport = ({
   sceneId,
   samples,
   capabilities = null,
   baseline = null
 }: BuildBenchmarkReportOptions): HydraBenchmarkReport => {
-  const scene = getBenchmarkSceneDefinitionV3(sceneId)
+  const scene = getBenchmarkSceneDefinition(sceneId)
   if (!scene) throw new Error(`Unknown benchmark scene "${sceneId}".`)
   if (baseline && baseline.sceneId !== scene.id) {
     throw new Error(`Baseline scene "${baseline.sceneId}" does not match "${scene.id}".`)
@@ -95,8 +95,8 @@ export interface ValidateBenchmarkReportResult {
   failures: string[]
 }
 
-export const validateBenchmarkReportV3 = (report: HydraBenchmarkReport): ValidateBenchmarkReportResult => {
-  const scene = getBenchmarkSceneDefinitionV3(report.sceneId)
+export const validateBenchmarkReport = (report: HydraBenchmarkReport): ValidateBenchmarkReportResult => {
+  const scene = getBenchmarkSceneDefinition(report.sceneId)
   if (!scene) {
     return { ok: false, failures: [`Unknown benchmark scene "${report.sceneId}".`] }
   }

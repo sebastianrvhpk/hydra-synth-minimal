@@ -1,8 +1,8 @@
 import { compileWgslPass } from './compile-wgsl.js'
 import { splitLegacyPasses } from './split-legacy-passes.js'
-import { compileGraphV3 } from '../compiler-v3/compile-graph-v3.js'
+import { compileGraph } from '../compiler/compile-graph.js'
 import type { HydraCompiledPass, HydraOutputAdapter, HydraTransformCall } from '../types.js'
-import type { HydraExecutionPlanV3 } from '../compiler-v3/types.js'
+import type { HydraExecutionPlan } from '../compiler/types.js'
 
 export interface HydraGraphNodeOptions {
   initialTransform: HydraTransformCall
@@ -33,7 +33,7 @@ export class HydraGraphNode {
       output.renderGraph({
         transforms: this.transforms.slice(),
         compileLegacyPasses: () => this.wgsl(),
-        compilePlanV3: () => this.planV3()
+        compilePlan: () => this.plan()
       })
       return
     }
@@ -45,8 +45,8 @@ export class HydraGraphNode {
     return splitLegacyPasses(this.transforms).map((pass) => this.compile(pass))
   }
 
-  planV3 (): HydraExecutionPlanV3 {
-    return compileGraphV3(this.transforms, { maxDynamicUniforms: this.maxDynamicUniforms })
+  plan (): HydraExecutionPlan {
+    return compileGraph(this.transforms, { maxDynamicUniforms: this.maxDynamicUniforms })
   }
 
   private compile (transforms: HydraTransformCall[]): HydraCompiledPass {

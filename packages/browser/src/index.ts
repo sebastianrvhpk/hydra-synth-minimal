@@ -9,13 +9,13 @@ import {
   type HydraEngineOptions,
   type HydraErrorPolicy,
   type HydraFrameState,
-  type HydraQueuePolicyV3,
-  type HydraQueueTerminationPolicyV3,
-  type HydraQueueOverflowControlV3,
-  type HydraQueueConvergencePolicyV3,
-  type HydraQueueTerminationModeV3,
-  type HydraQueueOverflowPolicyV3,
-  type HydraQueueConvergenceStrategyV3,
+  type HydraQueuePolicy,
+  type HydraQueueTerminationPolicy,
+  type HydraQueueOverflowControl,
+  type HydraQueueConvergencePolicy,
+  type HydraQueueTerminationMode,
+  type HydraQueueOverflowPolicy,
+  type HydraQueueConvergenceStrategy,
   type HydraPassIRNode,
   type HydraPassSchedule,
   type HydraPassUpdateRate,
@@ -53,28 +53,28 @@ import {
   type HydraRuntimeExecutionMode
 } from './runtime/runtime.js'
 import {
-  buildWorkgroupCandidateSignatureV3,
-  HydraAutotunerV3,
-  type HydraAutotuneProfileV3,
-  type HydraAutotuneProfilerInputV3,
-  type HydraTuningPolicyV3
-} from './runtime/autotune-v3.js'
-import { HydraExecutorV3, type ExecutePlanV3Result, type HydraExecutePlanV3Options, type HydraExecutorQueueHooksV3 } from './runtime/executor-v3.js'
+  buildWorkgroupCandidateSignature,
+  HydraAutotuner,
+  type HydraAutotuneProfile,
+  type HydraAutotuneProfilerInput,
+  type HydraTuningPolicy
+} from './runtime/autotune.js'
+import { HydraExecutor, type ExecutePlanResult, type HydraExecutePlanOptions, type HydraExecutorQueueHooks } from './runtime/executor.js'
 import { WebGPUOutputNode } from './runtime/output-node.js'
-import { buildProfilerSnapshotV3, type HydraProfilerSnapshotV3 } from './runtime/profiler-v3.js'
+import { buildProfilerSnapshot, type HydraProfilerSnapshot } from './runtime/profiler.js'
 import {
-  createDefaultQueuePolicyV3,
-  decideQueueDispatchV3,
-  evaluateQueueTerminationReasonV3,
-  normalizeQueuePolicyV3,
-  shouldTerminateQueueLoopV3,
-  toQueueIndirectArgsV3,
-  type HydraQueueDispatchDecisionV3,
-  type HydraQueueDispatchStateV3,
-  type HydraQueueIndirectArgsV3,
-  type HydraQueueTerminationReasonV3
-} from './runtime/queue-v3.js'
-import { HydraResourceManagerV3, type HydraResourceResidencySnapshotV3 } from './runtime/resource-manager-v3.js'
+  createDefaultQueuePolicy,
+  decideQueueDispatch,
+  evaluateQueueTerminationReason,
+  normalizeQueuePolicy,
+  shouldTerminateQueueLoop,
+  toQueueIndirectArgs,
+  type HydraQueueDispatchDecision,
+  type HydraQueueDispatchState,
+  type HydraQueueIndirectArgs,
+  type HydraQueueTerminationReason
+} from './runtime/queue.js'
+import { HydraResourceManager, type HydraResourceResidencySnapshot } from './runtime/resource-manager.js'
 import { HydraSourceNode, type PatchBayAdapter } from './runtime/source-node.js'
 import {
   WEBGPU_UNAVAILABLE_MESSAGE,
@@ -86,12 +86,12 @@ import {
   type WebGPUSubgroupCapabilities
 } from './webgpu/renderer.js'
 import {
-  BENCHMARK_CORPUS_V3,
-  getBenchmarkSceneDefinitionV3
+  BENCHMARK_CORPUS,
+  getBenchmarkSceneDefinition
 } from './benchmark/corpus.js'
 import {
-  buildBenchmarkReportV3,
-  validateBenchmarkReportV3,
+  buildBenchmarkReport,
+  validateBenchmarkReport,
   type BuildBenchmarkReportOptions,
   type ValidateBenchmarkReportResult
 } from './benchmark/runner.js'
@@ -143,25 +143,25 @@ export type {
   WebGPUComputeCapabilities,
   WebGPUStorageCapabilities,
   WebGPUSubgroupCapabilities,
-  HydraProfilerSnapshotV3,
-  HydraTuningPolicyV3,
-  HydraAutotuneProfileV3,
-  HydraAutotuneProfilerInputV3,
-  ExecutePlanV3Result,
-  HydraExecutePlanV3Options,
-  HydraExecutorQueueHooksV3,
-  HydraResourceResidencySnapshotV3,
-  HydraQueueDispatchStateV3,
-  HydraQueueDispatchDecisionV3,
-  HydraQueueIndirectArgsV3,
-  HydraQueueTerminationReasonV3,
-  HydraQueuePolicyV3,
-  HydraQueueTerminationPolicyV3,
-  HydraQueueOverflowControlV3,
-  HydraQueueConvergencePolicyV3,
-  HydraQueueTerminationModeV3,
-  HydraQueueOverflowPolicyV3,
-  HydraQueueConvergenceStrategyV3,
+  HydraProfilerSnapshot,
+  HydraTuningPolicy,
+  HydraAutotuneProfile,
+  HydraAutotuneProfilerInput,
+  ExecutePlanResult,
+  HydraExecutePlanOptions,
+  HydraExecutorQueueHooks,
+  HydraResourceResidencySnapshot,
+  HydraQueueDispatchState,
+  HydraQueueDispatchDecision,
+  HydraQueueIndirectArgs,
+  HydraQueueTerminationReason,
+  HydraQueuePolicy,
+  HydraQueueTerminationPolicy,
+  HydraQueueOverflowControl,
+  HydraQueueConvergencePolicy,
+  HydraQueueTerminationMode,
+  HydraQueueOverflowPolicy,
+  HydraQueueConvergenceStrategy,
   HydraBenchmarkAcceptanceGate,
   HydraBenchmarkDelta,
   HydraBenchmarkReport,
@@ -181,22 +181,22 @@ export {
   HydraBrowserRuntime,
   HydraSourceNode,
   WebGPUOutputNode,
-  HydraExecutorV3,
-  HydraResourceManagerV3,
-  HydraAutotunerV3,
-  buildWorkgroupCandidateSignatureV3,
-  buildProfilerSnapshotV3,
+  HydraExecutor,
+  HydraResourceManager,
+  HydraAutotuner,
+  buildWorkgroupCandidateSignature,
+  buildProfilerSnapshot,
   normalizeRuntimeExecutionMode,
-  createDefaultQueuePolicyV3,
-  decideQueueDispatchV3,
-  normalizeQueuePolicyV3,
-  evaluateQueueTerminationReasonV3,
-  toQueueIndirectArgsV3,
-  shouldTerminateQueueLoopV3,
-  BENCHMARK_CORPUS_V3,
-  getBenchmarkSceneDefinitionV3,
-  buildBenchmarkReportV3,
-  validateBenchmarkReportV3
+  createDefaultQueuePolicy,
+  decideQueueDispatch,
+  normalizeQueuePolicy,
+  evaluateQueueTerminationReason,
+  toQueueIndirectArgs,
+  shouldTerminateQueueLoop,
+  BENCHMARK_CORPUS,
+  getBenchmarkSceneDefinition,
+  buildBenchmarkReport,
+  validateBenchmarkReport
 }
 export type { BrowserHostOptions, HydraBrowserRuntimeOptions, PatchBayAdapter, WebGPURendererOptions }
 export { captureFrameSequence, captureHydraFrameSequence, buildFfmpegCommands }

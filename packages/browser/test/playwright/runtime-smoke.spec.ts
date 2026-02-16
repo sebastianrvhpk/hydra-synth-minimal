@@ -85,7 +85,7 @@ test.afterAll(async () => {
 
 const runFixture = async (
   page: import('@playwright/test').Page,
-  mode: 'default' | 'legacy' | 'v3' | 'auto' | 'force-unavailable'
+  mode: 'default' | 'legacy' | 'compute' | 'auto' | 'force-unavailable'
 ) => {
   if (!fixtureServer) throw new Error('Fixture server was not initialized.')
   const target = `${fixtureServer.baseUrl}${fixturePath}?mode=${mode}`
@@ -94,13 +94,13 @@ const runFixture = async (
   return page.evaluate(() => (window as { __hydraSmokeResult: Record<string, unknown> }).__hydraSmokeResult)
 }
 
-test('browser runtime smoke: default mode is auto-v3-preferred', async ({ page }) => {
+test('browser runtime smoke: default mode is auto-compute-preferred', async ({ page }) => {
   const result = await runFixture(page, 'default')
   expect(['ok', 'no-webgpu'], `unexpected result: ${JSON.stringify(result)}`).toContain(result.status)
   if (result.status === 'ok') {
     expect(result.requestedMode).toBe('default')
     expect(result.configuredMode).toBe('auto')
-    expect(['legacy', 'v3']).toContain(result.activeMode)
+    expect(['legacy', 'compute']).toContain(result.activeMode)
   }
 })
 
@@ -114,13 +114,13 @@ test('browser runtime smoke: legacy mode init + one frame + dispose', async ({ p
   }
 })
 
-test('browser runtime smoke: v3 mode init + one frame + dispose', async ({ page }) => {
-  const result = await runFixture(page, 'v3')
+test('browser runtime smoke: compute mode init + one frame + dispose', async ({ page }) => {
+  const result = await runFixture(page, 'compute')
   expect(['ok', 'no-webgpu'], `unexpected result: ${JSON.stringify(result)}`).toContain(result.status)
   if (result.status === 'ok') {
-    expect(result.requestedMode).toBe('v3')
-    expect(result.configuredMode).toBe('v3')
-    expect(['legacy', 'v3']).toContain(result.activeMode)
+    expect(result.requestedMode).toBe('compute')
+    expect(result.configuredMode).toBe('compute')
+    expect(['legacy', 'compute']).toContain(result.activeMode)
   }
 })
 
@@ -130,7 +130,7 @@ test('browser runtime smoke: auto mode init + one frame + dispose', async ({ pag
   if (result.status === 'ok') {
     expect(result.requestedMode).toBe('auto')
     expect(result.configuredMode).toBe('auto')
-    expect(['legacy', 'v3']).toContain(result.activeMode)
+    expect(['legacy', 'compute']).toContain(result.activeMode)
   }
 })
 
