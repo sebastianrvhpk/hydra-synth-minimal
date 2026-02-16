@@ -4,7 +4,7 @@
  * This module provides two paths:
  * 1. `readbackTexture` (original): Reads raw rgba16float data.
  * 2. `readbackTextureWithConversion` (new): Uses a compute shader to convert
- *    linear rgba16float -> sRGB rgba8unorm on the GPU, avoiding expensive CPU loops.
+ *    rgba16float -> rgba8unorm on the GPU (composite-over-black + clamped).
  */
 
 /** Result of creating a readback buffer with computed row alignment. */
@@ -84,14 +84,6 @@ const CONVERSION_WGSL = `
 @group(0) @binding(0) var splitInput: texture_2d<f32>;
 @group(0) @binding(1) var splitOutput: texture_storage_2d<rgba8unorm, write>;
 
-fn linearToSrgb(linear: vec3f) -> vec3f {
-  let a = 0.055;
-  let cutoff = 0.0031308;
-  let higher = (1.0 + a) * pow(linear, vec3f(1.0 / 2.4)) - a;
-  let lower = 12.92 * linear;
-  return select(higher, lower, linear <= vec3f(cutoff));
-}
-
 @compute @workgroup_size(16, 16)
 fn main(@builtin(global_invocation_id) id: vec3u) {
   let dims = textureDimensions(splitInput);
@@ -100,9 +92,16 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
   }
   
   let color = textureLoad(splitInput, vec2i(id.xy), 0);
-  let srgb = linearToSrgb(clamp(color.rgb, vec3f(0.0), vec3f(1.0)));
   
-  textureStore(splitOutput, vec2i(id.xy), vec4f(srgb, color.a));
+  // Direct clamp to 0-1.
+  // We do NOT multiply by alpha here because Hydra's rendering pipeline
+  // produces "pre-associated" (premultiplied) colors where RGB can exceed Alpha
+  // (e.g. valid glow/bloom/additive blending).
+  // If we multiplied by alpha again, we would double-darken those effects.
+  let outputColor = clamp(color.rgb, vec3f(0.0), vec3f(1.0));
+  
+  // Output alpha as 1.0 (opaque) for the video file
+  textureStore(splitOutput, vec2i(id.xy), vec4f(outputColor, 1.0));
 }
 `
 
@@ -257,15 +256,17 @@ export const float16ToUint8 = (
             const pixelOffset = rowOffset + x * 8
             const outIndex = (y * width + x) * 4
 
-            const r = decodeFloat16(sourceView.getUint16(pixelOffset, true))
-            const g = decodeFloat16(sourceView.getUint16(pixelOffset + 2, true))
-            const b = decodeFloat16(sourceView.getUint16(pixelOffset + 4, true))
-            const a = decodeFloat16(sourceView.getUint16(pixelOffset + 6, true))
+            const rSource = decodeFloat16(sourceView.getUint16(pixelOffset, true))
+            const gSource = decodeFloat16(sourceView.getUint16(pixelOffset + 2, true))
+            const bSource = decodeFloat16(sourceView.getUint16(pixelOffset + 4, true))
+            const aSource = decodeFloat16(sourceView.getUint16(pixelOffset + 6, true))
 
-            output[outIndex] = linearToSrgb8(r)
-            output[outIndex + 1] = linearToSrgb8(g)
-            output[outIndex + 2] = linearToSrgb8(b)
-            output[outIndex + 3] = Math.round(clamp01(a) * 255)
+            // Clamp directly causing "pre-associated" alpha behavior (glows remain bright)
+            // We force alpha to 1.0 (255) for the video output.
+            output[outIndex] = Math.round(clamp01(rSource) * 255)
+            output[outIndex + 1] = Math.round(clamp01(gSource) * 255)
+            output[outIndex + 2] = Math.round(clamp01(bSource) * 255)
+            output[outIndex + 3] = 255 // Opaque alpha
         }
     }
     return output
@@ -321,12 +322,4 @@ const clamp01 = (value: number): number => {
     if (!Number.isFinite(value) || value < 0) return 0
     if (value > 1) return 1
     return value
-}
-
-const linearToSrgb8 = (linear: number): number => {
-    const clamped = clamp01(linear)
-    const srgb = clamped <= 0.0031308
-        ? clamped * 12.92
-        : 1.055 * Math.pow(clamped, 1 / 2.4) - 0.055
-    return Math.round(srgb * 255)
 }
