@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { buildFfmpegCommands, captureFrameSequence, captureHydraFrameSequence } from '../src/capture/frame-sequence.ts'
 
 const createMockCanvas = (width = 320, height = 240): HTMLCanvasElement => {
@@ -12,6 +12,19 @@ const createMockCanvas = (width = 320, height = 240): HTMLCanvasElement => {
   }
   return canvas as unknown as HTMLCanvasElement
 }
+
+// Stub WebGPU globals for Node.js environment
+beforeAll(() => {
+  vi.stubGlobal('GPUBufferUsage', {
+    MAP_READ: 1,
+    COPY_DST: 2,
+    COPY_SRC: 4
+  })
+  vi.stubGlobal('GPUMapMode', {
+    READ: 1,
+    WRITE: 2
+  })
+})
 
 describe('captureFrameSequence', () => {
   it('captures deterministic frame metadata and blob output', async () => {
@@ -69,7 +82,7 @@ describe('captureHydraFrameSequence', () => {
       synth: {
         fps: 120
       },
-      init: async () => {},
+      init: async () => { },
       start: async () => {
         startCalls += 1
       },
@@ -84,7 +97,7 @@ describe('captureHydraFrameSequence', () => {
         canvas.width = width
         canvas.height = height
       },
-      render: () => {}
+      render: () => { }
     }
 
     await captureHydraFrameSequence({
@@ -95,7 +108,8 @@ describe('captureHydraFrameSequence', () => {
       height: 360,
       waitForRAF: false,
       downloadFallback: false,
-      onFrameBlob: () => {}
+      gpuReadback: false,
+      onFrameBlob: () => { }
     })
 
     expect(stopCalls).toBe(1)
@@ -119,17 +133,17 @@ describe('captureHydraFrameSequence', () => {
         device: null
       },
       synth: {},
-      init: async () => {},
+      init: async () => { },
       start: async () => {
         startCalls += 1
       },
-      stop: () => {},
-      tick: () => {},
+      stop: () => { },
+      tick: () => { },
       setResolution: (width: number, height: number) => {
         canvas.width = width
         canvas.height = height
       },
-      render: () => {}
+      render: () => { }
     }
 
     await captureHydraFrameSequence({
@@ -138,10 +152,78 @@ describe('captureHydraFrameSequence', () => {
       totalFrames: 1,
       waitForRAF: false,
       downloadFallback: false,
-      onFrameBlob: () => {}
+      gpuReadback: false,
+      onFrameBlob: () => { }
     })
 
     expect(startCalls).toBe(0)
+  })
+
+  it('uses GPU readback path when enabled', async () => {
+    const canvas = createMockCanvas()
+    const readbackData: any[] = []
+
+    // Mock WebGPU device
+    const mockBuffer = {
+      mapAsync: vi.fn(),
+      getMappedRange: vi.fn(() => new ArrayBuffer(1024)),
+      unmap: vi.fn(),
+      destroy: vi.fn()
+    }
+
+    const mockEncoder = {
+      copyTextureToBuffer: vi.fn(),
+      finish: vi.fn()
+    }
+
+    const mockDevice = {
+      createBuffer: vi.fn(() => mockBuffer),
+      createCommandEncoder: vi.fn(() => mockEncoder),
+      queue: {
+        submit: vi.fn(),
+        onSubmittedWorkDone: vi.fn()
+      }
+    }
+
+    const runtime = {
+      host: {
+        canvas,
+        isRunning: true
+      },
+      renderer: {
+        device: mockDevice
+      },
+      synth: { fps: 60 },
+      outputs: [
+        {
+          getCurrent: () => ({ label: 'mock-texture' })
+        }
+      ],
+      init: async () => { },
+      start: async () => { },
+      stop: () => { },
+      tick: () => { },
+      setResolution: () => { },
+      render: () => { }
+    }
+
+    await captureHydraFrameSequence({
+      runtime: runtime as any,
+      fps: 30,
+      totalFrames: 2,
+      gpuReadback: true,
+      waitForRAF: false,
+      downloadFallback: false,
+      onFrameBuffer: (info) => {
+        readbackData.push(info)
+      }
+    })
+
+    expect(mockDevice.createBuffer).toHaveBeenCalledTimes(2) // Double buffered
+    expect(mockEncoder.copyTextureToBuffer).toHaveBeenCalledTimes(2) // 2 frames
+    expect(readbackData.length).toBe(2)
+    expect(readbackData[0].frame).toBe(0)
+    expect(readbackData[1].frame).toBe(1)
   })
 })
 
@@ -160,5 +242,7 @@ describe('buildFfmpegCommands', () => {
     expect(commands.gif).toContain('palettegen=stats_mode=diff')
     expect(commands.webm).toContain('"shot-a.webm"')
     expect(commands.webm).toContain('libvpx-vp9')
+    expect(commands.mp4_10bit).toContain('pix_fmt yuv420p10le')
+    expect(commands.prores).toContain('prores_ks')
   })
 })

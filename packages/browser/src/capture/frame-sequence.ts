@@ -1,5 +1,14 @@
 import type { HydraBrowserRuntime } from '../runtime/runtime.js'
 import type { WebGPUOutputNode } from '../runtime/output-node.js'
+import {
+  createReadbackBuffer,
+  readbackTexture,
+  mapReadbackBuffer,
+  float16ToUint8,
+  stripRowPadding,
+  type ReadbackBufferInfo
+} from './gpu-readback.js'
+/// <reference path="./webgpu-types.d.ts" />
 
 export type CaptureFrameSequenceExtension = 'png' | 'jpg' | 'jpeg' | 'webp'
 type CaptureFrameSequenceNormalizedExtension = 'png' | 'jpg' | 'webp'
@@ -69,6 +78,16 @@ export interface CaptureHydraFrameSequenceFrameInfo extends CaptureFrameSequence
   synth: Record<string, unknown>
 }
 
+export interface CaptureFrameSequenceBufferInfo {
+  frame: number
+  totalFrames: number
+  data: ArrayBuffer
+  width: number
+  height: number
+  format: 'rgba16float' | 'rgba8unorm'
+  bytesPerRow: number
+}
+
 export interface CaptureHydraFrameSequenceOptions extends Omit<CaptureFrameSequenceOptions, 'canvas' | 'step'> {
   runtime: HydraBrowserRuntime
   output?: WebGPUOutputNode
@@ -77,6 +96,12 @@ export interface CaptureHydraFrameSequenceOptions extends Omit<CaptureFrameSeque
   resumeAfterCapture?: boolean
   restoreResolution?: boolean
   ignoreEngineFpsGate?: boolean
+  /** Enable GPU-native readback. 'auto' (default) activates when a WebGPU device is available. */
+  gpuReadback?: boolean | 'auto'
+  /** Format for GPU readback data. Default: 'rgba16float' (preserves HDR). */
+  readbackFormat?: 'rgba16float' | 'rgba8unorm'
+  /** Callback to receive raw GPU readback data per frame (alternative to onFrameBlob). */
+  onFrameBuffer?: (info: CaptureFrameSequenceBufferInfo) => void | Promise<void>
 }
 
 export interface BuildFfmpegCommandsOptions {
@@ -89,6 +114,8 @@ export interface FfmpegCommandSet {
   mp4: string
   gif: string
   webm: string
+  mp4_10bit: string
+  prores: string
 }
 
 const normalizeExtension = (extension: CaptureFrameSequenceExtension | undefined): CaptureFrameSequenceNormalizedExtension => {
@@ -209,7 +236,7 @@ export const captureFrameSequence = async (options: CaptureFrameSequenceOptions)
   const width = resolveOptionalPositiveInteger(options.width, canvas.width, 'width')
   const height = resolveOptionalPositiveInteger(options.height, canvas.height, 'height')
   const prefix = String(options.prefix ?? 'frame')
-  const waitForRAF = options.waitForRAF !== false
+  const waitForRAF = options.waitForRAF === true
   const downloadFallback = options.downloadFallback !== false
   const onFrameBlob = options.onFrameBlob
   const hasFrameBlobListener = typeof onFrameBlob === 'function'
@@ -221,10 +248,10 @@ export const captureFrameSequence = async (options: CaptureFrameSequenceOptions)
 
   let directoryHandle = options.directoryHandle ?? null
   if (!directoryHandle && options.pickDirectory) {
-    if (typeof window === 'undefined' || typeof window.showDirectoryPicker !== 'function') {
+    if (typeof window === 'undefined' || typeof (window as any).showDirectoryPicker !== 'function') {
       throw new Error('captureFrameSequence: showDirectoryPicker() is not available in this browser.')
     }
-    directoryHandle = await window.showDirectoryPicker({ mode: 'readwrite' })
+    directoryHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite' })
   }
 
   const shouldDownload = !directoryHandle && !hasFrameBlobListener && downloadFallback
@@ -319,6 +346,9 @@ export const captureHydraFrameSequence = async (options: CaptureHydraFrameSequen
     resumeAfterCapture = true,
     restoreResolution = true,
     ignoreEngineFpsGate = true,
+    gpuReadback = 'auto',
+    readbackFormat = 'rgba16float',
+    onFrameBuffer,
     width,
     height,
     ...captureOptions
@@ -335,6 +365,18 @@ export const captureHydraFrameSequence = async (options: CaptureHydraFrameSequen
   const nextWidth = Number.isFinite(width) ? Math.max(1, Math.floor(width)) : previousWidth
   const nextHeight = Number.isFinite(height) ? Math.max(1, Math.floor(height)) : previousHeight
 
+  // Resolve GPU readback availability
+  const device = runtime.renderer?.device ?? null
+  const useGpuReadback = gpuReadback === true
+    ? true
+    : gpuReadback === 'auto'
+      ? device !== null
+      : false
+
+  if (gpuReadback === true && !device) {
+    throw new Error('captureHydraFrameSequence: gpuReadback is enabled but no WebGPU device is available.')
+  }
+
   activeRuntimeCaptures.add(runtime)
   runtime.stop()
   if (output) {
@@ -350,7 +392,200 @@ export const captureHydraFrameSequence = async (options: CaptureHydraFrameSequen
   let captureFailed = false
   let restoreError: unknown = null
 
+  // GPU readback state for double-buffered pipelining
+  const readbackBuffers: ReadbackBufferInfo[] = []
+  let pendingReadback: {
+    bufferInfo: ReadbackBufferInfo
+    frame: number
+    totalFrames: number
+    width: number
+    height: number
+  } | null = null
+
+  const resolveActiveOutput = (): WebGPUOutputNode | null => {
+    if (output) return output
+    return runtime.outputs?.[0] ?? null
+  }
+
+  const flushPendingReadback = async (): Promise<void> => {
+    if (!pendingReadback) return
+    const pending = pendingReadback
+    pendingReadback = null
+
+    const { data, unmap } = await mapReadbackBuffer(pending.bufferInfo.buffer)
+    try {
+      if (typeof onFrameBuffer === 'function') {
+        await onFrameBuffer({
+          frame: pending.frame,
+          totalFrames: pending.totalFrames,
+          data,
+          width: pending.width,
+          height: pending.height,
+          format: readbackFormat,
+          bytesPerRow: pending.bufferInfo.paddedBytesPerRow
+        })
+      }
+    } finally {
+      unmap()
+    }
+  }
+
+  const cleanupReadbackBuffers = (): void => {
+    for (const info of readbackBuffers) {
+      try { info.buffer.destroy() } catch { /* ignore */ }
+    }
+    readbackBuffers.length = 0
+  }
+
   try {
+    if (useGpuReadback && device) {
+      // ─── GPU readback capture path (double-buffered pipelining) ───
+      const fps = resolvePositiveNumber(captureOptions.fps, 30, 'fps')
+      const extension = normalizeExtension(captureOptions.extension)
+      const mimeType = resolveMimeType(extension)
+      const quality = resolveQuality(extension, captureOptions.quality)
+      const deltaTime = 1 / fps
+      const totalFrames = Number.isFinite(captureOptions.totalFrames)
+        ? resolveOptionalPositiveInteger(captureOptions.totalFrames, 1, 'totalFrames')
+        : resolveOptionalPositiveInteger(
+          Math.round(resolvePositiveNumber(captureOptions.duration, 1, 'duration') * fps),
+          1,
+          'duration * fps'
+        )
+      const duration = totalFrames / fps
+      const captureWidth = runtime.host.canvas.width
+      const captureHeight = runtime.host.canvas.height
+      const prefix = String(captureOptions.prefix ?? 'frame')
+      const hasFrameBlobListener = typeof captureOptions.onFrameBlob === 'function'
+      const hasFrameBufferListener = typeof onFrameBuffer === 'function'
+      const waitForRAFLocal = captureOptions.waitForRAF === true
+
+      let directoryHandle = captureOptions.directoryHandle ?? null
+      if (!directoryHandle && captureOptions.pickDirectory) {
+        if (typeof window === 'undefined' || typeof (window as any).showDirectoryPicker !== 'function') {
+          throw new Error('captureFrameSequence: showDirectoryPicker() is not available in this browser.')
+        }
+        directoryHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite' })
+      }
+
+      const downloadFallback = captureOptions.downloadFallback !== false
+      const shouldDownload = !directoryHandle && !hasFrameBlobListener && !hasFrameBufferListener && downloadFallback
+      const needsBlob = Boolean(directoryHandle) || hasFrameBlobListener || shouldDownload
+
+      // Create double readback buffers
+      readbackBuffers.push(
+        createReadbackBuffer(device, captureWidth, captureHeight, readbackFormat),
+        createReadbackBuffer(device, captureWidth, captureHeight, readbackFormat)
+      )
+
+      for (let frame = 0; frame < totalFrames; frame += 1) {
+        if (captureOptions.signal?.aborted) {
+          throw new Error('Capture aborted.')
+        }
+
+        const time = frame * deltaTime
+        const playhead = totalFrames <= 1 ? 0 : frame / (totalFrames - 1)
+
+        // Advance the runtime by one frame
+        if (step) {
+          await step({
+            frame,
+            totalFrames,
+            fps,
+            time,
+            deltaTime,
+            playhead,
+            duration,
+            width: captureWidth,
+            height: captureHeight,
+            canvas: runtime.host.canvas,
+            runtime,
+            synth
+          })
+        } else {
+          runtime.tick(deltaTime * 1000)
+        }
+
+        if (waitForGPU) {
+          await waitForGPUQueue(runtime)
+        }
+
+        // Flush the previous frame's readback (pipelining: map buffer A while GPU fills buffer B)
+        await flushPendingReadback()
+
+        // Readback current frame's output texture
+        const activeOutput = resolveActiveOutput()
+        const outputTexture = activeOutput?.getCurrent?.() ?? null
+        if (outputTexture) {
+          const bufferIndex = frame % 2
+          const bufferInfo = readbackBuffers[bufferIndex]!
+          const encoder = device.createCommandEncoder({ label: `hydra-capture-readback-${frame}` })
+          readbackTexture(encoder, outputTexture, bufferInfo)
+          device.queue.submit([encoder.finish()])
+
+          pendingReadback = {
+            bufferInfo,
+            frame,
+            totalFrames,
+            width: captureWidth,
+            height: captureHeight
+          }
+        }
+
+        // If we also need blobs (for file saving / blob listeners), produce them
+        if (needsBlob) {
+          if (waitForRAFLocal) {
+            await nextAnimationFrame()
+          }
+          const blob = await toBlob(runtime.host.canvas, mimeType, quality)
+          const fileName = frameFileName(prefix, frame, totalFrames, extension)
+
+          if (directoryHandle) {
+            await saveBlobToDirectory(directoryHandle, fileName, blob)
+          }
+          if (hasFrameBlobListener) {
+            await captureOptions.onFrameBlob!({
+              frame,
+              frameNumber: frame + 1,
+              totalFrames,
+              fileName,
+              blob
+            })
+          }
+          if (shouldDownload) {
+            saveBlobAsDownload(fileName, blob)
+          }
+        }
+
+        if (typeof captureOptions.onProgress === 'function') {
+          captureOptions.onProgress({
+            frame,
+            frameNumber: frame + 1,
+            totalFrames,
+            fileName: frameFileName(prefix, frame, totalFrames, extension),
+            percent: ((frame + 1) / totalFrames) * 100
+          })
+        }
+      }
+
+      // Flush the final pending readback
+      await flushPendingReadback()
+      cleanupReadbackBuffers()
+
+      const digits = frameDigits(totalFrames)
+      return {
+        fps,
+        width: captureWidth,
+        height: captureHeight,
+        totalFrames,
+        duration,
+        prefix,
+        extension: normalizeExtension(captureOptions.extension),
+        ffmpegPattern: `${prefix}-%0${digits}d.${normalizeExtension(captureOptions.extension)}`
+      }
+    }
+
+    // ─── Fallback: original canvas.toBlob() path ───
     return await captureFrameSequence({
       ...captureOptions,
       canvas: runtime.host.canvas,
@@ -372,6 +607,7 @@ export const captureHydraFrameSequence = async (options: CaptureHydraFrameSequen
     })
   } catch (error) {
     captureFailed = true
+    cleanupReadbackBuffers()
     throw error
   } finally {
     try {
@@ -414,10 +650,14 @@ export const buildFfmpegCommands = ({ fps, ffmpegPattern, outputBaseName = 'out'
   const mp4Name = quote(`${outputBaseName}.mp4`)
   const gifName = quote(`${outputBaseName}.gif`)
   const webmName = quote(`${outputBaseName}.webm`)
+  const mp4_10bitName = quote(`${outputBaseName}_10bit.mp4`)
+  const proresName = quote(`${outputBaseName}.mov`)
 
   return {
     mp4: `ffmpeg -framerate ${safeFps} -start_number 0 -i ${pattern} -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" -c:v libx264 -preset slow -crf 12 -pix_fmt yuv420p -movflags +faststart ${mp4Name}`,
     gif: `ffmpeg -framerate ${safeFps} -start_number 0 -i ${pattern} -vf "fps=${safeFps},split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither=sierra2_4a" ${gifName}`,
-    webm: `ffmpeg -framerate ${safeFps} -start_number 0 -i ${pattern} -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" -c:v libvpx-vp9 -pix_fmt yuva420p -crf 18 -b:v 0 ${webmName}`
+    webm: `ffmpeg -framerate ${safeFps} -start_number 0 -i ${pattern} -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" -c:v libvpx-vp9 -pix_fmt yuva420p -crf 18 -b:v 0 ${webmName}`,
+    mp4_10bit: `ffmpeg -framerate ${safeFps} -start_number 0 -i ${pattern} -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" -c:v libx264 -preset slow -crf 12 -pix_fmt yuv420p10le -profile:v high10 -movflags +faststart ${mp4_10bitName}`,
+    prores: `ffmpeg -framerate ${safeFps} -start_number 0 -i ${pattern} -c:v prores_ks -profile:v 4 -pix_fmt yuva444p10le ${proresName}`
   }
 }

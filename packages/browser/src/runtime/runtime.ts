@@ -13,6 +13,7 @@ import {
   type HydraDebugEvent
 } from 'hydra-synth-core'
 import type { BrowserHost } from './browser-host.js'
+import type { CanvasDisplayOptions } from './browser-host.js'
 import { WebGPUOutputNode } from './output-node.js'
 import { WebGPUFrameRendererAdapter } from './renderer-adapter.js'
 import { HydraSourceNode, type PatchBayAdapter } from './source-node.js'
@@ -199,6 +200,8 @@ export class HydraBrowserRuntime {
     this.synth.setTuningPolicy = this.setTuningPolicy.bind(this)
     this.synth.clearAutotuneProfiles = this.clearAutotuneProfiles.bind(this)
     this.synth.dumpShaders = this.dumpShaders.bind(this)
+    this.synth.setCanvasDisplay = this.setCanvasDisplay.bind(this)
+    this.synth.resetCanvasDisplay = this.resetCanvasDisplay.bind(this)
 
     this.outputs.forEach((output, index) => {
       this.synth[`o${index}`] = output
@@ -286,6 +289,17 @@ export class HydraBrowserRuntime {
     this.host.setResolution(width, height)
     this.engine.setResolution(width, height)
     this.outputs.forEach((output) => output.resize(width, height))
+  }
+
+  setCanvasDisplay(width: number, height: number, options?: CanvasDisplayOptions): void {
+    this.host.setCanvasDisplay(width, height, options)
+    this.engine.setResolution(width, height)
+    this.outputs.forEach((output) => output.resize(width, height))
+    this.renderer.setResolution(width, height)
+  }
+
+  resetCanvasDisplay(): void {
+    this.host.resetCanvasDisplay()
   }
 
   createSource(): HydraSourceNode {

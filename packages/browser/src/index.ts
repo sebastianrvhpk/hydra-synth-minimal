@@ -45,7 +45,7 @@ import {
   type CaptureHydraFrameSequenceOptions,
   type FfmpegCommandSet
 } from './capture/frame-sequence.js'
-import { BrowserHost, type BrowserHostOptions } from './runtime/browser-host.js'
+import { BrowserHost, type BrowserHostOptions, type CanvasDisplayOptions } from './runtime/browser-host.js'
 import {
   HydraBrowserRuntime,
   normalizeRuntimeExecutionMode,
@@ -198,7 +198,7 @@ export {
   buildBenchmarkReport,
   validateBenchmarkReport
 }
-export type { BrowserHostOptions, HydraBrowserRuntimeOptions, PatchBayAdapter, WebGPURendererOptions }
+export type { BrowserHostOptions, CanvasDisplayOptions, HydraBrowserRuntimeOptions, PatchBayAdapter, WebGPURendererOptions }
 export { captureFrameSequence, captureHydraFrameSequence, buildFfmpegCommands }
 
 export interface CreateHydraBrowserRuntimeOptions extends Omit<HydraBrowserRuntimeOptions, 'host' | 'renderer'> {
