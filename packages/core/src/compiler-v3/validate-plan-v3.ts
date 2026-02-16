@@ -9,6 +9,7 @@ export interface HydraExecutionPlanValidationIssueV3 {
 export const validateExecutionPlanV3 = (plan: HydraExecutionPlanV3): HydraExecutionPlanValidationIssueV3[] => {
   const issues: HydraExecutionPlanValidationIssueV3[] = []
   const nodeIds = new Set(plan.sourceGraph.nodes.map((node) => node.id))
+  const sourceResourceById = new Map(plan.sourceGraph.resources.map((resource) => [resource.id, resource]))
   const stepIds = new Set<string>()
   const stepNodeIds = new Set<string>()
   const nodeOrderIndex = new Map<string, number>()
@@ -115,8 +116,36 @@ export const validateExecutionPlanV3 = (plan: HydraExecutionPlanV3): HydraExecut
   })
 
   const nonAliasableSlots = new Map<string, string>()
-  const bySlot = new Map<string, Array<{ id: string, start: number, end: number, aliasable: boolean, aliasGroup: string }>>()
+  const allocationSlotByResourceId = new Map<string, string>()
+  const bySlot = new Map<string, Array<{
+    id: string
+    start: number
+    end: number
+    aliasable: boolean
+    aliasGroup: string
+    lifetime: string
+  }>>()
   plan.resources.forEach((allocation) => {
+    const spec = sourceResourceById.get(allocation.resourceId)
+    if (!spec) {
+      issues.push({
+        type: 'error',
+        code: 'ALLOCATION_RESOURCE_NOT_FOUND',
+        message: `Resource allocation "${allocation.resourceId}" is not declared in sourceGraph.resources.`
+      })
+    }
+
+    const existingSlot = allocationSlotByResourceId.get(allocation.resourceId)
+    if (existingSlot) {
+      issues.push({
+        type: 'error',
+        code: 'RESOURCE_SLOT_DUPLICATE',
+        message: `Resource "${allocation.resourceId}" has multiple slot allocations ("${existingSlot}", "${allocation.slot}").`
+      })
+    } else {
+      allocationSlotByResourceId.set(allocation.resourceId, allocation.slot)
+    }
+
     if (allocation.interval.start > allocation.interval.end) {
       issues.push({
         type: 'error',
@@ -138,7 +167,8 @@ export const validateExecutionPlanV3 = (plan: HydraExecutionPlanV3): HydraExecut
       start: allocation.interval.start,
       end: allocation.interval.end,
       aliasable: allocation.aliasable,
-      aliasGroup: allocation.aliasGroup
+      aliasGroup: allocation.aliasGroup,
+      lifetime: allocation.lifetime
     }
     if (items) items.push(entry)
     else bySlot.set(allocation.slot, [entry])
@@ -157,6 +187,16 @@ export const validateExecutionPlanV3 = (plan: HydraExecutionPlanV3): HydraExecut
     }
   })
 
+  sourceResourceById.forEach((resource, resourceId) => {
+    if (resource.lifetime === 'external') return
+    if (allocationSlotByResourceId.has(resourceId)) return
+    issues.push({
+      type: 'error',
+      code: 'RESOURCE_SLOT_UNRESOLVED',
+      message: `Resource "${resourceId}" has no slot allocation in plan.resources.`
+    })
+  })
+
   bySlot.forEach((entries, slot) => {
     if (entries.length <= 1) return
     for (let index = 0; index < entries.length; index += 1) {
@@ -167,7 +207,14 @@ export const validateExecutionPlanV3 = (plan: HydraExecutionPlanV3): HydraExecut
         if (!right) continue
         const overlap = left.start <= right.end && right.start <= left.end
         if (!overlap) continue
-        if (left.aliasable && right.aliasable && left.aliasGroup === right.aliasGroup) continue
+        if (
+          left.aliasable &&
+          right.aliasable &&
+          left.aliasGroup === right.aliasGroup &&
+          left.lifetime === right.lifetime
+        ) {
+          continue
+        }
         issues.push({
           type: 'error',
           code: 'SLOT_INTERVAL_COLLISION',

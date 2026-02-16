@@ -196,6 +196,95 @@ describe('v3 compute core foundation', () => {
     expect(issues.some((issue) => issue.code === 'QUEUE_STEP_MAX_ITERATIONS_INVALID')).toBe(true)
   })
 
+  it('rejects unresolved and duplicate resource slot mappings', () => {
+    const unresolvedPlan: HydraExecutionPlanV3 = {
+      version: 'v3.0',
+      id: 'unresolved-slot-plan',
+      sourceGraph: {
+        id: 'g',
+        source: 'hydra-dsl',
+        compatibilityMode: 'dsl-v2',
+        nodes: [],
+        resources: [{
+          id: 'virtual:missing',
+          kind: 'Buffer',
+          access: 'read_write',
+          lifetime: 'transient',
+          shape: { minLength: 64 }
+        }],
+        edges: []
+      },
+      steps: [],
+      barriers: [],
+      resources: [],
+      diagnostics: {
+        score: 0,
+        scoreBreakdown: { dispatchCost: 0, memoryCost: 0, fallbackRiskCost: 0 },
+        selectedVariantPolicy: 'compat',
+        peakTransientBytes: 0,
+        totalPlannedBytes: 0,
+        fallbackRiskRate: 0,
+        selectedVariantCounts: { generic: 0, tiled: 0, subgroup: 0 },
+        primitiveSelectionCounts: {},
+        queueStepCount: 0,
+        queueSegmentCount: 0,
+        barrierCount: 0,
+        nodeOrder: []
+      },
+      cacheKey: 'unresolved'
+    }
+    const unresolvedIssues = validateExecutionPlanV3(unresolvedPlan)
+    expect(unresolvedIssues.some((issue) => issue.code === 'RESOURCE_SLOT_UNRESOLVED')).toBe(true)
+
+    const duplicatePlan: HydraExecutionPlanV3 = {
+      ...unresolvedPlan,
+      id: 'duplicate-slot-plan',
+      sourceGraph: {
+        ...unresolvedPlan.sourceGraph,
+        resources: [{
+          id: 'virtual:known',
+          kind: 'Buffer',
+          access: 'read_write',
+          lifetime: 'transient',
+          shape: { minLength: 64 }
+        }]
+      },
+      resources: [
+        {
+          resourceId: 'virtual:known',
+          lifetime: 'transient',
+          aliasGroup: 'buffer',
+          slot: 'slot:a',
+          interval: { start: 0, end: 0 },
+          aliasable: true,
+          plannedBytes: 64
+        },
+        {
+          resourceId: 'virtual:known',
+          lifetime: 'transient',
+          aliasGroup: 'buffer',
+          slot: 'slot:b',
+          interval: { start: 1, end: 1 },
+          aliasable: true,
+          plannedBytes: 64
+        },
+        {
+          resourceId: 'virtual:unknown',
+          lifetime: 'transient',
+          aliasGroup: 'buffer',
+          slot: 'slot:unknown',
+          interval: { start: 0, end: 0 },
+          aliasable: true,
+          plannedBytes: 64
+        }
+      ],
+      cacheKey: 'duplicate'
+    }
+    const duplicateIssues = validateExecutionPlanV3(duplicatePlan)
+    expect(duplicateIssues.some((issue) => issue.code === 'RESOURCE_SLOT_DUPLICATE')).toBe(true)
+    expect(duplicateIssues.some((issue) => issue.code === 'ALLOCATION_RESOURCE_NOT_FOUND')).toBe(true)
+  })
+
   it('rejects non-contiguous queue segment groups in execution plans', () => {
     const pass: HydraCompiledPass = {
       signature: 'queue-pass',

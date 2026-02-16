@@ -404,6 +404,34 @@ export declare class HydraTransformRegistry implements HydraTransformRegistryHos
   attachToBindings (bindings: Record<string, unknown>): void
 }
 
+export declare const lowerDslToIrV3: (
+  transforms: HydraTransformCall[],
+  options?: {
+    maxDynamicUniforms?: number
+    graphId?: string
+    validate?: boolean
+  }
+) => HydraKernelGraphV3
+export declare const getTextureResourceIdV3: (texture: {
+  name: string
+  variableName: string
+  sourceRef?: unknown
+}) => string
+export declare const getStorageBufferResourceIdV3: (buffer: {
+  name: string
+  variableName: string
+  sourceRef?: unknown
+  lifetime: string
+  elementType: string
+}) => string
+export declare const getStorageTextureResourceIdV3: (texture: {
+  name: string
+  variableName: string
+  sourceRef?: unknown
+  lifetime: string
+  format: string
+  dimension: string
+}) => string
 export declare const buildStructureSignature: (transforms?: HydraTransformCall[]) => string
 export declare const buildPassIR: (options: {
   signature: string

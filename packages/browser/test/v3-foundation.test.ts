@@ -279,6 +279,290 @@ describe('v3 browser foundation', () => {
     expect(tuner.getProfile('gpu-a')).toBeNull()
   })
 
+  it('injects slot-backed storage resolvers into compiled passes', () => {
+    const rendered: Array<{ storageBuffers?: Array<{ getBuffer: (() => unknown) | null }> }> = []
+    const output = {
+      render: (passes: Array<{ storageBuffers?: Array<{ getBuffer: (() => unknown) | null }> }>) => {
+        rendered.push(...passes)
+      }
+    }
+    const createdSlots: string[] = []
+    const resourceManager = {
+      registerResourceSlot: () => {},
+      getOrCreateStorageBuffer: (slot: string) => {
+        createdSlots.push(slot)
+        return ({ slot } as unknown) as GPUBuffer
+      },
+      getOrCreateStorageTexture: () => ({}) as GPUTexture,
+      getOrCreateIndirectArgsBuffer: () => ({}) as GPUBuffer,
+      getOrCreateQueueCounterBuffer: () => ({}) as GPUBuffer,
+      writeIndirectArgs: () => {},
+      writeQueueCount: () => {},
+      getResidentByteEstimate: () => 1024,
+      getResidencySnapshot: () => null,
+      dispose: () => {}
+    }
+    const executor = new HydraExecutorV3({ resourceManager: resourceManager as never })
+
+    const storageBinding = {
+      name: 'scratch',
+      variableName: 'scratchBuffer',
+      getBuffer: null,
+      access: 'read_write' as const,
+      lifetime: 'transient' as const,
+      elementType: 'vec4f' as const,
+      minLength: 64,
+      binding: 3
+    }
+    const resourceId = 'buffer:binding:scratchBuffer:vec4f:transient'
+    const plan: HydraExecutionPlanV3 = {
+      version: 'v3.0',
+      id: 'slot-resolver-plan',
+      sourceGraph: {
+        id: 'graph',
+        source: 'hydra-dsl',
+        compatibilityMode: 'dsl-v2',
+        nodes: [],
+        resources: [{
+          id: resourceId,
+          kind: 'Buffer',
+          access: 'read_write',
+          elementType: 'vec4f',
+          lifetime: 'transient',
+          shape: { minLength: 64 },
+          aliasClass: 'buffer:vec4f',
+          externalBinding: 'scratchBuffer'
+        }],
+        edges: []
+      },
+      steps: [{
+        id: 'step0',
+        nodeId: 'k0',
+        signature: 'resolver-pass',
+        dispatchDomain: 'pixel2d',
+        variant: 'generic',
+        variantCandidates: [{ variant: 'generic', signature: 'resolver-pass', legal: true }],
+        fallbackDepth: 0,
+        compiledPass: {
+          signature: 'resolver-pass',
+          wgsl: '@compute @workgroup_size(1, 1, 1) fn csMain() {}',
+          uniforms: [],
+          textures: [],
+          storageBuffers: [storageBinding]
+        },
+        barriersBefore: []
+      }],
+      barriers: [],
+      resources: [{
+        resourceId,
+        lifetime: 'transient',
+        aliasGroup: 'buffer:vec4f',
+        slot: 'slot:scratch',
+        interval: { start: 0, end: 0 },
+        aliasable: true,
+        plannedBytes: 1024
+      }],
+      diagnostics: {
+        score: 0,
+        scoreBreakdown: { dispatchCost: 0, memoryCost: 0, fallbackRiskCost: 0 },
+        selectedVariantPolicy: 'compat',
+        peakTransientBytes: 1024,
+        totalPlannedBytes: 1024,
+        fallbackRiskRate: 0,
+        selectedVariantCounts: { generic: 1, tiled: 0, subgroup: 0 },
+        primitiveSelectionCounts: {},
+        queueStepCount: 0,
+        queueSegmentCount: 0,
+        barrierCount: 0,
+        nodeOrder: ['k0']
+      },
+      cacheKey: 'slot-resolver'
+    }
+
+    executor.executePlan(output as never, plan, {
+      time: 0,
+      bpm: 120,
+      resolution: [64, 1],
+      deltaMs: 16
+    })
+
+    const renderedPass = rendered[0]
+    if (!renderedPass) throw new Error('Expected rendered pass.')
+    const getBuffer = renderedPass.storageBuffers?.[0]?.getBuffer
+    if (!getBuffer) throw new Error('Expected injected getBuffer provider.')
+    const resolved = getBuffer() as { slot?: string }
+    expect(resolved?.slot).toBe('slot:scratch')
+    expect(createdSlots).toContain('slot:scratch')
+  })
+
+  it('reuses alias slots while keeping persistent lifetimes distinct', () => {
+    const output = { render: (_passes: unknown[]) => {} }
+    const allocatedSlots: string[] = []
+    const resourceManager = {
+      registerResourceSlot: () => {},
+      getOrCreateStorageBuffer: (slot: string) => {
+        allocatedSlots.push(slot)
+        return ({ slot } as unknown) as GPUBuffer
+      },
+      getOrCreateStorageTexture: () => ({}) as GPUTexture,
+      getOrCreateIndirectArgsBuffer: () => ({}) as GPUBuffer,
+      getOrCreateQueueCounterBuffer: () => ({}) as GPUBuffer,
+      writeIndirectArgs: () => {},
+      writeQueueCount: () => {},
+      getResidentByteEstimate: () => 0,
+      getResidencySnapshot: () => null,
+      dispose: () => {}
+    }
+    const executor = new HydraExecutorV3({ resourceManager: resourceManager as never })
+    const plan: HydraExecutionPlanV3 = {
+      version: 'v3.0',
+      id: 'slot-alias-plan',
+      sourceGraph: {
+        id: 'graph',
+        source: 'hydra-dsl',
+        compatibilityMode: 'dsl-v2',
+        nodes: [],
+        resources: [
+          { id: 'virtual:a', kind: 'Buffer', access: 'read_write', lifetime: 'transient', shape: { minLength: 64 } },
+          { id: 'virtual:b', kind: 'Buffer', access: 'read_write', lifetime: 'transient', shape: { minLength: 64 } },
+          { id: 'virtual:p', kind: 'Buffer', access: 'read_write', lifetime: 'persistent', shape: { minLength: 64 } }
+        ],
+        edges: []
+      },
+      steps: [],
+      barriers: [],
+      resources: [
+        {
+          resourceId: 'virtual:a',
+          lifetime: 'transient',
+          aliasGroup: 'buffer:vec4f',
+          slot: 'slot:transient:0',
+          interval: { start: 0, end: 0 },
+          aliasable: true,
+          plannedBytes: 256
+        },
+        {
+          resourceId: 'virtual:b',
+          lifetime: 'transient',
+          aliasGroup: 'buffer:vec4f',
+          slot: 'slot:transient:0',
+          interval: { start: 1, end: 1 },
+          aliasable: true,
+          plannedBytes: 256
+        },
+        {
+          resourceId: 'virtual:p',
+          lifetime: 'persistent',
+          aliasGroup: 'buffer:vec4f',
+          slot: 'slot:persistent:0',
+          interval: { start: 0, end: 1 },
+          aliasable: false,
+          plannedBytes: 256
+        }
+      ],
+      diagnostics: {
+        score: 0,
+        scoreBreakdown: { dispatchCost: 0, memoryCost: 0, fallbackRiskCost: 0 },
+        selectedVariantPolicy: 'compat',
+        peakTransientBytes: 256,
+        totalPlannedBytes: 512,
+        fallbackRiskRate: 0,
+        selectedVariantCounts: { generic: 0, tiled: 0, subgroup: 0 },
+        primitiveSelectionCounts: {},
+        queueStepCount: 0,
+        queueSegmentCount: 0,
+        barrierCount: 0,
+        nodeOrder: []
+      },
+      cacheKey: 'slot-alias'
+    }
+
+    const result = executor.executePlan(output as never, plan, {
+      time: 0,
+      bpm: 120,
+      resolution: [64, 1],
+      deltaMs: 16
+    })
+
+    expect(result.allocatedResourceCount).toBe(2)
+    expect(new Set(allocatedSlots)).toEqual(new Set(['slot:transient:0', 'slot:persistent:0']))
+  })
+
+  it('does not preallocate external lifetime resources', () => {
+    const output = { render: (_passes: unknown[]) => {} }
+    let preallocations = 0
+    const resourceManager = {
+      registerResourceSlot: () => {},
+      getOrCreateStorageBuffer: () => {
+        preallocations += 1
+        return ({}) as GPUBuffer
+      },
+      getOrCreateStorageTexture: () => ({}) as GPUTexture,
+      getOrCreateIndirectArgsBuffer: () => ({}) as GPUBuffer,
+      getOrCreateQueueCounterBuffer: () => ({}) as GPUBuffer,
+      writeIndirectArgs: () => {},
+      writeQueueCount: () => {},
+      getResidentByteEstimate: () => 0,
+      getResidencySnapshot: () => null,
+      dispose: () => {}
+    }
+    const executor = new HydraExecutorV3({ resourceManager: resourceManager as never })
+    const plan: HydraExecutionPlanV3 = {
+      version: 'v3.0',
+      id: 'external-no-prealloc',
+      sourceGraph: {
+        id: 'graph',
+        source: 'hydra-dsl',
+        compatibilityMode: 'dsl-v2',
+        nodes: [],
+        resources: [{
+          id: 'buffer:external-source',
+          kind: 'Buffer',
+          access: 'read',
+          lifetime: 'external',
+          shape: { minLength: 64 }
+        }],
+        edges: []
+      },
+      steps: [],
+      barriers: [],
+      resources: [{
+        resourceId: 'buffer:external-source',
+        lifetime: 'external',
+        aliasGroup: 'external',
+        slot: 'slot:external:0',
+        interval: { start: 0, end: 0 },
+        aliasable: false,
+        plannedBytes: 256
+      }],
+      diagnostics: {
+        score: 0,
+        scoreBreakdown: { dispatchCost: 0, memoryCost: 0, fallbackRiskCost: 0 },
+        selectedVariantPolicy: 'compat',
+        peakTransientBytes: 0,
+        totalPlannedBytes: 0,
+        fallbackRiskRate: 0,
+        selectedVariantCounts: { generic: 0, tiled: 0, subgroup: 0 },
+        primitiveSelectionCounts: {},
+        queueStepCount: 0,
+        queueSegmentCount: 0,
+        barrierCount: 0,
+        nodeOrder: []
+      },
+      cacheKey: 'external-prealloc'
+    }
+
+    const result = executor.executePlan(output as never, plan, {
+      time: 0,
+      bpm: 120,
+      resolution: [64, 1],
+      deltaMs: 16
+    })
+
+    expect(result.allocatedResourceCount).toBe(0)
+    expect(preallocations).toBe(0)
+  })
+
   it('routes execution plans through executor v3 output integration', () => {
     const rendered: unknown[] = []
     const output = {

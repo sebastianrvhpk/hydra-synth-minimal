@@ -20,6 +20,13 @@ export interface HydraResourceResidencySnapshotV3 {
   indirectSlots: number
   queueCounterSlots: number
   resourceBindings: number
+  storageBufferBytes: number
+  textureBytes: number
+  indirectBytes: number
+  queueCounterBytes: number
+  totalResidentBytes: number
+  bufferSlotKeys: string[]
+  textureSlotKeys: string[]
 }
 
 export class HydraResourceManagerV3 {
@@ -40,6 +47,38 @@ export class HydraResourceManagerV3 {
 
   getSlotForResource (resourceId: string): string | null {
     return this.resourceToSlot.get(resourceId) ?? null
+  }
+
+  hasResourceSlot (resourceId: string): boolean {
+    return this.resourceToSlot.has(resourceId)
+  }
+
+  hasBufferSlot (slot: string): boolean {
+    return this.buffers.has(slot)
+  }
+
+  hasTextureSlot (slot: string): boolean {
+    return this.textures.has(slot)
+  }
+
+  allocateStorageBufferForResource (resourceId: string, requiredBytes: number): GPUBuffer | null {
+    const slot = this.getSlotForResource(resourceId)
+    if (!slot) return null
+    return this.getOrCreateStorageBuffer(slot, requiredBytes)
+  }
+
+  allocateStorageTextureForResource (
+    resourceId: string,
+    descriptor: {
+      width: number
+      height: number
+      depthOrArrayLayers?: number
+      format?: GPUTextureFormat
+    }
+  ): GPUTexture | null {
+    const slot = this.getSlotForResource(resourceId)
+    if (!slot) return null
+    return this.getOrCreateStorageTexture(slot, descriptor)
   }
 
   getOrCreateStorageBuffer (slot: string, requiredBytes: number): GPUBuffer {
@@ -179,17 +218,47 @@ export class HydraResourceManagerV3 {
     let storageBufferSlots = 0
     let indirectSlots = 0
     let queueCounterSlots = 0
+    let storageBufferBytes = 0
+    let indirectBytes = 0
+    let queueCounterBytes = 0
+    const bufferSlotKeys: string[] = []
     this.buffers.forEach((entry) => {
-      if (entry.usage === 'storage') storageBufferSlots += 1
-      else if (entry.usage === 'indirect') indirectSlots += 1
-      else queueCounterSlots += 1
+      if (entry.usage === 'storage') {
+        storageBufferSlots += 1
+        storageBufferBytes += entry.bytes
+      } else if (entry.usage === 'indirect') {
+        indirectSlots += 1
+        indirectBytes += entry.bytes
+      } else {
+        queueCounterSlots += 1
+        queueCounterBytes += entry.bytes
+      }
     })
+    this.buffers.forEach((_entry, slot) => {
+      bufferSlotKeys.push(slot)
+    })
+
+    let textureBytes = 0
+    const textureSlotKeys: string[] = []
+    this.textures.forEach((entry, slot) => {
+      const bytesPerPixel = entry.format === 'rgba16float' ? 8 : 4
+      textureBytes += entry.width * entry.height * entry.depthOrArrayLayers * bytesPerPixel
+      textureSlotKeys.push(slot)
+    })
+
     return {
       storageBufferSlots,
       textureSlots: this.textures.size,
       indirectSlots,
       queueCounterSlots,
-      resourceBindings: this.resourceToSlot.size
+      resourceBindings: this.resourceToSlot.size,
+      storageBufferBytes,
+      textureBytes,
+      indirectBytes,
+      queueCounterBytes,
+      totalResidentBytes: storageBufferBytes + textureBytes + indirectBytes + queueCounterBytes,
+      bufferSlotKeys: bufferSlotKeys.sort((left, right) => left.localeCompare(right)),
+      textureSlotKeys: textureSlotKeys.sort((left, right) => left.localeCompare(right))
     }
   }
 

@@ -866,6 +866,70 @@ describe('WebGPUOutputNode texture exposure', () => {
     expect(bindGroup.entries.some((entry) => entry.binding === 4)).toBe(false)
   })
 
+  it('prefers executor-injected storage resource providers when present', () => {
+    const renderer = createRendererMock()
+    const node = new WebGPUOutputNode({
+      renderer: renderer as never,
+      width: 2,
+      height: 2,
+      label: 'o-slot-providers'
+    })
+    const providedBuffer = { id: 'slot-buffer' } as unknown as GPUBuffer
+    const providedTexture = { id: 'slot-texture', destroy: () => {} } as unknown as GPUTexture
+
+    const pass: HydraCompiledPass = {
+      signature: 'slot-provider-pass',
+      wgsl: '@compute @workgroup_size(1, 1, 1) fn csMain() {}',
+      uniforms: [],
+      textures: [],
+      storageBuffers: [{
+        name: 'scratch',
+        variableName: 'scratchBuffer',
+        getBuffer: () => providedBuffer,
+        access: 'read_write',
+        lifetime: 'transient',
+        elementType: 'vec4f',
+        minLength: 16,
+        binding: 3,
+        sourceRef: { slot: 'slot:scratch' }
+      }],
+      storageTextures: [{
+        name: 'scratchTex',
+        variableName: 'scratchTexture',
+        getTexture: () => providedTexture,
+        access: 'read_write',
+        format: 'rgba16float',
+        dimension: '2d',
+        lifetime: 'transient',
+        binding: 4,
+        sourceRef: { slot: 'slot:texture' }
+      }],
+      dispatch: {
+        mode: 'direct',
+        domain: 'linear1d',
+        workgroupSize: [1, 1, 1],
+        itemCount: 1
+      }
+    }
+
+    node.render([pass])
+    const dispatches: DispatchLogEntry[] = []
+    node.tick(
+      { time: 0, bpm: 120, resolution: [2, 2], deltaMs: 16 } as unknown as Parameters<WebGPUOutputNode['tick']>[0],
+      createTestEncoder(dispatches)
+    )
+
+    expect(dispatches).toHaveLength(1)
+    const bindGroup = dispatches[0].bindGroup as { entries: Array<{ binding: number, resource: unknown }> }
+    const storageBufferEntry = bindGroup.entries.find((entry) => entry.binding === 3)
+    const storageTextureEntry = bindGroup.entries.find((entry) => entry.binding === 4)
+    expect(storageBufferEntry).toEqual({ binding: 3, resource: { buffer: providedBuffer } })
+    expect(storageTextureEntry).toEqual({
+      binding: 4,
+      resource: { texture: providedTexture, dimension: '2d' }
+    })
+  })
+
   it('falls back when required GPU features are unavailable', () => {
     const fallbackPass: HydraCompiledPass = {
       signature: 'fallback-feature',

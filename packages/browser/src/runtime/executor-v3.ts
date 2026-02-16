@@ -1,9 +1,80 @@
-import type { HydraExecutionPlanV3, HydraExecutionStepV3, HydraFrameState, HydraCompiledPass } from 'hydra-synth-core'
+import type { HydraCompiledPass, HydraExecutionPlanV3, HydraExecutionStepV3, HydraFrameState } from 'hydra-synth-core'
 import type { WebGPUOutputNode } from './output-node.js'
 import type { HydraResourceManagerV3, HydraResourceResidencySnapshotV3 } from './resource-manager-v3.js'
 import { decideQueueDispatchV3, toQueueIndirectArgsV3 } from './queue-v3.js'
 
 const DEFAULT_RESOURCE_TEXTURE_FORMAT: GPUTextureFormat = 'rgba16float'
+const getStorageElementStride = (elementType: string): number => {
+  if (elementType === 'f32' || elementType === 'u32' || elementType === 'i32') return 4
+  if (elementType === 'vec2f') return 8
+  if (elementType === 'vec3f') return 16
+  return 16
+}
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+
+const sanitizeResourceToken = (value: string): string => value.replace(/[^a-zA-Z0-9:_-]/g, '_')
+
+const sourceRefToken = (sourceRef: unknown): string | null => {
+  if (!sourceRef || typeof sourceRef !== 'object') return null
+  const candidate = sourceRef as Record<string, unknown>
+
+  const outputId = candidate.id
+  if (typeof outputId === 'number' && Number.isFinite(outputId)) {
+    return `output:${Math.max(0, Math.floor(outputId))}`
+  }
+
+  const historyOffset = candidate.historyOffset
+  if (typeof historyOffset === 'number' && Number.isFinite(historyOffset)) {
+    return `history:${Math.max(1, Math.floor(historyOffset))}`
+  }
+
+  const stateKey = candidate.stateKey
+  if (typeof stateKey === 'string' && stateKey.length > 0) {
+    return `state:${sanitizeResourceToken(stateKey)}`
+  }
+
+  const slot = candidate.slot
+  if (typeof slot === 'string' && slot.length > 0) {
+    return `slot:${sanitizeResourceToken(slot)}`
+  }
+
+  return null
+}
+
+const bindingToken = ({
+  name,
+  variableName,
+  sourceRef
+}: {
+  name: string
+  variableName: string
+  sourceRef?: unknown
+}): string => {
+  const sourceToken = sourceRefToken(sourceRef)
+  if (sourceToken) return sourceToken
+  if (variableName) return `binding:${sanitizeResourceToken(variableName)}`
+  return `name:${sanitizeResourceToken(name)}`
+}
+
+const getStorageBufferResourceId = (buffer: {
+  name: string
+  variableName: string
+  sourceRef?: unknown
+  lifetime: string
+  elementType: string
+}): string => `buffer:${bindingToken(buffer)}:${sanitizeResourceToken(buffer.elementType)}:${sanitizeResourceToken(buffer.lifetime)}`
+
+const getStorageTextureResourceId = (texture: {
+  name: string
+  variableName: string
+  sourceRef?: unknown
+  lifetime: string
+  format: string
+  dimension: string
+}): string =>
+  `storageTexture:${bindingToken(texture)}:${sanitizeResourceToken(texture.format)}:${sanitizeResourceToken(texture.dimension)}:${sanitizeResourceToken(texture.lifetime)}`
 
 const clonePassWithLinearItemCount = (
   pass: HydraCompiledPass,
@@ -84,16 +155,17 @@ export class HydraExecutorV3 {
     if (!this.resourceManager) return 0
 
     const specById = new Map(plan.sourceGraph.resources.map((resource) => [resource.id, resource]))
-    const touchedSlots = new Set<string>()
+    const allocatedSlots = new Set<string>()
 
     plan.resources.forEach((allocation) => {
       const spec = specById.get(allocation.resourceId)
       if (!spec) return
       this.resourceManager.registerResourceSlot(allocation.resourceId, allocation.slot)
-      touchedSlots.add(allocation.slot)
+      if (spec.lifetime === 'external') return
 
       if (spec.kind === 'Buffer' || spec.kind === 'IndirectArgs' || spec.kind === 'QueueBuffer') {
         this.resourceManager.getOrCreateStorageBuffer(allocation.slot, allocation.plannedBytes)
+        allocatedSlots.add(allocation.slot)
         return
       }
 
@@ -107,10 +179,137 @@ export class HydraExecutorV3 {
           depthOrArrayLayers,
           format: (spec.format as GPUTextureFormat | undefined) ?? DEFAULT_RESOURCE_TEXTURE_FORMAT
         })
+        allocatedSlots.add(allocation.slot)
       }
     })
 
-    return touchedSlots.size
+    return allocatedSlots.size
+  }
+
+  private materializeStorageBufferBinding (
+    pass: HydraCompiledPass,
+    frame: HydraFrameState,
+    allocationByResourceId: Map<string, HydraExecutionPlanV3['resources'][number]>,
+    resourceById: Map<string, HydraExecutionPlanV3['sourceGraph']['resources'][number]>
+  ): HydraCompiledPass['storageBuffers'] {
+    if (!this.resourceManager || !pass.storageBuffers || pass.storageBuffers.length === 0) {
+      return pass.storageBuffers
+    }
+
+    return pass.storageBuffers.map((binding) => {
+      const candidates = [
+        getStorageBufferResourceId(binding),
+        `buffer:${binding.name}`,
+        `virtual:${binding.name}`
+      ]
+      const resourceId = candidates.find((candidate) => allocationByResourceId.has(candidate))
+      if (!resourceId) return binding
+
+      const allocation = allocationByResourceId.get(resourceId)
+      const spec = resourceById.get(resourceId)
+      if (!allocation || !spec || spec.lifetime === 'external') return binding
+
+      const minLength = Math.max(1, Math.floor(binding.minLength || 1))
+      const requiredBytes = Math.max(
+        allocation.plannedBytes,
+        minLength * getStorageElementStride(binding.elementType)
+      )
+      const sourceRef = isPlainObject(binding.sourceRef) ? { ...binding.sourceRef } : {}
+      sourceRef.slot = allocation.slot
+      sourceRef.resourceId = resourceId
+
+      return {
+        ...binding,
+        sourceRef,
+        getBuffer: () => this.resourceManager?.allocateStorageBufferForResource?.(resourceId, requiredBytes) ??
+          this.resourceManager?.getOrCreateStorageBuffer(allocation.slot, requiredBytes) ??
+          null
+      }
+    })
+  }
+
+  private materializeStorageTextureBinding (
+    pass: HydraCompiledPass,
+    frame: HydraFrameState,
+    allocationByResourceId: Map<string, HydraExecutionPlanV3['resources'][number]>,
+    resourceById: Map<string, HydraExecutionPlanV3['sourceGraph']['resources'][number]>
+  ): HydraCompiledPass['storageTextures'] {
+    if (!this.resourceManager || !pass.storageTextures || pass.storageTextures.length === 0) {
+      return pass.storageTextures
+    }
+
+    return pass.storageTextures.map((binding) => {
+      const candidates = [
+        getStorageTextureResourceId(binding),
+        `storageTexture:${binding.name}`,
+        `virtual:${binding.name}`
+      ]
+      const resourceId = candidates.find((candidate) => allocationByResourceId.has(candidate))
+      if (!resourceId) return binding
+
+      const allocation = allocationByResourceId.get(resourceId)
+      const spec = resourceById.get(resourceId)
+      if (!allocation || !spec || spec.lifetime === 'external') return binding
+
+      const widthScale = Number(binding.widthScale ?? 1)
+      const heightScale = Number(binding.heightScale ?? 1)
+      const width = Math.max(
+        1,
+        Math.floor(spec.shape?.width ?? (frame.resolution[0] * (Number.isFinite(widthScale) && widthScale > 0 ? widthScale : 1)))
+      )
+      const height = Math.max(
+        1,
+        Math.floor(spec.shape?.height ?? (frame.resolution[1] * (Number.isFinite(heightScale) && heightScale > 0 ? heightScale : 1)))
+      )
+      const depthOrArrayLayers = Math.max(1, Math.floor(spec.shape?.depthOrArrayLayers ?? binding.depthOrArrayLayers ?? 1))
+      const format = (spec.format as GPUTextureFormat | undefined) ?? (binding.format as GPUTextureFormat)
+      const sourceRef = isPlainObject(binding.sourceRef) ? { ...binding.sourceRef } : {}
+      sourceRef.slot = allocation.slot
+      sourceRef.resourceId = resourceId
+
+      return {
+        ...binding,
+        sourceRef,
+        getTexture: () => this.resourceManager?.allocateStorageTextureForResource?.(resourceId, {
+          width,
+          height,
+          depthOrArrayLayers,
+          format
+        }) ?? this.resourceManager?.getOrCreateStorageTexture(allocation.slot, {
+          width,
+          height,
+          depthOrArrayLayers,
+          format
+        }) ??
+          null
+      }
+    })
+  }
+
+  private materializePassResources (
+    pass: HydraCompiledPass,
+    frame: HydraFrameState,
+    allocationByResourceId: Map<string, HydraExecutionPlanV3['resources'][number]>,
+    resourceById: Map<string, HydraExecutionPlanV3['sourceGraph']['resources'][number]>,
+    cache: Map<string, HydraCompiledPass>
+  ): HydraCompiledPass {
+    const cached = cache.get(pass.signature)
+    if (cached) return cached
+
+    const fallbackPass = pass.fallbackPass
+      ? this.materializePassResources(pass.fallbackPass, frame, allocationByResourceId, resourceById, cache)
+      : undefined
+    const storageBuffers = this.materializeStorageBufferBinding(pass, frame, allocationByResourceId, resourceById)
+    const storageTextures = this.materializeStorageTextureBinding(pass, frame, allocationByResourceId, resourceById)
+
+    const materialized: HydraCompiledPass = {
+      ...pass,
+      ...(storageBuffers ? { storageBuffers } : {}),
+      ...(storageTextures ? { storageTextures } : {}),
+      ...(fallbackPass ? { fallbackPass } : {})
+    }
+    cache.set(pass.signature, materialized)
+    return materialized
   }
 
   private expandQueueStepPasses (
@@ -287,6 +486,9 @@ export class HydraExecutorV3 {
     options: HydraExecutePlanV3Options = {}
   ): ExecutePlanV3Result {
     const allocatedResourceCount = this.ensurePlanResources(plan, frame)
+    const allocationByResourceId = new Map(plan.resources.map((allocation) => [allocation.resourceId, allocation]))
+    const resourceById = new Map(plan.sourceGraph.resources.map((resource) => [resource.id, resource]))
+    const passMaterializationCache = new Map<string, HydraCompiledPass>()
     const passes: HydraCompiledPass[] = []
     let queueIterations = 0
     let queueOverflowCount = 0
@@ -299,7 +501,13 @@ export class HydraExecutorV3 {
       if (!step) break
 
       if (step.dispatchDomain !== 'queue1d') {
-        passes.push(step.compiledPass)
+        passes.push(this.materializePassResources(
+          step.compiledPass,
+          frame,
+          allocationByResourceId,
+          resourceById,
+          passMaterializationCache
+        ))
         stepIndex += 1
         continue
       }
@@ -317,7 +525,17 @@ export class HydraExecutorV3 {
         stepIndex += 1
       }
 
-      const queuePasses = this.expandQueueSegmentPasses(segment, frame, options.queueHooks, options)
+      const materializedSegment = segment.map((segmentStep) => ({
+        ...segmentStep,
+        compiledPass: this.materializePassResources(
+          segmentStep.compiledPass,
+          frame,
+          allocationByResourceId,
+          resourceById,
+          passMaterializationCache
+        )
+      }))
+      const queuePasses = this.expandQueueSegmentPasses(materializedSegment, frame, options.queueHooks, options)
       passes.push(...queuePasses.passes)
       queueIterations += queuePasses.iterations
       queueOverflowCount += queuePasses.overflowCount

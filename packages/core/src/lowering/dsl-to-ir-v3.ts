@@ -18,6 +18,74 @@ import type {
   HydraKernelResourceSpecV3
 } from '../ir-v3/types.js'
 
+const sanitizeResourceToken = (value: string): string => value.replace(/[^a-zA-Z0-9:_-]/g, '_')
+
+const sourceRefToken = (sourceRef: unknown): string | null => {
+  if (!sourceRef || typeof sourceRef !== 'object') return null
+  const candidate = sourceRef as Record<string, unknown>
+
+  const outputId = candidate.id
+  if (typeof outputId === 'number' && Number.isFinite(outputId)) {
+    return `output:${Math.max(0, Math.floor(outputId))}`
+  }
+
+  const historyOffset = candidate.historyOffset
+  if (typeof historyOffset === 'number' && Number.isFinite(historyOffset)) {
+    return `history:${Math.max(1, Math.floor(historyOffset))}`
+  }
+
+  const stateKey = candidate.stateKey
+  if (typeof stateKey === 'string' && stateKey.length > 0) {
+    return `state:${sanitizeResourceToken(stateKey)}`
+  }
+
+  const slot = candidate.slot
+  if (typeof slot === 'string' && slot.length > 0) {
+    return `slot:${sanitizeResourceToken(slot)}`
+  }
+
+  return null
+}
+
+const bindingToken = ({
+  name,
+  variableName,
+  sourceRef
+}: {
+  name: string
+  variableName: string
+  sourceRef?: unknown
+}): string => {
+  const sourceToken = sourceRefToken(sourceRef)
+  if (sourceToken) return sourceToken
+  if (variableName) return `binding:${sanitizeResourceToken(variableName)}`
+  return `name:${sanitizeResourceToken(name)}`
+}
+
+export const getTextureResourceIdV3 = (texture: {
+  name: string
+  variableName: string
+  sourceRef?: unknown
+}): string => `texture:${bindingToken(texture)}`
+
+export const getStorageBufferResourceIdV3 = (buffer: {
+  name: string
+  variableName: string
+  sourceRef?: unknown
+  lifetime: string
+  elementType: string
+}): string => `buffer:${bindingToken(buffer)}:${sanitizeResourceToken(buffer.elementType)}:${sanitizeResourceToken(buffer.lifetime)}`
+
+export const getStorageTextureResourceIdV3 = (texture: {
+  name: string
+  variableName: string
+  sourceRef?: unknown
+  lifetime: string
+  format: string
+  dimension: string
+}): string =>
+  `storageTexture:${bindingToken(texture)}:${sanitizeResourceToken(texture.format)}:${sanitizeResourceToken(texture.dimension)}:${sanitizeResourceToken(texture.lifetime)}`
+
 const normalizeUpdateRate = (value: HydraPassUpdateRate | undefined): HydraPassUpdateRate => value ?? 'everyFrame'
 
 const inferKernelKind = (transforms: HydraTransformCall[]): HydraKernelNodeKindV3 => {
@@ -48,7 +116,7 @@ const collectResourceSpecs = (nodes: HydraKernelNodeV3[]): HydraKernelResourceSp
   nodes.forEach((node) => {
     node.textures.forEach((texture) => {
       ensure({
-        id: `texture:${texture.name}`,
+        id: getTextureResourceIdV3(texture),
         kind: 'Texture2D',
         access: 'read',
         lifetime: 'external',
@@ -59,7 +127,7 @@ const collectResourceSpecs = (nodes: HydraKernelNodeV3[]): HydraKernelResourceSp
 
     node.storageBuffers.forEach((buffer) => {
       ensure({
-        id: `buffer:${buffer.name}`,
+        id: getStorageBufferResourceIdV3(buffer),
         kind: 'Buffer',
         access: buffer.access,
         elementType: buffer.elementType,
@@ -72,7 +140,7 @@ const collectResourceSpecs = (nodes: HydraKernelNodeV3[]): HydraKernelResourceSp
 
     node.storageTextures.forEach((texture) => {
       ensure({
-        id: `storageTexture:${texture.name}`,
+        id: getStorageTextureResourceIdV3(texture),
         kind: texture.dimension === '2d_array' ? 'Texture2DArray' : 'Texture2D',
         access: texture.access,
         format: texture.format,

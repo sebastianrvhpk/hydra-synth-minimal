@@ -7,7 +7,7 @@ Last updated: 2026-02-16
 | Phase | Status | Notes |
 |---|---|---|
 | 1 | Completed | Unified runtime routing (`legacy`/`v3`/`auto`) with deterministic fallback diagnostics. |
-| 2 | Not started | Slot-backed execution refinements pending. |
+| 2 | Completed | Slot-backed resource resolver injection and external-preallocation controls are active. |
 | 3 | Not started | Data-first kernel semantics pending. |
 | 4 | Not started | Queue policy hardening pending. |
 | 5 | Not started | Measured autotune loop pending. |
@@ -70,11 +70,11 @@ Last updated: 2026-02-16
 
 All required Phase 1 gates passed:
 
-1. `pnpm test:unit -- packages/core/test/v3-core.test.ts packages/core/test/v3-compatibility-matrix.test.ts packages/core/test/registry.test.ts` ✅
-2. `pnpm test:unit -- packages/browser/test/v3-foundation.test.ts packages/browser/test/output-node.test.ts packages/browser/test/renderer-adapter.test.ts` ✅
-3. `pnpm test:browser -- packages/browser/test/playwright/runtime-smoke.spec.ts` ✅
-4. `pnpm --filter hydra-synth run typecheck` ✅
-5. `node scripts/bench-v3.mjs .tmp/bench/phase-samples.json` ✅
+1. `pnpm test:unit -- packages/core/test/v3-core.test.ts packages/core/test/v3-compatibility-matrix.test.ts packages/core/test/registry.test.ts` [PASS]
+2. `pnpm test:unit -- packages/browser/test/v3-foundation.test.ts packages/browser/test/output-node.test.ts packages/browser/test/renderer-adapter.test.ts` [PASS]
+3. `pnpm test:browser -- packages/browser/test/playwright/runtime-smoke.spec.ts` [PASS]
+4. `pnpm --filter hydra-synth run typecheck` [PASS]
+5. `node scripts/bench-v3.mjs .tmp/bench/phase-samples.json` [PASS]
 
 ### Benchmark Sample Artifact
 
@@ -84,3 +84,62 @@ All required Phase 1 gates passed:
   - Uses a fixed scene list and deterministic multipliers per acceptance gate.
   - Produces 3 samples per scene with fallback count `0` and stable dispatch count `12`.
 
+---
+
+## Phase 2 Report
+
+### Implemented Plan Items
+
+- `P2.1` `packages/core/src/lowering/dsl-to-ir-v3.ts`
+  - Added stable deterministic resource ID derivation for texture/storage bindings.
+  - Resource IDs now account for source identity (`output`, `history`, `state`, `slot`) and binding metadata.
+- `P2.2` `packages/browser/src/runtime/executor-v3.ts`
+  - Added pass materialization that injects slot-backed `getBuffer`/`getTexture` providers into compiled pass storage bindings.
+  - Materialization propagates through fallback pass chains.
+- `P2.3` `packages/browser/src/runtime/executor-v3.ts`
+  - External-lifetime resources are registered for mapping but no longer preallocated.
+- `P2.4` `packages/browser/src/runtime/resource-manager-v3.ts`
+  - Added explicit slot/query/allocation helpers:
+    - `hasResourceSlot`
+    - `hasBufferSlot`
+    - `hasTextureSlot`
+    - `allocateStorageBufferForResource`
+    - `allocateStorageTextureForResource`
+  - Expanded residency snapshot with byte totals and slot-key diagnostics.
+- `P2.5` `packages/browser/src/runtime/output-node.ts`
+  - Existing provider-first resolution behavior retained and verified with executor-injected provider tests.
+- `P2.6` `packages/core/src/compiler-v3/validate-plan-v3.ts`
+  - Added stricter validation for:
+    - allocations referencing unknown source resources
+    - duplicate slot allocations per resource
+    - unresolved non-external resource slot mappings
+    - overlapping alias slot compatibility checks that also require lifetime compatibility
+
+### Tests Added/Updated
+
+- `packages/browser/test/v3-foundation.test.ts`
+  - Added slot-backed resolver injection coverage.
+  - Added alias-slot reuse vs persistent-lifetime distinction coverage.
+  - Added external resource no-preallocation coverage.
+- `packages/browser/test/output-node.test.ts`
+  - Added resolver compatibility test validating injected provider precedence.
+- `packages/core/test/v3-core.test.ts`
+  - Added slot validation failure coverage:
+    - unresolved slot mappings
+    - duplicate allocations per resource
+    - allocation-to-unknown-resource failures
+
+### Validation Results
+
+All required Phase 2 gates passed:
+
+1. `pnpm test:unit -- packages/core/test/v3-core.test.ts packages/core/test/v3-compatibility-matrix.test.ts packages/core/test/registry.test.ts` [PASS]
+2. `pnpm test:unit -- packages/browser/test/v3-foundation.test.ts packages/browser/test/output-node.test.ts packages/browser/test/renderer-adapter.test.ts` [PASS]
+3. `pnpm test:browser -- packages/browser/test/playwright/runtime-smoke.spec.ts` [PASS]
+4. `pnpm --filter hydra-synth run typecheck` [PASS]
+5. `node scripts/bench-v3.mjs .tmp/bench/phase-samples.json` [PASS]
+
+### Benchmark Artifact
+
+- Reused deterministic sample corpus:
+  - `.tmp/bench/phase-samples.json`

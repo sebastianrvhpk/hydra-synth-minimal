@@ -5,7 +5,12 @@ export { HydraTransformRegistry } from './transforms/registry.js'
 export { HydraGraphNode } from './transforms/graph-node.js'
 export { compileWgslPass, buildStructureSignature } from './transforms/compile-wgsl.js'
 export { splitLegacyPasses } from './transforms/split-legacy-passes.js'
-export { lowerDslToIrV3 } from './lowering/dsl-to-ir-v3.js'
+export {
+  lowerDslToIrV3,
+  getTextureResourceIdV3,
+  getStorageBufferResourceIdV3,
+  getStorageTextureResourceIdV3
+} from './lowering/dsl-to-ir-v3.js'
 export { dumpKernelGraphV3 } from './ir-v3/dump.js'
 export { validateKernelGraphV3, throwOnKernelGraphV3Errors } from './ir-v3/validate.js'
 export { compileGraphV3, createExecutionPlanDebugReportV3 } from './compiler-v3/compile-graph-v3.js'
