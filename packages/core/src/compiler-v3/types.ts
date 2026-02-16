@@ -7,6 +7,39 @@ import type {
 } from '../ir-v3/types.js'
 import type { HydraPrimitiveKindV3 } from '../primitives-v3/types.js'
 
+export type HydraQueueTerminationModeV3 = 'until_empty' | 'fixed_iterations'
+export type HydraQueueOverflowPolicyV3 = 'ignore' | 'terminate_segment'
+export type HydraQueueConvergenceStrategyV3 =
+  | 'hooks'
+  | 'queue_counter'
+  | 'hook_or_queue_counter'
+  | 'none'
+  | 'legacy_decay'
+
+export interface HydraQueueTerminationPolicyV3 {
+  mode: HydraQueueTerminationModeV3
+  maxIterations: number
+  minIterations: number
+  fixedIterations?: number
+}
+
+export interface HydraQueueOverflowControlV3 {
+  policy: HydraQueueOverflowPolicyV3
+  maxOverflow: number
+}
+
+export interface HydraQueueConvergencePolicyV3 {
+  strategy: HydraQueueConvergenceStrategyV3
+  checkInterval: number
+  maxNoProgressChecks: number
+}
+
+export interface HydraQueuePolicyV3 {
+  termination: HydraQueueTerminationPolicyV3
+  overflow: HydraQueueOverflowControlV3
+  convergence: HydraQueueConvergencePolicyV3
+}
+
 export interface HydraExecutionVariantCandidateV3 {
   variant: 'generic' | 'tiled' | 'subgroup'
   signature: string
@@ -43,6 +76,7 @@ export interface HydraExecutionStepV3 {
     modeHint: 'cpu' | 'gpu_hybrid'
     convergenceCheckInterval: number
     groupId: string
+    policy: HydraQueuePolicyV3
   }
   primitive?: HydraExecutionPrimitiveSelectionV3
   compiledPass: HydraCompiledPass
@@ -86,6 +120,7 @@ export interface HydraExecutionPlanV3 {
   executionPolicy?: {
     queueModeDefault: 'cpu' | 'gpu_hybrid'
     deterministic: boolean
+    queuePolicyDefault?: HydraQueuePolicyV3
   }
   id: string
   sourceGraph: HydraKernelGraphV3

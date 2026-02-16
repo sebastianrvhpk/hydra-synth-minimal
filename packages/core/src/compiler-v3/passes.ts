@@ -3,6 +3,7 @@ import type { HydraDependencyEdgeV3, HydraKernelGraphV3, HydraKernelNodeV3 } fro
 import type {
   HydraExecutionBarrierV3,
   HydraExecutionPlanDiagnosticsV3,
+  HydraQueuePolicyV3,
   HydraExecutionPrimitiveSelectionV3,
   HydraExecutionStepV3,
   HydraExecutionVariantCandidateV3,
@@ -24,6 +25,10 @@ interface PlannerSlotStateV3 {
   end: number
   bytes: number
 }
+
+const DEFAULT_QUEUE_CONVERGENCE_INTERVAL_V3 = 4
+const DEFAULT_QUEUE_MAX_ITERATIONS_V3 = 64
+const DEFAULT_QUEUE_MAX_OVERFLOW_V3 = 2_147_483_647
 
 export interface HydraPlannerCapabilityProfileV3 {
   supportedFeatures: string[]
@@ -167,6 +172,35 @@ const selectVariantCandidate = (
 
 const aliasKeyForResource = (resource: HydraKernelGraphV3['resources'][number]): string =>
   resource.aliasClass ?? `${resource.kind}:${resource.format ?? resource.elementType ?? 'default'}`
+
+const createQueuePolicyV3 = ({
+  modeHint,
+  maxIterations,
+  convergenceCheckInterval = DEFAULT_QUEUE_CONVERGENCE_INTERVAL_V3
+}: {
+  modeHint: 'cpu' | 'gpu_hybrid'
+  maxIterations: number
+  convergenceCheckInterval?: number
+}): HydraQueuePolicyV3 => {
+  const safeMaxIterations = Math.max(1, Math.floor(maxIterations || DEFAULT_QUEUE_MAX_ITERATIONS_V3))
+  const safeCheckInterval = Math.max(1, Math.floor(convergenceCheckInterval || DEFAULT_QUEUE_CONVERGENCE_INTERVAL_V3))
+  return {
+    termination: {
+      mode: 'until_empty',
+      maxIterations: safeMaxIterations,
+      minIterations: 1
+    },
+    overflow: {
+      policy: 'ignore',
+      maxOverflow: DEFAULT_QUEUE_MAX_OVERFLOW_V3
+    },
+    convergence: {
+      strategy: modeHint === 'gpu_hybrid' ? 'hook_or_queue_counter' : 'hooks',
+      checkInterval: safeCheckInterval,
+      maxNoProgressChecks: 2
+    }
+  }
+}
 
 const computeResourceIntervals = (
   graph: HydraKernelGraphV3,
@@ -392,11 +426,17 @@ export const buildExecutionStepsV3 = (
 
     const isQueue = node.schedule.dispatchDomain === 'queue1d'
     if (isQueue && !previousWasQueue) queueSegmentIndex += 1
+    const queueMaxIterations = Math.max(1, Math.floor(node.schedule.maxIterations ?? DEFAULT_QUEUE_MAX_ITERATIONS_V3))
     const queueControl = isQueue
       ? {
           modeHint: 'gpu_hybrid' as const,
-          convergenceCheckInterval: 4,
-          groupId: `queue-segment-${Math.max(0, queueSegmentIndex)}`
+          convergenceCheckInterval: DEFAULT_QUEUE_CONVERGENCE_INTERVAL_V3,
+          groupId: `queue-segment-${Math.max(0, queueSegmentIndex)}`,
+          policy: createQueuePolicyV3({
+            modeHint: 'gpu_hybrid',
+            maxIterations: queueMaxIterations,
+            convergenceCheckInterval: DEFAULT_QUEUE_CONVERGENCE_INTERVAL_V3
+          })
         }
       : undefined
     previousWasQueue = isQueue
@@ -414,7 +454,7 @@ export const buildExecutionStepsV3 = (
         reason: candidate.reason
       })),
       fallbackDepth: countFallbackDepth(selected.pass),
-      maxIterations: node.schedule.maxIterations,
+      maxIterations: isQueue ? queueMaxIterations : node.schedule.maxIterations,
       queueControl,
       primitive: primitiveByNodeId.get(node.id),
       compiledPass: selected.pass,

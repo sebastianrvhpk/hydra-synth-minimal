@@ -1,7 +1,19 @@
-import type { HydraCompiledPass, HydraExecutionPlanV3, HydraExecutionStepV3, HydraFrameState } from 'hydra-synth-core'
+import type {
+  HydraCompiledPass,
+  HydraExecutionPlanV3,
+  HydraExecutionStepV3,
+  HydraFrameState,
+  HydraQueuePolicyV3
+} from 'hydra-synth-core'
 import type { WebGPUOutputNode } from './output-node.js'
 import type { HydraResourceManagerV3, HydraResourceResidencySnapshotV3 } from './resource-manager-v3.js'
-import { decideQueueDispatchV3, toQueueIndirectArgsV3 } from './queue-v3.js'
+import {
+  decideQueueDispatchV3,
+  evaluateQueueTerminationReasonV3,
+  normalizeQueuePolicyV3,
+  toQueueIndirectArgsV3,
+  type HydraQueueTerminationReasonV3
+} from './queue-v3.js'
 
 const DEFAULT_RESOURCE_TEXTURE_FORMAT: GPUTextureFormat = 'rgba16float'
 const getStorageElementStride = (elementType: string): number => {
@@ -117,8 +129,11 @@ export interface ExecutePlanV3Result {
   scheduledBarriers: number
   queueIterations: number
   queueOverflowCount: number
+  queueOverflowEvents: number
   queueIndirectDispatches: number
   queueConvergenceChecks: number
+  queueTerminationReasons: HydraQueueTerminationReasonV3[]
+  queueChecksPerSegment: number[]
   allocatedResourceCount: number
 }
 
@@ -139,6 +154,7 @@ export interface HydraExecutePlanV3Options {
   forceQueueIndirect?: boolean
   queueMode?: 'cpu' | 'gpu_hybrid'
   queueConvergenceCheckInterval?: number
+  queuePolicy?: HydraQueuePolicyV3
 }
 
 export class HydraExecutorV3 {
@@ -370,28 +386,46 @@ export class HydraExecutorV3 {
     {
       forceQueueIndirect = true,
       queueMode = steps[0]?.queueControl?.modeHint ?? 'cpu',
-      queueConvergenceCheckInterval = steps[0]?.queueControl?.convergenceCheckInterval ?? 4
+      queueConvergenceCheckInterval = steps[0]?.queueControl?.convergenceCheckInterval ?? 4,
+      queuePolicy = steps[0]?.queueControl?.policy
     }: HydraExecutePlanV3Options = {}
   ): {
     passes: HydraCompiledPass[]
     iterations: number
     overflowCount: number
+    overflowEvents: number
     indirectDispatches: number
     convergenceChecks: number
+    terminationReason: HydraQueueTerminationReasonV3
   } {
     if (steps.length === 0) {
       return {
         passes: [],
         iterations: 0,
         overflowCount: 0,
+        overflowEvents: 0,
         indirectDispatches: 0,
-        convergenceChecks: 0
+        convergenceChecks: 0,
+        terminationReason: 'none'
       }
     }
 
-    const maxIterations = steps.reduce((max, step) => Math.max(max, planStepMaxIterations(step, frame)), 1)
-    const checkInterval = Math.max(1, Math.floor(queueConvergenceCheckInterval))
     const firstStep = steps[0] as HydraExecutionStepV3
+    const planMaxIterations = steps.reduce((max, step) => Math.max(max, planStepMaxIterations(step, frame)), 1)
+    const activeQueuePolicy = normalizeQueuePolicyV3(
+      queuePolicy ?? firstStep.queueControl?.policy ?? null,
+      {
+        modeHint: queueMode,
+        maxIterations: planMaxIterations,
+        convergenceCheckInterval: queueConvergenceCheckInterval
+      }
+    )
+    if (typeof queueConvergenceCheckInterval === 'number' && Number.isFinite(queueConvergenceCheckInterval)) {
+      activeQueuePolicy.convergence.checkInterval = Math.max(1, Math.floor(queueConvergenceCheckInterval))
+    }
+
+    const maxIterations = Math.max(1, Math.floor(activeQueuePolicy.termination.maxIterations))
+    const checkInterval = Math.max(1, Math.floor(activeQueuePolicy.convergence.checkInterval))
     const defaultActive = Math.max(1, Math.floor(firstStep.compiledPass.dispatch?.itemCount ?? (frame.resolution[0] * frame.resolution[1])))
     const defaultCapacity = Math.max(defaultActive, 1)
 
@@ -399,17 +433,26 @@ export class HydraExecutorV3 {
     let iteration = 0
     let previousActiveCount = defaultActive
     let overflowCount = 0
+    let overflowEvents = 0
     let indirectDispatches = 0
     let convergenceChecks = 0
+    let noProgressChecks = 0
+    let terminationReason: HydraQueueTerminationReasonV3 = 'none'
+    let latestDecision = decideQueueDispatchV3({
+      activeCount: defaultActive,
+      capacity: defaultCapacity,
+      iteration: 0,
+      maxIterations,
+      workgroupSizeX: Math.max(1, Math.floor(firstStep.compiledPass.dispatch?.workgroupSize?.[0] ?? 64))
+    })
 
     while (iteration < maxIterations) {
       let emittedInIteration = 0
       let latestActiveCount = 0
       let convergenceStep = steps[steps.length - 1] ?? firstStep
-
-      steps.forEach((step) => {
-        const stepMaxIterations = planStepMaxIterations(step, frame)
-        if (iteration >= stepMaxIterations) return
+      for (const step of steps) {
+        const stepMaxIterations = Math.min(maxIterations, planStepMaxIterations(step, frame))
+        if (iteration >= stepMaxIterations) continue
 
         const workgroupSizeX = Math.max(1, Math.floor(step.compiledPass.dispatch?.workgroupSize?.[0] ?? 64))
         const providedState = hooks?.getQueueState?.(step, iteration, previousActiveCount)
@@ -422,11 +465,13 @@ export class HydraExecutorV3 {
           maxIterations: stepMaxIterations,
           workgroupSizeX
         })
+        latestDecision = decision
 
         overflowCount += decision.diagnostics.overflowCount
+        if (decision.diagnostics.overflowCount > 0) overflowEvents += 1
         if (!decision.shouldContinue) {
           latestActiveCount = 0
-          return
+          continue
         }
 
         const materialized = this.expandQueueStepPasses(step, iteration, {
@@ -440,42 +485,111 @@ export class HydraExecutorV3 {
         if (materialized.usesIndirect) indirectDispatches += 1
         latestActiveCount = decision.diagnostics.activeCount
         convergenceStep = step
-      })
+      }
 
-      if (emittedInIteration === 0) break
+      if (emittedInIteration === 0) {
+        const reason = evaluateQueueTerminationReasonV3({
+          policy: activeQueuePolicy,
+          decision: latestDecision,
+          iteration,
+          totalOverflow: overflowCount,
+          noProgressChecks
+        })
+        terminationReason = reason ?? 'inactive'
+        break
+      }
       iteration += 1
+
+      const forceCpuSingleIteration = (
+        queueMode === 'cpu' &&
+        !hooks?.getQueueState &&
+        activeQueuePolicy.convergence.strategy === 'none'
+      )
 
       if (hooks?.getQueueState) {
         previousActiveCount = Math.max(0, Math.floor(latestActiveCount))
-        continue
-      }
+      } else {
+        const strategy = activeQueuePolicy.convergence.strategy
+        const shouldCheck = iteration % checkInterval === 0 || iteration >= maxIterations
+        let nextActiveCount = Math.max(0, Math.floor(latestActiveCount))
+        let checked = false
 
-      if (queueMode === 'gpu_hybrid') {
-        const shouldCheck = iteration % checkInterval === 0 || iteration === maxIterations
-        if (shouldCheck) {
-          convergenceChecks += 1
+        if (strategy === 'none') {
+          nextActiveCount = 0
+        } else {
           const fromHook = hooks?.readQueueCount?.(convergenceStep, iteration)
           const fromManager = this.resourceManager?.readQueueCount(`queue-counter:${convergenceStep.nodeId}`) ?? null
-          if (typeof fromHook === 'number' && Number.isFinite(fromHook)) {
-            previousActiveCount = Math.max(0, Math.floor(fromHook))
-          } else if (typeof fromManager === 'number' && Number.isFinite(fromManager)) {
-            previousActiveCount = Math.max(0, Math.floor(fromManager))
-          } else {
-            previousActiveCount = Math.max(0, Math.floor(previousActiveCount * 0.5))
+          if (shouldCheck) {
+            checked = true
+            convergenceChecks += 1
+            if (strategy === 'hooks') {
+              nextActiveCount = typeof fromHook === 'number' && Number.isFinite(fromHook)
+                ? Math.max(0, Math.floor(fromHook))
+                : 0
+            } else if (strategy === 'queue_counter') {
+              nextActiveCount = typeof fromManager === 'number' && Number.isFinite(fromManager)
+                ? Math.max(0, Math.floor(fromManager))
+                : 0
+            } else if (strategy === 'hook_or_queue_counter') {
+              if (typeof fromHook === 'number' && Number.isFinite(fromHook)) {
+                nextActiveCount = Math.max(0, Math.floor(fromHook))
+              } else if (typeof fromManager === 'number' && Number.isFinite(fromManager)) {
+                nextActiveCount = Math.max(0, Math.floor(fromManager))
+              } else {
+                nextActiveCount = 0
+              }
+            } else if (strategy === 'legacy_decay') {
+              if (typeof fromHook === 'number' && Number.isFinite(fromHook)) {
+                nextActiveCount = Math.max(0, Math.floor(fromHook))
+              } else if (typeof fromManager === 'number' && Number.isFinite(fromManager)) {
+                nextActiveCount = Math.max(0, Math.floor(fromManager))
+              } else {
+                nextActiveCount = Math.max(0, Math.floor(previousActiveCount * 0.5))
+              }
+            }
           }
         }
-      } else {
-        // CPU mode without external queue feed executes one deterministic iteration.
-        previousActiveCount = 0
+
+        if (checked) {
+          const safePrevious = Math.max(0, Math.floor(previousActiveCount))
+          if (nextActiveCount > 0 && nextActiveCount >= safePrevious) {
+            noProgressChecks += 1
+          } else {
+            noProgressChecks = 0
+          }
+        } else {
+          noProgressChecks = 0
+        }
+
+        previousActiveCount = Math.max(0, Math.floor(nextActiveCount))
       }
+
+      const reason = evaluateQueueTerminationReasonV3({
+        policy: activeQueuePolicy,
+        decision: latestDecision,
+        iteration,
+        totalOverflow: overflowCount,
+        noProgressChecks,
+        forceCpuSingleIteration
+      })
+      if (reason) {
+        terminationReason = reason
+        break
+      }
+    }
+
+    if (terminationReason === 'none') {
+      terminationReason = iteration >= maxIterations ? 'max_iterations' : 'inactive'
     }
 
     return {
       passes: outPasses,
       iterations: iteration,
       overflowCount,
+      overflowEvents,
       indirectDispatches,
-      convergenceChecks
+      convergenceChecks,
+      terminationReason
     }
   }
 
@@ -492,8 +606,11 @@ export class HydraExecutorV3 {
     const passes: HydraCompiledPass[] = []
     let queueIterations = 0
     let queueOverflowCount = 0
+    let queueOverflowEvents = 0
     let queueIndirectDispatches = 0
     let queueConvergenceChecks = 0
+    const queueTerminationReasons: HydraQueueTerminationReasonV3[] = []
+    const queueChecksPerSegment: number[] = []
 
     let stepIndex = 0
     while (stepIndex < plan.steps.length) {
@@ -535,12 +652,18 @@ export class HydraExecutorV3 {
           passMaterializationCache
         )
       }))
-      const queuePasses = this.expandQueueSegmentPasses(materializedSegment, frame, options.queueHooks, options)
+      const queuePasses = this.expandQueueSegmentPasses(materializedSegment, frame, options.queueHooks, {
+        ...options,
+        queuePolicy: options.queuePolicy ?? step.queueControl?.policy ?? plan.executionPolicy?.queuePolicyDefault
+      })
       passes.push(...queuePasses.passes)
       queueIterations += queuePasses.iterations
       queueOverflowCount += queuePasses.overflowCount
+      queueOverflowEvents += queuePasses.overflowEvents
       queueIndirectDispatches += queuePasses.indirectDispatches
       queueConvergenceChecks += queuePasses.convergenceChecks
+      queueTerminationReasons.push(queuePasses.terminationReason)
+      queueChecksPerSegment.push(queuePasses.convergenceChecks)
     }
 
     output.render(passes)
@@ -550,8 +673,11 @@ export class HydraExecutorV3 {
       scheduledBarriers: plan.barriers.length,
       queueIterations,
       queueOverflowCount,
+      queueOverflowEvents,
       queueIndirectDispatches,
       queueConvergenceChecks,
+      queueTerminationReasons,
+      queueChecksPerSegment,
       allocatedResourceCount
     }
   }
@@ -572,10 +698,15 @@ export class HydraExecutorV3 {
 }
 
 const planStepMaxIterations = (step: HydraExecutionStepV3, frame: HydraFrameState): number => {
+  const policyMaxIterations = step.queueControl?.policy?.termination?.maxIterations
+  if (typeof policyMaxIterations === 'number' && Number.isFinite(policyMaxIterations)) {
+    return Math.max(1, Math.floor(policyMaxIterations))
+  }
   if (typeof step.maxIterations === 'number' && Number.isFinite(step.maxIterations)) {
     return Math.max(1, Math.floor(step.maxIterations))
   }
   const byDomainDefault = step.dispatchDomain === 'queue1d' ? 64 : 1
+  if (step.dispatchDomain === 'queue1d') return byDomainDefault
   const frameAreaBound = Math.max(1, Math.floor((frame.resolution[0] * frame.resolution[1]) / 1024))
   return Math.min(512, Math.max(byDomainDefault, frameAreaBound))
 }

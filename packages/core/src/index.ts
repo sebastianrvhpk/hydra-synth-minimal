@@ -97,7 +97,14 @@ export type {
   HydraExecutionVariantCandidateV3,
   HydraExecutionPrimitiveSelectionV3,
   HydraResourceAllocationPlanV3,
-  HydraExecutionPlanDiagnosticsV3
+  HydraExecutionPlanDiagnosticsV3,
+  HydraQueuePolicyV3,
+  HydraQueueTerminationPolicyV3,
+  HydraQueueOverflowControlV3,
+  HydraQueueConvergencePolicyV3,
+  HydraQueueTerminationModeV3,
+  HydraQueueOverflowPolicyV3,
+  HydraQueueConvergenceStrategyV3
 } from './compiler-v3/types.js'
 export type { HydraExecutionPlanValidationIssueV3 } from './compiler-v3/validate-plan-v3.js'
 

@@ -70,6 +70,44 @@ const createRuntimeHarness = (executionMode?: 'legacy' | 'v3' | 'auto'): HydraBr
   })
 }
 
+const createQueueControl = ({
+  modeHint = 'cpu',
+  groupId = 'queue-segment-0',
+  convergenceCheckInterval = 1,
+  maxIterations = 4,
+  overflowPolicy = 'ignore',
+  maxOverflow = 1024,
+  strategy
+}: {
+  modeHint?: 'cpu' | 'gpu_hybrid'
+  groupId?: string
+  convergenceCheckInterval?: number
+  maxIterations?: number
+  overflowPolicy?: 'ignore' | 'terminate_segment'
+  maxOverflow?: number
+  strategy?: 'hooks' | 'queue_counter' | 'hook_or_queue_counter' | 'none' | 'legacy_decay'
+} = {}) => ({
+  modeHint,
+  convergenceCheckInterval,
+  groupId,
+  policy: {
+    termination: {
+      mode: 'until_empty' as const,
+      maxIterations: Math.max(1, Math.floor(maxIterations)),
+      minIterations: 1
+    },
+    overflow: {
+      policy: overflowPolicy,
+      maxOverflow: Math.max(0, Math.floor(maxOverflow))
+    },
+    convergence: {
+      strategy: strategy ?? (modeHint === 'gpu_hybrid' ? 'hook_or_queue_counter' : 'hooks'),
+      checkInterval: Math.max(1, Math.floor(convergenceCheckInterval)),
+      maxNoProgressChecks: 2
+    }
+  }
+})
+
 describe('v3 browser foundation', () => {
   it('builds and validates benchmark reports from sample streams', () => {
     const scene = BENCHMARK_CORPUS_V3[0]
@@ -156,7 +194,10 @@ describe('v3 browser foundation', () => {
     expect(snapshot.resources.residentBytesEstimate).toBe(4096)
     expect(snapshot.scheduler.fallbackRate).toBeCloseTo(1 / 6, 5)
     expect(snapshot.scheduler.queueIterations).toBe(0)
+    expect(snapshot.scheduler.queueOverflowEvents).toBe(0)
     expect(snapshot.scheduler.queueConvergenceChecks).toBe(0)
+    expect(snapshot.scheduler.queueTerminationReason).toBe('none')
+    expect(snapshot.scheduler.queueChecksPerSegment).toEqual([])
     expect(snapshot.scheduler.routingConfiguredMode).toBe('legacy')
     expect(snapshot.scheduler.routingActiveMode).toBe('legacy')
     expect(snapshot.scheduler.routingCompileFailures).toBe(0)
@@ -188,8 +229,11 @@ describe('v3 browser foundation', () => {
           scheduledBarriers: number
           queueIterations: number
           queueOverflowCount: number
+          queueOverflowEvents: number
           queueIndirectDispatches: number
           queueConvergenceChecks: number
+          queueTerminationReasons: string[]
+          queueChecksPerSegment: number[]
           allocatedResourceCount: number
         }
         getResidentByteEstimate: () => number
@@ -204,8 +248,11 @@ describe('v3 browser foundation', () => {
           scheduledBarriers: 0,
           queueIterations: 0,
           queueOverflowCount: 0,
+          queueOverflowEvents: 0,
           queueIndirectDispatches: 0,
           queueConvergenceChecks: 0,
+          queueTerminationReasons: [],
+          queueChecksPerSegment: [],
           allocatedResourceCount: 0
         }
       },
@@ -710,9 +757,193 @@ describe('v3 browser foundation', () => {
 
     expect(result.queueIterations).toBe(2)
     expect(result.queueOverflowCount).toBe(52)
+    expect(result.queueOverflowEvents).toBe(1)
     expect(result.queueIndirectDispatches).toBe(0)
+    expect(result.queueTerminationReasons).toEqual(['inactive'])
+    expect(result.queueChecksPerSegment).toEqual([0])
     expect(result.submittedPasses).toBe(2)
     expect(rendered).toHaveLength(2)
+  })
+
+  it('applies queue overflow termination policy deterministically', () => {
+    const rendered: unknown[] = []
+    const output = {
+      render: (passes: unknown[]) => rendered.push(...passes)
+    }
+    const queuePass = {
+      signature: 'queue-overflow-pass',
+      wgsl: '@compute @workgroup_size(64, 1, 1) fn csMain() {}',
+      uniforms: [],
+      textures: [],
+      dispatch: {
+        mode: 'direct' as const,
+        domain: 'linear1d' as const,
+        workgroupSize: [64, 1, 1] as [number, number, number],
+        itemCount: 128
+      }
+    }
+    const plan: HydraExecutionPlanV3 = {
+      id: 'queue-overflow-policy-plan',
+      sourceGraph: {
+        id: 'graph',
+        source: 'hydra-dsl',
+        compatibilityMode: 'dsl-v2',
+        nodes: [],
+        resources: [],
+        edges: []
+      },
+      steps: [{
+        id: 'step0',
+        nodeId: 'k0',
+        signature: 'queue-overflow-pass',
+        dispatchDomain: 'queue1d',
+        variant: 'generic',
+        variantCandidates: [{ variant: 'generic', signature: 'queue-overflow-pass', legal: true }],
+        fallbackDepth: 0,
+        maxIterations: 4,
+        queueControl: createQueueControl({
+          modeHint: 'cpu',
+          convergenceCheckInterval: 1,
+          groupId: 'queue-overflow',
+          maxIterations: 4,
+          overflowPolicy: 'terminate_segment',
+          maxOverflow: 10,
+          strategy: 'hooks'
+        }),
+        compiledPass: queuePass,
+        barriersBefore: []
+      }],
+      barriers: [],
+      resources: [],
+      diagnostics: {
+        score: 0.3,
+        scoreBreakdown: { dispatchCost: 1, memoryCost: 0, fallbackRiskCost: 0 },
+        selectedVariantPolicy: 'compat',
+        peakTransientBytes: 0,
+        totalPlannedBytes: 0,
+        fallbackRiskRate: 0,
+        selectedVariantCounts: { generic: 1, tiled: 0, subgroup: 0 },
+        primitiveSelectionCounts: {},
+        queueStepCount: 1,
+        queueSegmentCount: 1,
+        barrierCount: 0,
+        nodeOrder: ['k0']
+      },
+      cacheKey: 'q-overflow'
+    }
+
+    const executor = new HydraExecutorV3()
+    const result = executor.executePlan(output as never, plan, {
+      time: 0,
+      bpm: 120,
+      resolution: [128, 1],
+      deltaMs: 16
+    }, {
+      queueHooks: {
+        getQueueState: (_step, iteration) => (iteration === 0
+          ? { activeCount: 96, capacity: 32 }
+          : { activeCount: 0, capacity: 32 })
+      }
+    })
+
+    expect(result.queueIterations).toBe(1)
+    expect(result.queueOverflowCount).toBeGreaterThan(10)
+    expect(result.queueOverflowEvents).toBe(1)
+    expect(result.queueTerminationReasons).toEqual(['overflow_limit'])
+    expect(result.submittedPasses).toBe(1)
+    expect(rendered).toHaveLength(1)
+  })
+
+  it('distinguishes hook-fed queue iteration from policy-only queue convergence checks', () => {
+    const output = { render: () => {} }
+    const plan: HydraExecutionPlanV3 = {
+      id: 'queue-policy-vs-hooks-plan',
+      sourceGraph: {
+        id: 'graph',
+        source: 'hydra-dsl',
+        compatibilityMode: 'dsl-v2',
+        nodes: [],
+        resources: [],
+        edges: []
+      },
+      steps: [{
+        id: 'step0',
+        nodeId: 'k0',
+        signature: 'queue-policy-vs-hooks',
+        dispatchDomain: 'queue1d',
+        variant: 'generic',
+        variantCandidates: [{ variant: 'generic', signature: 'queue-policy-vs-hooks', legal: true }],
+        fallbackDepth: 0,
+        maxIterations: 3,
+        queueControl: createQueueControl({
+          modeHint: 'gpu_hybrid',
+          convergenceCheckInterval: 1,
+          groupId: 'queue-policy-vs-hooks',
+          maxIterations: 3,
+          strategy: 'hook_or_queue_counter'
+        }),
+        compiledPass: {
+          signature: 'queue-policy-vs-hooks',
+          wgsl: '@compute @workgroup_size(64, 1, 1) fn csMain() {}',
+          uniforms: [],
+          textures: [],
+          dispatch: {
+            mode: 'direct',
+            domain: 'linear1d',
+            workgroupSize: [64, 1, 1],
+            itemCount: 64
+          }
+        },
+        barriersBefore: []
+      }],
+      barriers: [],
+      resources: [],
+      diagnostics: {
+        score: 0.2,
+        scoreBreakdown: { dispatchCost: 1, memoryCost: 0, fallbackRiskCost: 0 },
+        selectedVariantPolicy: 'compat',
+        peakTransientBytes: 0,
+        totalPlannedBytes: 0,
+        fallbackRiskRate: 0,
+        selectedVariantCounts: { generic: 1, tiled: 0, subgroup: 0 },
+        primitiveSelectionCounts: {},
+        queueStepCount: 1,
+        queueSegmentCount: 1,
+        barrierCount: 0,
+        nodeOrder: ['k0']
+      },
+      cacheKey: 'q-hooks-vs-policy'
+    }
+
+    const executor = new HydraExecutorV3()
+    const frame: HydraFrameState = {
+      time: 0,
+      bpm: 120,
+      resolution: [64, 1],
+      deltaMs: 16
+    }
+    const hookFed = executor.executePlan(output as never, plan, frame, {
+      queueHooks: {
+        getQueueState: (_step, iteration) => {
+          if (iteration === 0) return { activeCount: 64, capacity: 64 }
+          if (iteration === 1) return { activeCount: 32, capacity: 64 }
+          return { activeCount: 0, capacity: 64 }
+        }
+      }
+    })
+    const policyOnly = executor.executePlan(output as never, plan, frame, {
+      queueHooks: {
+        readQueueCount: ((_step, iteration) => (iteration === 1 ? 32 : 0))
+      },
+      queueMode: 'gpu_hybrid'
+    })
+
+    expect(hookFed.queueIterations).toBe(2)
+    expect(hookFed.queueConvergenceChecks).toBe(0)
+    expect(hookFed.queueTerminationReasons).toEqual(['inactive'])
+    expect(policyOnly.queueIterations).toBe(2)
+    expect(policyOnly.queueConvergenceChecks).toBeGreaterThanOrEqual(1)
+    expect(policyOnly.queueChecksPerSegment[0]).toBe(policyOnly.queueConvergenceChecks)
   })
 
   it('executes grouped queue segments in iteration-major order', () => {
@@ -742,7 +973,12 @@ describe('v3 browser foundation', () => {
           variantCandidates: [{ variant: 'generic', signature: 'queue-pass-a', legal: true }],
           fallbackDepth: 0,
           maxIterations: 3,
-          queueControl: { modeHint: 'cpu', convergenceCheckInterval: 1, groupId: 'queue-segment-0' },
+          queueControl: createQueueControl({
+            modeHint: 'cpu',
+            convergenceCheckInterval: 1,
+            groupId: 'queue-segment-0',
+            maxIterations: 3
+          }),
           compiledPass: {
             signature: 'queue-pass-a',
             wgsl: '@compute @workgroup_size(64, 1, 1) fn csMain() {}',
@@ -766,7 +1002,12 @@ describe('v3 browser foundation', () => {
           variantCandidates: [{ variant: 'generic', signature: 'queue-pass-b', legal: true }],
           fallbackDepth: 0,
           maxIterations: 3,
-          queueControl: { modeHint: 'cpu', convergenceCheckInterval: 1, groupId: 'queue-segment-0' },
+          queueControl: createQueueControl({
+            modeHint: 'cpu',
+            convergenceCheckInterval: 1,
+            groupId: 'queue-segment-0',
+            maxIterations: 3
+          }),
           compiledPass: {
             signature: 'queue-pass-b',
             wgsl: '@compute @workgroup_size(64, 1, 1) fn csMain() {}',
@@ -814,6 +1055,8 @@ describe('v3 browser foundation', () => {
     })
 
     expect(result.queueIterations).toBe(2)
+    expect(result.queueTerminationReasons).toEqual(['inactive'])
+    expect(result.queueChecksPerSegment).toEqual([0])
     expect(result.submittedPasses).toBe(4)
     expect(rendered.map((pass) => pass.signature)).toEqual([
       'queue-pass-a',
@@ -937,6 +1180,8 @@ describe('v3 browser foundation', () => {
     expect(result.queueIterations).toBe(1)
     expect(result.queueIndirectDispatches).toBe(1)
     expect(result.queueConvergenceChecks).toBe(0)
+    expect(result.queueTerminationReasons).toEqual(['inactive'])
+    expect(result.queueChecksPerSegment).toEqual([0])
     expect(result.allocatedResourceCount).toBe(1)
     expect(rendered).toHaveLength(1)
     expect(createdBuffers.size).toBe(1)
@@ -979,7 +1224,12 @@ describe('v3 browser foundation', () => {
         variantCandidates: [{ variant: 'generic', signature: 'queue', legal: true }],
         fallbackDepth: 0,
         maxIterations: 2,
-        queueControl: { modeHint: 'gpu_hybrid', convergenceCheckInterval: 1, groupId: 'q0' },
+        queueControl: createQueueControl({
+          modeHint: 'gpu_hybrid',
+          convergenceCheckInterval: 1,
+          groupId: 'q0',
+          maxIterations: 2
+        }),
         compiledPass: {
           signature: 'queue-pass',
           wgsl: '@compute @workgroup_size(64, 1, 1) fn csMain() {}',
@@ -1025,6 +1275,8 @@ describe('v3 browser foundation', () => {
     expect(result.queueIterations).toBe(1)
     expect(result.queueIndirectDispatches).toBe(1)
     expect(result.queueConvergenceChecks).toBeGreaterThanOrEqual(1)
+    expect(result.queueTerminationReasons).toEqual(['inactive'])
+    expect(result.queueChecksPerSegment).toEqual([result.queueConvergenceChecks])
     expect(rendered).toHaveLength(1)
   })
 })

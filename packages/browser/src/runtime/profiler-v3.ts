@@ -1,6 +1,7 @@
 import type { HydraResourceResidencySnapshotV3 } from './resource-manager-v3.js'
 import type { WebGPUOutputNode } from './output-node.js'
 import type { WebGPUCapabilities } from '../webgpu/renderer.js'
+import type { HydraQueueTerminationReasonV3 } from './queue-v3.js'
 
 export interface HydraProfilerSnapshotV3 {
   frameWindow: {
@@ -28,8 +29,11 @@ export interface HydraProfilerSnapshotV3 {
     fallbackRate: number
     queueIterations: number
     queueOverflowCount: number
+    queueOverflowEvents: number
     queueIndirectDispatches: number
     queueConvergenceChecks: number
+    queueTerminationReason: HydraQueueTerminationReasonV3 | 'none' | 'mixed'
+    queueChecksPerSegment: number[]
     routingConfiguredMode: 'legacy' | 'v3' | 'auto'
     routingActiveMode: 'legacy' | 'v3'
     routingCompileFailures: number
@@ -49,6 +53,17 @@ const percentile = (values: number[], ratio: number): number => {
   return sorted[index] ?? 0
 }
 
+const summarizeQueueTermination = (
+  reasons: HydraQueueTerminationReasonV3[] | null | undefined
+): HydraProfilerSnapshotV3['scheduler']['queueTerminationReason'] => {
+  if (!Array.isArray(reasons) || reasons.length <= 0) return 'none'
+  const normalized = reasons.filter((value): value is HydraQueueTerminationReasonV3 => typeof value === 'string')
+  if (normalized.length <= 0) return 'none'
+  const unique = Array.from(new Set(normalized))
+  if (unique.length === 1) return unique[0] as HydraQueueTerminationReasonV3
+  return 'mixed'
+}
+
 export const buildProfilerSnapshotV3 = ({
   frameTimesMs,
   outputs,
@@ -66,8 +81,11 @@ export const buildProfilerSnapshotV3 = ({
   queueMetrics?: {
     iterations: number
     overflowCount: number
+    overflowEvents: number
     indirectDispatches: number
     convergenceChecks: number
+    terminationReasons: HydraQueueTerminationReasonV3[]
+    checksPerSegment: number[]
   } | null
   routingMetrics?: {
     configuredMode: 'legacy' | 'v3' | 'auto'
@@ -83,6 +101,9 @@ export const buildProfilerSnapshotV3 = ({
   const passes: HydraProfilerSnapshotV3['passes'] = {}
   let totalDispatchCount = 0
   let totalFallbackCount = 0
+  const queueChecksPerSegment = Array.isArray(queueMetrics?.checksPerSegment)
+    ? queueMetrics.checksPerSegment
+    : []
   outputs.forEach((output, index) => {
     const stats = output.getPassStats()
     Object.entries(stats).forEach(([signature, value]) => {
@@ -122,8 +143,11 @@ export const buildProfilerSnapshotV3 = ({
       fallbackRate: totalDispatchCount > 0 ? totalFallbackCount / totalDispatchCount : 0,
       queueIterations: Math.max(0, Math.floor(queueMetrics?.iterations ?? 0)),
       queueOverflowCount: Math.max(0, Math.floor(queueMetrics?.overflowCount ?? 0)),
+      queueOverflowEvents: Math.max(0, Math.floor(queueMetrics?.overflowEvents ?? 0)),
       queueIndirectDispatches: Math.max(0, Math.floor(queueMetrics?.indirectDispatches ?? 0)),
       queueConvergenceChecks: Math.max(0, Math.floor(queueMetrics?.convergenceChecks ?? 0)),
+      queueTerminationReason: summarizeQueueTermination(queueMetrics?.terminationReasons ?? null),
+      queueChecksPerSegment: queueChecksPerSegment.map((value) => Math.max(0, Math.floor(Number(value) || 0))),
       routingConfiguredMode: routingMetrics?.configuredMode ?? 'legacy',
       routingActiveMode: routingMetrics?.activeMode ?? 'legacy',
       routingCompileFailures: Math.max(0, Math.floor(routingMetrics?.compileFailures ?? 0)),

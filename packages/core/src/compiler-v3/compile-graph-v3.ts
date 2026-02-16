@@ -9,7 +9,7 @@ import {
   scoreExecutionPlanV3,
   type HydraPlannerCapabilityProfileV3
 } from './passes.js'
-import type { HydraExecutionPlanV3 } from './types.js'
+import type { HydraExecutionPlanV3, HydraQueuePolicyV3 } from './types.js'
 import { applyPrimitiveSubstitutionsV3 } from './primitive-substitution.js'
 import { throwOnExecutionPlanV3Errors, validateExecutionPlanV3 } from './validate-plan-v3.js'
 
@@ -45,6 +45,23 @@ const serializePlanShape = (input: {
     policy: input.policy
   }
   return JSON.stringify(data)
+}
+
+const DEFAULT_QUEUE_POLICY_V3: HydraQueuePolicyV3 = {
+  termination: {
+    mode: 'until_empty',
+    maxIterations: 64,
+    minIterations: 1
+  },
+  overflow: {
+    policy: 'ignore',
+    maxOverflow: 2_147_483_647
+  },
+  convergence: {
+    strategy: 'hook_or_queue_counter',
+    checkInterval: 4,
+    maxNoProgressChecks: 2
+  }
 }
 
 export const compileGraphV3 = (
@@ -112,12 +129,14 @@ export const compileGraphV3 = (
     policy: selectedVariantPolicy
   })
   const cacheKey = `v3|${hashString(serializedShape)}`
+  const queuePolicyDefault = steps.find((step) => step.dispatchDomain === 'queue1d')?.queueControl?.policy ?? DEFAULT_QUEUE_POLICY_V3
 
   const plan: HydraExecutionPlanV3 = {
     version: 'v3.0',
     executionPolicy: {
       queueModeDefault: 'gpu_hybrid',
-      deterministic: true
+      deterministic: true,
+      queuePolicyDefault
     },
     id: `plan-${hashString(`${graph.id}:${cacheKey}`)}`,
     sourceGraph: graph,

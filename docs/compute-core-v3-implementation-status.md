@@ -9,7 +9,7 @@ Last updated: 2026-02-16
 | 1 | Completed | Unified runtime routing (`legacy`/`v3`/`auto`) with deterministic fallback diagnostics. |
 | 2 | Completed | Slot-backed resource resolver injection and external-preallocation controls are active. |
 | 3 | Completed | Explicit index-first kernel semantics and reduction IR intent are active. |
-| 4 | Not started | Queue policy hardening pending. |
+| 4 | Completed | Queue execution now uses explicit policy metadata with deterministic termination reasons and richer diagnostics. |
 | 5 | Not started | Measured autotune loop pending. |
 | 6 | Not started | Default flip + CI hard gates pending. |
 
@@ -132,6 +132,77 @@ All required Phase 1 gates passed:
 ### Validation Results
 
 All required Phase 2 gates passed:
+
+1. `pnpm test:unit -- packages/core/test/v3-core.test.ts packages/core/test/v3-compatibility-matrix.test.ts packages/core/test/registry.test.ts` [PASS]
+2. `pnpm test:unit -- packages/browser/test/v3-foundation.test.ts packages/browser/test/output-node.test.ts packages/browser/test/renderer-adapter.test.ts` [PASS]
+3. `pnpm test:browser -- packages/browser/test/playwright/runtime-smoke.spec.ts` [PASS]
+4. `pnpm --filter hydra-synth run typecheck` [PASS]
+5. `node scripts/bench-v3.mjs .tmp/bench/phase-samples.json` [PASS]
+
+### Benchmark Artifact
+
+- Reused deterministic sample corpus:
+  - `.tmp/bench/phase-samples.json`
+
+---
+
+## Phase 4 Report
+
+### Implemented Plan Items
+
+- `P4.1` `packages/browser/src/runtime/queue-v3.ts`
+  - Added explicit queue policy helpers:
+    - `createDefaultQueuePolicyV3`
+    - `normalizeQueuePolicyV3`
+    - `evaluateQueueTerminationReasonV3`
+  - Added explicit termination reason taxonomy:
+    - `inactive`
+    - `max_iterations`
+    - `fixed_iterations`
+    - `overflow_limit`
+    - `convergence_stalled`
+    - `compat_cpu_single_iter`
+- `P4.2` `packages/browser/src/runtime/executor-v3.ts`
+  - Replaced heuristic queue convergence fallback with policy-driven behavior.
+  - Added deterministic per-segment queue diagnostics:
+    - `queueOverflowEvents`
+    - `queueTerminationReasons`
+    - `queueChecksPerSegment`
+  - Added queue policy override plumbing in `HydraExecutePlanV3Options`.
+- `P4.3` `packages/core/src/compiler-v3/types.ts`, `packages/core/src/compiler-v3/passes.ts`, `packages/core/src/compiler-v3/compile-graph-v3.ts`, `packages/core/src/compiler-v3/validate-plan-v3.ts`
+  - Added structured queue policy metadata on queue steps:
+    - `termination`
+    - `overflow`
+    - `convergence`
+  - Planner now emits deterministic queue policy defaults.
+  - Execution plan policy defaults now include queue policy metadata.
+  - Validation now enforces:
+    - missing queue policy metadata
+    - invalid termination ranges
+    - invalid fixed-iteration policy
+    - invalid overflow policy bounds
+    - invalid convergence interval/no-progress settings
+    - queue group policy/mode mismatch
+- `P4.4` `packages/browser/src/runtime/profiler-v3.ts`, `packages/browser/src/runtime/runtime.ts`
+  - Added richer scheduler diagnostics in profiler snapshots:
+    - `queueOverflowEvents`
+    - `queueTerminationReason`
+    - `queueChecksPerSegment`
+
+### Tests Added/Updated
+
+- `packages/browser/test/v3-foundation.test.ts`
+  - Updated queue step fixtures to include explicit queue policies.
+  - Added deterministic overflow policy termination test.
+  - Added hook-fed queue vs policy-only queue convergence-path test.
+  - Added profiler assertions for richer queue diagnostics.
+- `packages/core/test/v3-core.test.ts`
+  - Added queue policy metadata assertions on compiled queue steps.
+  - Added negative validation coverage for malformed queue policies.
+
+### Validation Results
+
+All required Phase 4 gates passed:
 
 1. `pnpm test:unit -- packages/core/test/v3-core.test.ts packages/core/test/v3-compatibility-matrix.test.ts packages/core/test/registry.test.ts` [PASS]
 2. `pnpm test:unit -- packages/browser/test/v3-foundation.test.ts packages/browser/test/output-node.test.ts packages/browser/test/renderer-adapter.test.ts` [PASS]

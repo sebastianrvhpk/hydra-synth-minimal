@@ -381,7 +381,8 @@ export class HydraBrowserRuntime {
         plan,
         this.getCurrentFrameState(),
         {
-          queueMode: plan.executionPolicy?.queueModeDefault
+          queueMode: plan.executionPolicy?.queueModeDefault,
+          queuePolicy: plan.executionPolicy?.queuePolicyDefault
         }
       )
       this.routingDiagnostics.activeMode = 'v3'
@@ -416,7 +417,8 @@ export class HydraBrowserRuntime {
       queueMode: options.queueMode ?? plan.executionPolicy?.queueModeDefault,
       queueConvergenceCheckInterval: options.queueConvergenceCheckInterval,
       queueHooks: options.queueHooks,
-      forceQueueIndirect: options.forceQueueIndirect
+      forceQueueIndirect: options.forceQueueIndirect,
+      queuePolicy: options.queuePolicy ?? plan.executionPolicy?.queuePolicyDefault
     })
     this.routingDiagnostics.activeMode = 'v3'
     return plan
@@ -440,8 +442,11 @@ export class HydraBrowserRuntime {
         ? {
             iterations: this.lastExecuteResultV3.queueIterations,
             overflowCount: this.lastExecuteResultV3.queueOverflowCount,
+            overflowEvents: this.lastExecuteResultV3.queueOverflowEvents,
             indirectDispatches: this.lastExecuteResultV3.queueIndirectDispatches,
-            convergenceChecks: this.lastExecuteResultV3.queueConvergenceChecks
+            convergenceChecks: this.lastExecuteResultV3.queueConvergenceChecks,
+            terminationReasons: this.lastExecuteResultV3.queueTerminationReasons,
+            checksPerSegment: this.lastExecuteResultV3.queueChecksPerSegment
           }
         : null,
       routingMetrics: {

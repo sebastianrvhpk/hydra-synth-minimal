@@ -9,6 +9,13 @@ import {
   type HydraEngineOptions,
   type HydraErrorPolicy,
   type HydraFrameState,
+  type HydraQueuePolicyV3,
+  type HydraQueueTerminationPolicyV3,
+  type HydraQueueOverflowControlV3,
+  type HydraQueueConvergencePolicyV3,
+  type HydraQueueTerminationModeV3,
+  type HydraQueueOverflowPolicyV3,
+  type HydraQueueConvergenceStrategyV3,
   type HydraPassIRNode,
   type HydraPassSchedule,
   type HydraPassUpdateRate,
@@ -55,12 +62,16 @@ import { HydraExecutorV3, type ExecutePlanV3Result, type HydraExecutePlanV3Optio
 import { WebGPUOutputNode } from './runtime/output-node.js'
 import { buildProfilerSnapshotV3, type HydraProfilerSnapshotV3 } from './runtime/profiler-v3.js'
 import {
+  createDefaultQueuePolicyV3,
   decideQueueDispatchV3,
+  evaluateQueueTerminationReasonV3,
+  normalizeQueuePolicyV3,
   shouldTerminateQueueLoopV3,
   toQueueIndirectArgsV3,
   type HydraQueueDispatchDecisionV3,
   type HydraQueueDispatchStateV3,
-  type HydraQueueIndirectArgsV3
+  type HydraQueueIndirectArgsV3,
+  type HydraQueueTerminationReasonV3
 } from './runtime/queue-v3.js'
 import { HydraResourceManagerV3, type HydraResourceResidencySnapshotV3 } from './runtime/resource-manager-v3.js'
 import { HydraSourceNode, type PatchBayAdapter } from './runtime/source-node.js'
@@ -141,6 +152,14 @@ export type {
   HydraQueueDispatchStateV3,
   HydraQueueDispatchDecisionV3,
   HydraQueueIndirectArgsV3,
+  HydraQueueTerminationReasonV3,
+  HydraQueuePolicyV3,
+  HydraQueueTerminationPolicyV3,
+  HydraQueueOverflowControlV3,
+  HydraQueueConvergencePolicyV3,
+  HydraQueueTerminationModeV3,
+  HydraQueueOverflowPolicyV3,
+  HydraQueueConvergenceStrategyV3,
   HydraBenchmarkAcceptanceGate,
   HydraBenchmarkReport,
   HydraBenchmarkSample,
@@ -164,7 +183,10 @@ export {
   HydraAutotunerV3,
   buildProfilerSnapshotV3,
   normalizeRuntimeExecutionMode,
+  createDefaultQueuePolicyV3,
   decideQueueDispatchV3,
+  normalizeQueuePolicyV3,
+  evaluateQueueTerminationReasonV3,
   toQueueIndirectArgsV3,
   shouldTerminateQueueLoopV3,
   BENCHMARK_CORPUS_V3,

@@ -131,6 +131,8 @@ describe('v3 compute core foundation', () => {
     expect(queueStep.queueControl?.modeHint).toBe('gpu_hybrid')
     expect(queueStep.queueControl?.groupId.length).toBeGreaterThan(0)
     expect(queueStep.maxIterations).toBeGreaterThan(0)
+    expect(queueStep.queueControl?.policy.termination.maxIterations).toBe(queueStep.maxIterations)
+    expect(queueStep.queueControl?.policy.convergence.checkInterval).toBe(queueStep.queueControl?.convergenceCheckInterval)
     expect(plan.diagnostics.queueStepCount).toBeGreaterThanOrEqual(1)
     expect(plan.diagnostics.queueSegmentCount).toBeGreaterThanOrEqual(1)
   })
@@ -348,6 +350,22 @@ describe('v3 compute core foundation', () => {
   })
 
   it('rejects non-contiguous queue segment groups in execution plans', () => {
+    const queuePolicy = {
+      termination: {
+        mode: 'until_empty' as const,
+        maxIterations: 8,
+        minIterations: 1
+      },
+      overflow: {
+        policy: 'ignore' as const,
+        maxOverflow: 1024
+      },
+      convergence: {
+        strategy: 'hook_or_queue_counter' as const,
+        checkInterval: 1,
+        maxNoProgressChecks: 2
+      }
+    }
     const pass: HydraCompiledPass = {
       signature: 'queue-pass',
       wgsl: '@compute @workgroup_size(1, 1, 1) fn csMain() {}',
@@ -457,7 +475,7 @@ describe('v3 compute core foundation', () => {
           variantCandidates: [{ variant: 'generic', signature: 'queue-a', legal: true }],
           fallbackDepth: 0,
           maxIterations: 8,
-          queueControl: { modeHint: 'gpu_hybrid', convergenceCheckInterval: 1, groupId: 'group-0' },
+          queueControl: { modeHint: 'gpu_hybrid', convergenceCheckInterval: 1, groupId: 'group-0', policy: queuePolicy },
           compiledPass: pass,
           barriersBefore: []
         },
@@ -486,7 +504,7 @@ describe('v3 compute core foundation', () => {
           variantCandidates: [{ variant: 'generic', signature: 'queue-b', legal: true }],
           fallbackDepth: 0,
           maxIterations: 8,
-          queueControl: { modeHint: 'gpu_hybrid', convergenceCheckInterval: 1, groupId: 'group-0' },
+          queueControl: { modeHint: 'gpu_hybrid', convergenceCheckInterval: 1, groupId: 'group-0', policy: queuePolicy },
           compiledPass: pass,
           barriersBefore: []
         }
@@ -512,6 +530,104 @@ describe('v3 compute core foundation', () => {
 
     const issues = validateExecutionPlanV3(plan)
     expect(issues.some((issue) => issue.code === 'QUEUE_GROUP_NON_CONTIGUOUS')).toBe(true)
+  })
+
+  it('rejects invalid queue policy metadata in execution plans', () => {
+    const pass: HydraCompiledPass = {
+      signature: 'queue-pass',
+      wgsl: '@compute @workgroup_size(1, 1, 1) fn csMain() {}',
+      uniforms: [],
+      textures: [],
+      dispatch: {
+        mode: 'direct',
+        domain: 'linear1d',
+        workgroupSize: [64, 1, 1],
+        itemCount: 64
+      }
+    }
+    const plan: HydraExecutionPlanV3 = {
+      version: 'v3.0',
+      id: 'queue-policy-invalid',
+      sourceGraph: {
+        id: 'graph',
+        source: 'hydra-dsl',
+        compatibilityMode: 'dsl-v2',
+        nodes: [{
+          id: 'k0',
+          kind: 'QueueProducer',
+          signature: 'q',
+          transforms: [],
+          uniforms: [],
+          textures: [],
+          storageBuffers: [],
+          storageTextures: [],
+          schedule: {
+            resolutionScale: 1,
+            updateRate: 'everyFrame',
+            sparse: true,
+            dispatchDomain: 'queue1d',
+            variantPolicy: 'compat',
+            maxIterations: 4
+          },
+          resources: [],
+          reads: [],
+          writes: [],
+          debug: {
+            sourceTransformNames: [],
+            loweringNotes: [],
+            compatibilityFlags: ['dsl-v2-compat']
+          }
+        }],
+        resources: [],
+        edges: []
+      },
+      steps: [{
+        id: 's0',
+        nodeId: 'k0',
+        signature: 'queue-pass',
+        dispatchDomain: 'queue1d',
+        variant: 'generic',
+        variantCandidates: [{ variant: 'generic', signature: 'queue-pass', legal: true }],
+        fallbackDepth: 0,
+        maxIterations: 4,
+        queueControl: {
+          modeHint: 'gpu_hybrid',
+          convergenceCheckInterval: 1,
+          groupId: 'g0',
+          policy: {
+            termination: { mode: 'fixed_iterations', maxIterations: 2, minIterations: 1, fixedIterations: 5 },
+            overflow: { policy: 'terminate_segment', maxOverflow: -1 },
+            convergence: { strategy: 'hook_or_queue_counter', checkInterval: 0, maxNoProgressChecks: 0 }
+          }
+        },
+        compiledPass: pass,
+        barriersBefore: []
+      }],
+      barriers: [],
+      resources: [],
+      diagnostics: {
+        score: 0,
+        scoreBreakdown: { dispatchCost: 0, memoryCost: 0, fallbackRiskCost: 0 },
+        selectedVariantPolicy: 'compat',
+        peakTransientBytes: 0,
+        totalPlannedBytes: 0,
+        fallbackRiskRate: 0,
+        selectedVariantCounts: { generic: 1, tiled: 0, subgroup: 0 },
+        primitiveSelectionCounts: {},
+        queueStepCount: 1,
+        queueSegmentCount: 1,
+        barrierCount: 0,
+        nodeOrder: ['k0']
+      },
+      cacheKey: 'qpi'
+    }
+
+    const issues = validateExecutionPlanV3(plan)
+    expect(issues.some((issue) => issue.code === 'QUEUE_POLICY_MAX_ITERATIONS_MISMATCH')).toBe(true)
+    expect(issues.some((issue) => issue.code === 'QUEUE_POLICY_FIXED_ITERATIONS_RANGE_INVALID')).toBe(true)
+    expect(issues.some((issue) => issue.code === 'QUEUE_POLICY_OVERFLOW_INVALID')).toBe(true)
+    expect(issues.some((issue) => issue.code === 'QUEUE_POLICY_CONVERGENCE_INTERVAL_INVALID')).toBe(true)
+    expect(issues.some((issue) => issue.code === 'QUEUE_POLICY_NO_PROGRESS_INVALID')).toBe(true)
   })
 
   it('dumps and validates IR graphs for diagnostics', () => {
