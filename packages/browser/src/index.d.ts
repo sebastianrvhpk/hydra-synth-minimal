@@ -232,6 +232,8 @@ export declare class HydraBrowserRuntime {
   tick (deltaMs?: number): void
   emitEvent (name: string): void
   render (output?: WebGPUOutputNode): void
+  getActiveOutput (): WebGPUOutputNode
+  isRenderAllEnabled (): boolean
   setResolution (width: number, height: number): void
   createSource (): HydraSourceNode
   hush (): void
@@ -316,6 +318,35 @@ export interface CaptureHydraFrameSequenceOptions extends Omit<CaptureFrameSeque
   ignoreEngineFpsGate?: boolean
 }
 
+export interface VideoRecorderOptions {
+  width: number
+  height: number
+  fps: number
+  bitrate?: number
+  maxEncodeQueue?: number
+}
+
+export interface CaptureVideoOptions extends VideoRecorderOptions {
+  canvas: HTMLCanvasElement
+  step: (info: CaptureFrameSequenceFrameInfo) => void | Promise<void>
+  duration: number
+  signal?: AbortSignal
+  onProgress?: (percent: number) => void
+  realtime?: boolean
+}
+
+export interface CaptureHydraVideoOptions extends Omit<CaptureVideoOptions, 'canvas' | 'step' | 'width' | 'height'> {
+  runtime: HydraBrowserRuntime
+  output?: WebGPUOutputNode
+  step?: (info: CaptureHydraFrameSequenceFrameInfo) => void | Promise<void>
+  waitForGPU?: boolean
+  resumeAfterCapture?: boolean
+  restoreResolution?: boolean
+  ignoreEngineFpsGate?: boolean
+  width?: number
+  height?: number
+}
+
 export interface BuildFfmpegCommandsOptions {
   fps: number
   ffmpegPattern: string
@@ -332,6 +363,8 @@ export declare const captureFrameSequence: (options: CaptureFrameSequenceOptions
 export declare const captureHydraFrameSequence: (
   options: CaptureHydraFrameSequenceOptions
 ) => Promise<CaptureFrameSequenceResult>
+export declare const captureVideo: (options: CaptureVideoOptions) => Promise<Blob>
+export declare const captureHydraVideo: (options: CaptureHydraVideoOptions) => Promise<Blob>
 export declare const buildFfmpegCommands: (options: BuildFfmpegCommandsOptions) => FfmpegCommandSet
 
 export interface CreateHydraBrowserRuntimeOptions extends Omit<HydraBrowserRuntimeOptions, 'host' | 'renderer'> {

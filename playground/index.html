@@ -54,11 +54,6 @@
       color: #a7bad8;
     }
 
-    #capture-video-profile-label {
-      font-size: 11px;
-      color: #a7bad8;
-    }
-
     #capture-duration-input {
       width: 68px;
       border: 1px solid rgba(141, 229, 255, 0.38);
@@ -70,20 +65,6 @@
     }
 
     #capture-duration-input:disabled {
-      opacity: 0.6;
-    }
-
-    #capture-video-profile {
-      max-width: min(220px, calc(100vw - 48px));
-      border: 1px solid rgba(141, 229, 255, 0.38);
-      background: rgba(1, 5, 12, 0.45);
-      color: #dbe8ff;
-      border-radius: 6px;
-      padding: 5px 7px;
-      font-size: 12px;
-    }
-
-    #capture-video-profile:disabled {
       opacity: 0.6;
     }
 
@@ -226,13 +207,6 @@
     <div id="capture-controls">
       <label id="capture-duration-label" for="capture-duration-input">Duration (s)</label>
       <input id="capture-duration-input" type="number" min="0.1" max="600" step="0.1" value="2" inputmode="decimal" />
-      <label id="capture-video-profile-label" for="capture-video-profile">Video</label>
-      <select id="capture-video-profile">
-        <option value="mp4">MP4 (Delivery)</option>
-        <option value="mp4_10bit">MP4 (10-bit HDR)</option>
-        <option value="prores">ProRes 4444 (HDR)</option>
-        <option value="webm">WebM (VP9)</option>
-      </select>
       <button id="capture-gif-toggle" class="capture-toggle" type="button">Capture and Save GIF (2s)</button>
       <button id="capture-video-toggle" class="capture-toggle" type="button">Capture and Save MP4 (2s)</button>
       <div id="capture-status"></div>
@@ -249,7 +223,7 @@
   </div>
 
   <script type="module">
-    import { buildFfmpegCommands, captureHydraFrameSequence, createHydraBrowserRuntime } from 'hydra-synth'
+    import { buildFfmpegCommands, captureHydraFrameSequence, captureHydraVideo, createHydraBrowserRuntime } from 'hydra-synth'
     import { createLivecodingPlugin } from 'hydra-synth-livecoding'
 
     const runtime = createHydraBrowserRuntime({
@@ -258,7 +232,54 @@
       numOutputs: 4
     })
 
-    await runtime.init()
+    const describeInitError = () => {
+      const canvas = runtime.host?.canvas ?? document.querySelector('canvas')
+      let hasCanvasWebGpuContext = false
+      let contextProbeError = null
+
+      if (canvas) {
+        try {
+          hasCanvasWebGpuContext = Boolean(canvas.getContext('webgpu'))
+        } catch (error) {
+          contextProbeError = error instanceof Error ? error.message : String(error)
+        }
+      }
+
+      return {
+        secureContext: typeof window !== 'undefined' ? window.isSecureContext : false,
+        hasNavigatorGpu: typeof navigator !== 'undefined' && Boolean(navigator.gpu),
+        hasCanvasWebGpuContext,
+        contextProbeError,
+        url: typeof location !== 'undefined' ? location.href : '',
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : ''
+      }
+    }
+
+    try {
+      await runtime.init()
+    } catch (error) {
+      const diagnostics = describeInitError()
+      const summary = [
+        'WebGPU init failed.',
+        `secureContext=${diagnostics.secureContext}`,
+        `navigator.gpu=${diagnostics.hasNavigatorGpu}`,
+        `canvas.getContext("webgpu")=${diagnostics.hasCanvasWebGpuContext}`
+      ].join(' ')
+
+      const hud = document.getElementById('hud')
+      if (hud) {
+        const message = document.createElement('div')
+        message.style.marginTop = '8px'
+        message.style.color = '#ff9494'
+        message.textContent = `${summary} Open console for diagnostics.`
+        hud.appendChild(message)
+      }
+
+      console.error('[hydra] runtime init failed', { diagnostics, error })
+      console.info('[hydra] WebGPU checks: verify hardware acceleration, chrome://gpu, and run from https:// or localhost.')
+      throw error
+    }
+
     const synth = runtime.synth
 
     const attachBinding = (name) => {
@@ -302,40 +323,16 @@
     const liveRunButton = document.getElementById('live-run')
     const liveStatus = document.getElementById('live-status')
     const captureDurationInput = document.getElementById('capture-duration-input')
-    const captureVideoProfileSelect = document.getElementById('capture-video-profile')
     const captureGifToggle = document.getElementById('capture-gif-toggle')
     const captureVideoToggle = document.getElementById('capture-video-toggle')
     const captureStatus = document.getElementById('capture-status')
     const liveEditorStorageKey = 'hydra-playground-livecode'
     const captureBaseNameStorageKey = 'hydra-playground-capture-base-name'
     const captureDurationStorageKey = 'hydra-playground-capture-duration-seconds'
-    const captureVideoProfileStorageKey = 'hydra-playground-capture-video-profile'
     const defaultCaptureDurationSeconds = 2
     const minCaptureDurationSeconds = 0.1
     const maxCaptureDurationSeconds = 600
-    const defaultVideoCaptureFormat = 'mp4'
-    const videoCaptureFormats = {
-      mp4: {
-        label: 'MP4',
-        buttonLabel: 'MP4',
-        frameExtension: 'png'
-      },
-      webm: {
-        label: 'WebM',
-        buttonLabel: 'WebM',
-        frameExtension: 'png'
-      },
-      mp4_10bit: {
-        label: 'MP4 10-bit',
-        buttonLabel: 'MP4 10-bit',
-        frameExtension: 'png'
-      },
-      prores: {
-        label: 'ProRes 4444',
-        buttonLabel: 'ProRes',
-        frameExtension: 'png'
-      }
-    }
+    const videoCaptureFormat = 'mp4'
     const defaultLiveSnippet = `osc(18, 0.05, 0)
   .rotate(() => time * 0.08)
   .out()
@@ -471,43 +468,6 @@ speed = 0.75`
       }
     }
 
-    const normalizeVideoCaptureFormat = (value) => {
-      const normalized = String(value ?? '').toLowerCase()
-      if (Object.prototype.hasOwnProperty.call(videoCaptureFormats, normalized)) {
-        return normalized
-      }
-      return defaultVideoCaptureFormat
-    }
-
-    const isVideoCaptureFormat = (value) => Object.prototype.hasOwnProperty.call(videoCaptureFormats, value)
-
-    const readVideoCaptureFormat = () => {
-      if (!captureVideoProfileSelect) return defaultVideoCaptureFormat
-      return normalizeVideoCaptureFormat(captureVideoProfileSelect.value)
-    }
-
-    const setVideoCaptureFormat = (value) => {
-      const normalized = normalizeVideoCaptureFormat(value)
-      if (captureVideoProfileSelect) {
-        captureVideoProfileSelect.value = normalized
-      }
-      try {
-        window.localStorage.setItem(captureVideoProfileStorageKey, normalized)
-      } catch {
-        // Ignore local storage failures in restricted contexts.
-      }
-      return normalized
-    }
-
-    const loadVideoCaptureFormat = () => {
-      try {
-        const saved = window.localStorage.getItem(captureVideoProfileStorageKey)
-        return normalizeVideoCaptureFormat(saved)
-      } catch {
-        return defaultVideoCaptureFormat
-      }
-    }
-
     const requestCaptureSession = async ({ extension = 'png', signal } = {}) => {
       const response = await fetch('/__capture/start', {
         method: 'POST',
@@ -563,8 +523,11 @@ speed = 0.75`
       link.style.display = 'none'
       document.body.appendChild(link)
       link.click()
-      link.remove()
-      URL.revokeObjectURL(url)
+      // Revoke asynchronously to avoid truncating downloads in some Chromium builds.
+      window.setTimeout(() => {
+        URL.revokeObjectURL(url)
+        link.remove()
+      }, 30_000)
     }
 
     let activeCaptureAbortController = null
@@ -575,21 +538,20 @@ speed = 0.75`
 
     const captureLabel = (format) => {
       if (format === 'gif') return 'GIF'
-      if (isVideoCaptureFormat(format)) return videoCaptureFormats[format].label
+      if (format === 'mp4') return 'MP4'
       return 'Capture'
     }
 
-    const captureVideoButtonLabel = (format) => {
-      if (isVideoCaptureFormat(format)) return videoCaptureFormats[format].buttonLabel
-      return videoCaptureFormats[defaultVideoCaptureFormat].buttonLabel
+    const resolveRuntimeFps = () => {
+      const runtimeFps = Number(synth.fps)
+      if (Number.isFinite(runtimeFps) && runtimeFps > 0) return runtimeFps
+      return 60
     }
 
     const updateCaptureButtonState = () => {
       const active = Boolean(activeCaptureAbortController)
       const activeFormat = activeCaptureFormat
       const durationSeconds = formatDurationSeconds(readCaptureDurationSeconds())
-      const selectedVideoFormat = readVideoCaptureFormat()
-      const selectedVideoButtonLabel = captureVideoButtonLabel(selectedVideoFormat)
 
       if (captureGifToggle) {
         const isActive = active && activeFormat === 'gif'
@@ -600,13 +562,10 @@ speed = 0.75`
       }
 
       if (captureVideoToggle) {
-        const isActive = active && isVideoCaptureFormat(activeFormat)
-        const activeLabel = isVideoCaptureFormat(activeFormat)
-          ? captureVideoButtonLabel(activeFormat)
-          : selectedVideoButtonLabel
+        const isActive = active && activeFormat === videoCaptureFormat
         captureVideoToggle.textContent = isActive
-          ? `Stop ${activeLabel} Capture`
-          : `Capture and Save ${selectedVideoButtonLabel} (${durationSeconds}s)`
+          ? 'Stop MP4 Capture'
+          : `Capture and Save MP4 (${durationSeconds}s)`
         captureVideoToggle.disabled = active && !isActive
         if (isActive) captureVideoToggle.dataset.state = 'active'
         else delete captureVideoToggle.dataset.state
@@ -614,9 +573,6 @@ speed = 0.75`
 
       if (captureDurationInput) {
         captureDurationInput.disabled = active
-      }
-      if (captureVideoProfileSelect) {
-        captureVideoProfileSelect.disabled = active
       }
     }
 
@@ -650,18 +606,18 @@ speed = 0.75`
       }
 
       const format = String(options.format ?? 'gif').toLowerCase()
-      if (format !== 'gif' && !isVideoCaptureFormat(format)) {
-        throw new Error('captureAndSaveMedia: format must be gif, mp4, or webm.')
+      if (format !== 'gif' && format !== 'mp4') {
+        throw new Error('captureAndSaveMedia: format must be gif or mp4.')
       }
       const label = captureLabel(format)
-      const fps = Number.isFinite(options.fps) && Number(options.fps) > 0 ? Number(options.fps) : 30
+      const fps = Number.isFinite(options.fps) && Number(options.fps) > 0 ? Number(options.fps) : resolveRuntimeFps()
       const fallbackDuration = readCaptureDurationSeconds()
       const duration = Number.isFinite(options.duration) && Number(options.duration) > 0
         ? normalizeCaptureDurationSeconds(Number(options.duration), fallbackDuration)
         : fallbackDuration
       const width = Number.isFinite(options.width) && Number(options.width) > 0 ? Math.floor(options.width) : undefined
       const height = Number.isFinite(options.height) && Number(options.height) > 0 ? Math.floor(options.height) : undefined
-      const defaultFrameExtension = isVideoCaptureFormat(format) ? videoCaptureFormats[format].frameExtension : 'png'
+      const defaultFrameExtension = 'png'
       const frameExtension = options.extension ?? defaultFrameExtension
       const outputBaseName = sanitizeOutputBaseName(options.outputBaseName ?? loadCaptureBaseName()) || defaultOutputBaseName()
       const abortController = new AbortController()
@@ -676,6 +632,50 @@ speed = 0.75`
       let encodeFps = fps
 
       try {
+        if (format === 'mp4') {
+          if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined') {
+            throw new Error('WebCodecs is not available in this browser context. MP4 capture requires VideoEncoder support.')
+          }
+
+          const realtime = options.realtime !== false
+          setCaptureStatus(`Capturing MP4 with WebCodecs at ${fps} fps${realtime ? ' (real-time)' : ''}...`)
+          const videoBlob = await captureHydraVideo({
+            runtime,
+            fps,
+            duration,
+            width,
+            height,
+            realtime,
+            waitForGPU: true,
+            resumeAfterCapture: true,
+            restoreResolution: true,
+            ignoreEngineFpsGate: false,
+            signal: abortController.signal,
+            onProgress: (percent) => {
+              setCaptureStatus(`Encoding MP4 (${percent.toFixed(1)}%)...`)
+            }
+          })
+
+          if (abortController.signal.aborted) {
+            throw new Error('Capture aborted.')
+          }
+
+          const fileName = `${outputBaseName}.mp4`
+          const downloadVideoBlob = videoBlob.type === 'video/mp4'
+            ? videoBlob
+            : new Blob([videoBlob], { type: 'video/mp4' })
+          downloadBlob({
+            blob: downloadVideoBlob,
+            fileName
+          })
+          saveCaptureBaseName(outputBaseName)
+          setCaptureStatus(`Saved ${fileName} to your downloads folder.`, 'ok')
+          return {
+            fileName,
+            mimeType: 'video/mp4'
+          }
+        }
+
         const session = await requestCaptureSession({ extension: frameExtension, signal: abortController.signal })
         activeCaptureSessionId = String(session.sessionId)
         shouldCleanupSession = true
@@ -767,12 +767,11 @@ speed = 0.75`
     }
 
     const captureAndSaveGif = async (options = {}) => captureAndSaveMedia({ ...options, format: 'gif' })
-    const captureAndSaveVideo = async (options = {}) => {
-      const format = normalizeVideoCaptureFormat(options.format ?? readVideoCaptureFormat())
-      return captureAndSaveMedia({ ...options, format })
-    }
+    const captureAndSaveVideo = async (options = {}) => captureAndSaveMedia({ ...options, format: 'mp4' })
     const captureAndSaveMp4 = async (options = {}) => captureAndSaveMedia({ ...options, format: 'mp4' })
-    const captureAndSaveWebm = async (options = {}) => captureAndSaveMedia({ ...options, format: 'webm' })
+    const captureAndSaveWebm = async () => {
+      throw new Error('captureAndSaveWebm is no longer available in the playground. Use captureAndSaveMp4() for WebCodecs capture.')
+    }
 
     const toggleMediaCapture = (format) => {
       if (activeCaptureAbortController) {
@@ -791,7 +790,7 @@ speed = 0.75`
       toggleMediaCapture('gif')
     }
     const toggleVideoCapture = () => {
-      toggleMediaCapture(readVideoCaptureFormat())
+      toggleMediaCapture('mp4')
     }
 
     window.captureAndSaveMedia = captureAndSaveMedia
@@ -802,7 +801,6 @@ speed = 0.75`
     window.toggleGifCapture = toggleGifCapture
     window.toggleVideoCapture = toggleVideoCapture
     window.toggleMp4Capture = toggleVideoCapture
-    setVideoCaptureFormat(loadVideoCaptureFormat())
     setCaptureDurationSeconds(loadCaptureDurationSeconds())
     updateCaptureButtonState()
 
@@ -861,14 +859,6 @@ speed = 0.75`
       captureDurationInput.addEventListener('blur', syncCaptureDuration)
     }
 
-    if (captureVideoProfileSelect) {
-      const syncVideoCaptureFormat = () => {
-        setVideoCaptureFormat(readVideoCaptureFormat())
-        updateCaptureButtonState()
-      }
-      captureVideoProfileSelect.addEventListener('change', syncVideoCaptureFormat)
-    }
-
     if (enableLivecoding) {
       livecodingPlugin = createLivecodingPlugin({
         exposeHelpers: {
@@ -876,7 +866,6 @@ speed = 0.75`
           captureAndSaveGif,
           captureAndSaveVideo,
           captureAndSaveMp4,
-          captureAndSaveWebm,
           toggleGifCapture,
           toggleVideoCapture,
           buildFfmpegCommands
@@ -917,8 +906,7 @@ speed = 0.75`
     console.info('[hydra] ready')
     console.info('[hydra] try: osc(20, 0.1, 0).rotate(0.2).out()')
     console.info('[hydra] capture gif: set Duration (s), then click GIF button or run await captureAndSaveGif({ duration: 3 })')
-    console.info('[hydra] capture video: choose Video profile, then click Video button or run await captureAndSaveVideo({ duration: 3 })')
-    console.info('[hydra] capture webm: await captureAndSaveWebm({ duration: 3 })')
+    console.info('[hydra] capture mp4 (WebCodecs): click Video button or run await captureAndSaveVideo({ duration: 3 })')
     console.info('[hydra] capture frames: await captureFrames({ duration: 2, fps: 60, extension: "png", pickDirectory: true })')
     console.info('[hydra] ffmpeg: buildFfmpegCommands({ fps: 60, ffmpegPattern: "frame-%04d.png" })')
     console.info('[hydra] dispose via: hydra.dispose()')

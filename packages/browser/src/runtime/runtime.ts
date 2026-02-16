@@ -285,6 +285,14 @@ export class HydraBrowserRuntime {
     this.renderAll = true
   }
 
+  getActiveOutput(): WebGPUOutputNode {
+    return this.activeOutput
+  }
+
+  isRenderAllEnabled(): boolean {
+    return this.renderAll
+  }
+
   setResolution(width: number, height: number): void {
     this.host.setResolution(width, height)
     this.engine.setResolution(width, height)

@@ -162,6 +162,11 @@ const nextAnimationFrame = (): Promise<number> =>
     requestAnimationFrame(resolve)
   })
 
+const wait = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
+
 const toBlob = (canvas: HTMLCanvasElement, mimeType: string, quality?: number): Promise<Blob> =>
   new Promise((resolve, reject) => {
     canvas.toBlob(
@@ -407,6 +412,16 @@ export const captureHydraFrameSequence = async (options: CaptureHydraFrameSequen
 
   const resolveActiveOutput = (): WebGPUOutputNode | null => {
     if (output) return output
+
+    const runtimeAny = runtime as HydraBrowserRuntime & {
+      getActiveOutput?: () => WebGPUOutputNode
+      isRenderAllEnabled?: () => boolean
+    }
+
+    if (typeof runtimeAny.getActiveOutput === 'function') {
+      return runtimeAny.getActiveOutput()
+    }
+
     return runtime.outputs?.[0] ?? null
   }
 
@@ -660,19 +675,51 @@ export interface CaptureVideoOptions extends VideoRecorderOptions {
   duration: number
   signal?: AbortSignal
   onProgress?: (percent: number) => void
+  realtime?: boolean
 }
 
 export const captureVideo = async (options: CaptureVideoOptions): Promise<Blob> => {
-  const { canvas, step, duration, fps, width, height, bitrate, signal, onProgress } = options
+  const {
+    canvas,
+    step,
+    duration,
+    fps,
+    width,
+    height,
+    bitrate,
+    signal,
+    onProgress,
+    realtime = false,
+    maxEncodeQueue
+  } = options
   const totalFrames = Math.ceil(duration * fps)
   const deltaTime = 1 / fps
+  const frameIntervalMs = deltaTime * 1000
 
-  const recorder = new VideoRecorder({ width, height, fps, ...(bitrate != null ? { bitrate } : {}) })
+  const recorder = new VideoRecorder({
+    width,
+    height,
+    fps,
+    ...(bitrate != null ? { bitrate } : {}),
+    ...(maxEncodeQueue != null ? { maxEncodeQueue } : {})
+  })
   await recorder.start()
+  const captureStartMs = realtime && typeof performance !== 'undefined' ? performance.now() : 0
 
   try {
     for (let frame = 0; frame < totalFrames; frame += 1) {
       if (signal?.aborted) throw new Error('Capture aborted.')
+
+      if (realtime && frame > 0) {
+        const targetElapsedMs = frame * frameIntervalMs
+        while (true) {
+          if (signal?.aborted) throw new Error('Capture aborted.')
+          const elapsedMs = performance.now() - captureStartMs
+          const remainingMs = targetElapsedMs - elapsedMs
+          if (remainingMs <= 0.5) break
+          await wait(Math.min(remainingMs, 8))
+        }
+      }
 
       const time = frame * deltaTime
       const playhead = totalFrames <= 1 ? 0 : frame / (totalFrames - 1)
@@ -700,7 +747,11 @@ export const captureVideo = async (options: CaptureVideoOptions): Promise<Blob> 
       if (onProgress) onProgress(((frame + 1) / totalFrames) * 100)
     }
   } catch (err) {
-    await recorder.stop() // cleanup
+    try {
+      await recorder.stop()
+    } catch {
+      // Cleanup errors are ignored so the original failure is preserved.
+    }
     throw err
   }
 
@@ -735,10 +786,111 @@ export const captureHydraVideo = async (options: CaptureHydraVideoOptions): Prom
     ignoreEngineFpsGate = true,
     width,
     height,
-    ...videoOptions
+    duration,
+    fps,
+    bitrate,
+    maxEncodeQueue,
+    signal,
+    onProgress,
+    realtime = false
   } = options
 
   await runtime.init()
+  const hasGpuDevice = Boolean(runtime.renderer?.device)
+
+  // Prefer GPU readback for WebGPU runtime capture because direct canvas snapshots
+  // can be stale/blank depending on browser + GPU compositor behavior.
+  if (hasGpuDevice) {
+    const recorder = new VideoRecorder({
+      width: Number.isFinite(width) ? Math.max(1, Math.floor(width!)) : runtime.host.canvas.width,
+      height: Number.isFinite(height) ? Math.max(1, Math.floor(height!)) : runtime.host.canvas.height,
+      fps,
+      ...(bitrate != null ? { bitrate } : {}),
+      ...(maxEncodeQueue != null ? { maxEncodeQueue } : {})
+    })
+    await recorder.start()
+
+    let finalized = false
+    let stagingCanvas: HTMLCanvasElement | null = null
+    let stagingContext: CanvasRenderingContext2D | null = null
+    let stagingImageData: ImageData | null = null
+    const frameIntervalMs = (1 / fps) * 1000
+    const captureStartMs = realtime && typeof performance !== 'undefined' ? performance.now() : 0
+
+    try {
+      await captureHydraFrameSequence({
+        runtime,
+        output,
+        width,
+        height,
+        fps,
+        duration,
+        signal,
+        waitForGPU,
+        resumeAfterCapture,
+        restoreResolution,
+        ignoreEngineFpsGate,
+        gpuReadback: true,
+        readbackFormat: 'rgba8unorm',
+        step: async (frameInfo) => {
+          if (realtime && frameInfo.frame > 0) {
+            const targetElapsedMs = frameInfo.frame * frameIntervalMs
+            while (true) {
+              if (signal?.aborted) throw new Error('Capture aborted.')
+              const elapsedMs = performance.now() - captureStartMs
+              const remainingMs = targetElapsedMs - elapsedMs
+              if (remainingMs <= 0.5) break
+              await wait(Math.min(remainingMs, 8))
+            }
+          }
+
+          if (step) {
+            await step(frameInfo)
+          } else {
+            runtime.tick(frameInfo.deltaTime * 1000)
+          }
+        },
+        onFrameBuffer: async ({ frame, totalFrames, data, width: frameWidth, height: frameHeight, bytesPerRow }) => {
+          if (signal?.aborted) throw new Error('Capture aborted.')
+
+          if (!stagingCanvas) {
+            stagingCanvas = document.createElement('canvas')
+            stagingCanvas.width = frameWidth
+            stagingCanvas.height = frameHeight
+            stagingContext = stagingCanvas.getContext('2d', { willReadFrequently: true })
+            if (!stagingContext) {
+              throw new Error('captureHydraVideo: unable to acquire 2D context for staging canvas.')
+            }
+            stagingImageData = stagingContext.createImageData(frameWidth, frameHeight)
+          }
+
+          const pixels = stripRowPadding(data, frameWidth, frameHeight, bytesPerRow)
+          stagingImageData!.data.set(pixels)
+          stagingContext!.putImageData(stagingImageData!, 0, 0)
+
+          await recorder.appendFrame(stagingCanvas)
+          if (onProgress) {
+            onProgress(((frame + 1) / totalFrames) * 100)
+          }
+        }
+      })
+
+      const blob = await recorder.stop()
+      finalized = true
+      return blob
+    } catch (error) {
+      if (!finalized) {
+        try {
+          await recorder.stop()
+        } catch {
+          // Ignore recorder cleanup failures when surfacing the original error.
+        }
+      }
+      throw error
+    }
+  }
+
+  // Fallback path for environments where readback is unavailable.
   const synth = runtime.synth as Record<string, unknown>
   const wasRunning = runtime.host.isRunning
   const previousWidth = runtime.host.canvas.width
@@ -760,10 +912,16 @@ export const captureHydraVideo = async (options: CaptureHydraVideoOptions): Prom
 
   try {
     return await captureVideo({
-      ...videoOptions,
-      canvas: runtime.host.canvas,
+      duration,
+      fps,
       width: nextWidth,
       height: nextHeight,
+      ...(bitrate != null ? { bitrate } : {}),
+      ...(maxEncodeQueue != null ? { maxEncodeQueue } : {}),
+      ...(signal ? { signal } : {}),
+      ...(onProgress ? { onProgress } : {}),
+      realtime,
+      canvas: runtime.host.canvas,
       step: async (frameInfo) => {
         if (step) {
           await step({ ...frameInfo, runtime, synth })

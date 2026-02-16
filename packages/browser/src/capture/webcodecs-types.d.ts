@@ -8,6 +8,9 @@ interface VideoEncoderConfig {
     bitrate?: number;
     framerate?: number;
     latencyMode?: 'quality' | 'realtime';
+    avc?: {
+        format: 'annexb' | 'avc';
+    };
 }
 
 interface VideoEncoderInit {

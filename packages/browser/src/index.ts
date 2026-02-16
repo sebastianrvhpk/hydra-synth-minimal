@@ -32,8 +32,10 @@ import {
 } from 'hydra-synth-core'
 import {
   buildFfmpegCommands,
+  captureHydraVideo,
   captureFrameSequence,
   captureHydraFrameSequence,
+  captureVideo,
   type BuildFfmpegCommandsOptions,
   type CaptureFrameSequenceBlobInfo,
   type CaptureFrameSequenceExtension,
@@ -43,6 +45,8 @@ import {
   type CaptureFrameSequenceResult,
   type CaptureHydraFrameSequenceFrameInfo,
   type CaptureHydraFrameSequenceOptions,
+  type CaptureHydraVideoOptions,
+  type CaptureVideoOptions,
   type FfmpegCommandSet
 } from './capture/frame-sequence.js'
 import { BrowserHost, type BrowserHostOptions, type CanvasDisplayOptions } from './runtime/browser-host.js'
@@ -138,6 +142,8 @@ export type {
   CaptureFrameSequenceResult,
   CaptureHydraFrameSequenceFrameInfo,
   CaptureHydraFrameSequenceOptions,
+  CaptureHydraVideoOptions,
+  CaptureVideoOptions,
   FfmpegCommandSet,
   WebGPUCapabilities,
   WebGPUComputeCapabilities,
@@ -199,7 +205,7 @@ export {
   validateBenchmarkReport
 }
 export type { BrowserHostOptions, CanvasDisplayOptions, HydraBrowserRuntimeOptions, PatchBayAdapter, WebGPURendererOptions }
-export { captureFrameSequence, captureHydraFrameSequence, buildFfmpegCommands }
+export { captureFrameSequence, captureHydraFrameSequence, captureVideo, captureHydraVideo, buildFfmpegCommands }
 
 export interface CreateHydraBrowserRuntimeOptions extends Omit<HydraBrowserRuntimeOptions, 'host' | 'renderer'> {
   host?: BrowserHost

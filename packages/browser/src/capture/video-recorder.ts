@@ -1,179 +1,236 @@
 /// <reference path="./webcodecs-types.d.ts" />
-// @ts-ignore — bare specifier replaced with relative path for the unbundled static dev server
+// @ts-ignore - bare specifier replaced with relative path for the unbundled static dev server
 import { createFile, type ISOFile } from '../../../../node_modules/mp4box/dist/mp4box.all.js'
 
 export interface VideoRecorderOptions {
-    width: number
-    height: number
-    fps: number
-    bitrate?: number
+  width: number
+  height: number
+  fps: number
+  bitrate?: number
+  maxEncodeQueue?: number
+}
+
+const wait = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
+
+const toErrorMessage = (error: unknown): string => {
+  if (error instanceof DOMException || error instanceof Error) {
+    return error.message
+  }
+  return String(error)
 }
 
 /**
  * A recorder that uses WebCodecs VideoEncoder to produce MP4 files.
- * Feeds VideoFrames directly from a canvas to the encoder (zero-copy path),
- * then muxes the encoded H.264 chunks into an MP4 container via mp4box.
+ * Frames are encoded with H.264 and muxed with mp4box.
  */
 export class VideoRecorder {
-    private encoder: VideoEncoder | null = null
-    private mp4File: ISOFile | null = null
-    private trackId: number | null = null
-    private readonly width: number
-    private readonly height: number
-    private readonly fps: number
-    private readonly bitrate: number
-    private frameCounter = 0
-    private recording = false
+  private encoder: VideoEncoder | null = null
+  private mp4File: ISOFile | null = null
+  private trackId: number | null = null
+  private readonly width: number
+  private readonly height: number
+  private readonly fps: number
+  private readonly bitrate: number
+  private readonly maxEncodeQueue: number
+  private frameCounter = 0
+  private recording = false
+  private encoderError: DOMException | null = null
+  private sampleCount = 0
+  private droppedChunkCountWithoutTrack = 0
 
-    constructor(options: VideoRecorderOptions) {
-        this.width = options.width
-        this.height = options.height
-        this.fps = options.fps
-        this.bitrate = options.bitrate ?? 25_000_000 // 25 Mbps default (visually lossless)
-    }
+  constructor (options: VideoRecorderOptions) {
+    this.width = options.width
+    this.height = options.height
+    this.fps = options.fps
+    this.bitrate = options.bitrate ?? 25_000_000 // 25 Mbps default (visually lossless)
+    this.maxEncodeQueue = Number.isFinite(options.maxEncodeQueue)
+      ? Math.max(0, Math.floor(options.maxEncodeQueue!))
+      : 8
+  }
 
-    async start(): Promise<void> {
-        if (this.recording) return
-        this.recording = true
-        this.frameCounter = 0
+  async start (): Promise<void> {
+    if (this.recording) return
+    this.recording = true
+    this.frameCounter = 0
+    this.encoderError = null
+    this.sampleCount = 0
+    this.droppedChunkCountWithoutTrack = 0
 
-        // Initialize MP4Box in-memory file
-        this.mp4File = createFile()
-        this.trackId = null // Track is created on first encoded chunk (needs SPS/PPS)
+    this.mp4File = createFile()
+    this.trackId = null
 
-        // Initialize VideoEncoder
-        this.encoder = new VideoEncoder({
-            output: (chunk: EncodedVideoChunk, metadata?: EncodedVideoChunkMetadata) =>
-                this.handleEncodedChunk(chunk, metadata),
-            error: (error: DOMException) => {
-                console.error('[VideoRecorder] encoder error:', error)
-                this.recording = false
-            }
-        })
-
-        const config: VideoEncoderConfig = {
-            codec: 'avc1.4d002a', // H.264 High Profile Level 4.2
-            width: this.width,
-            height: this.height,
-            bitrate: this.bitrate,
-            framerate: this.fps,
-            latencyMode: 'quality'
-        }
-
-        try {
-            const support = await VideoEncoder.isConfigSupported(config)
-            if (!support.supported) {
-                console.warn('[VideoRecorder] High profile H.264 not supported, falling back to baseline')
-                config.codec = 'avc1.42001f'
-            }
-            this.encoder.configure(config)
-        } catch (e) {
-            console.error('[VideoRecorder] configuration failed:', e)
-            this.recording = false
-            throw e
-        }
-    }
-
-    /**
-     * Encode one frame from a canvas or existing VideoFrame.
-     *
-     * The VideoFrame is created internally and closed after encoding,
-     * so the caller does not need to manage frame lifetimes.
-     */
-    async appendFrame(source: CanvasImageSource | VideoFrame): Promise<void> {
-        if (!this.recording || !this.encoder || this.encoder.state === 'closed') return
-
-        const duration = 1_000_000 / this.fps // microseconds
-        const timestamp = this.frameCounter * duration
-
-        const frame = source instanceof VideoFrame
-            ? new VideoFrame(source, { timestamp, duration })
-            : new VideoFrame(source as CanvasImageSource, { timestamp, duration })
-
-        try {
-            // Force a key-frame every 2 seconds for seekability
-            const keyFrame = this.frameCounter % (this.fps * 2) === 0
-            this.encoder.encode(frame, { keyFrame })
-        } finally {
-            frame.close()
-        }
-
-        this.frameCounter++
-    }
-
-    /**
-     * Finish encoding, flush the encoder, finalize the MP4 container,
-     * and return the result as a Blob.
-     */
-    async stop(): Promise<Blob> {
-        if (!this.recording || !this.encoder) {
-            throw new Error('[VideoRecorder] not running')
-        }
+    this.encoder = new VideoEncoder({
+      output: (chunk: EncodedVideoChunk, metadata?: EncodedVideoChunkMetadata) =>
+        this.handleEncodedChunk(chunk, metadata),
+      error: (error: DOMException) => {
+        this.encoderError = error
         this.recording = false
+        console.error('[VideoRecorder] encoder error:', error)
+      }
+    })
 
-        // Drain all pending frames
-        await this.encoder.flush()
-        this.encoder.close()
-        this.encoder = null
-
-        // Serialize the MP4s
-        if (!this.mp4File) return new Blob([], { type: 'video/mp4' })
-
-        // MP4Box's save() returns a Blob directly
-        const blob = this.mp4File.save('output.mp4')
-        this.mp4File = null
-        return blob
+    const baseConfig: Omit<VideoEncoderConfig, 'codec'> = {
+      width: this.width,
+      height: this.height,
+      bitrate: this.bitrate,
+      framerate: this.fps,
+      latencyMode: 'quality'
     }
 
-    // ── private ──────────────────────────────────────────────────────
+    const codecCandidates = ['avc1.640033', 'avc1.640032', 'avc1.4d002a', 'avc1.42001f']
+    let configuredCodec: string | null = null
 
-    private handleEncodedChunk(
-        chunk: EncodedVideoChunk,
-        metadata?: EncodedVideoChunkMetadata
-    ): void {
-        if (!this.mp4File) return
+    for (const codec of codecCandidates) {
+      const configVariants: VideoEncoderConfig[] = [
+        { ...baseConfig, codec, avc: { format: 'avc' } },
+        { ...baseConfig, codec }
+      ]
 
-        // Copy the encoded data into a Uint8Array (required by mp4box addSample)
-        const data = new Uint8Array(chunk.byteLength)
-        chunk.copyTo(data.buffer)
-
-        // On the very first key-frame the encoder provides a decoderConfig with
-        // an avcDecoderConfigRecord (SPS/PPS). We use that to create the track.
-        if (
-            this.trackId === null &&
-            metadata?.decoderConfig?.description
-        ) {
-            const description = metadata.decoderConfig.description
-            const descBuf = description instanceof ArrayBuffer
-                ? description
-                : (description as Uint8Array).buffer as ArrayBuffer
-
-            this.trackId = this.mp4File.addTrack({
-                timescale: 90_000, // standard video timescale
-                width: this.width,
-                height: this.height,
-                type: 'avc1',
-                avcDecoderConfigRecord: descBuf
-            })
+      for (const config of configVariants) {
+        try {
+          const support = await VideoEncoder.isConfigSupported(config)
+          if (!support.supported) continue
+          this.encoder.configure(config)
+          configuredCodec = codec
+          break
+        } catch {
+          // Keep trying lower capability profiles and config variants.
         }
-
-        if (this.trackId === null) {
-            // We haven't received the config yet; drop this chunk.
-            // (should not happen because the first chunk is always a key-frame)
-            console.warn('[VideoRecorder] dropping chunk: no track yet')
-            return
-        }
-
-        // Convert timestamps from microseconds → track timescale ticks
-        const timescale = 90_000
-        const durationTicks = Math.round(((chunk.duration ?? 0) / 1_000_000) * timescale)
-        const dtsTicks = Math.round((chunk.timestamp / 1_000_000) * timescale)
-
-        this.mp4File.addSample(this.trackId, data, {
-            duration: durationTicks,
-            dts: dtsTicks,
-            cts: dtsTicks,
-            is_sync: chunk.type === 'key'
-        })
+      }
+      if (configuredCodec) break
     }
+
+    if (!configuredCodec) {
+      this.recording = false
+      throw new Error('[VideoRecorder] no supported H.264 codec configuration found for this capture.')
+    }
+  }
+
+  private throwIfEncoderErrored (): void {
+    if (!this.encoderError) return
+    throw new Error(`[VideoRecorder] encoder error: ${toErrorMessage(this.encoderError)}`)
+  }
+
+  private async waitForEncodeQueue (): Promise<void> {
+    while (this.encoder && this.encoder.encodeQueueSize > this.maxEncodeQueue) {
+      this.throwIfEncoderErrored()
+      await wait(0)
+    }
+    this.throwIfEncoderErrored()
+  }
+
+  /**
+   * Encode one frame from a canvas or existing VideoFrame.
+   */
+  async appendFrame (source: CanvasImageSource | VideoFrame): Promise<void> {
+    this.throwIfEncoderErrored()
+    if (!this.recording || !this.encoder || this.encoder.state === 'closed') {
+      throw new Error('[VideoRecorder] not running')
+    }
+
+    const duration = 1_000_000 / this.fps // microseconds
+    const timestamp = this.frameCounter * duration
+
+    const frame = source instanceof VideoFrame
+      ? new VideoFrame(source, { timestamp, duration })
+      : new VideoFrame(source as CanvasImageSource, { timestamp, duration })
+
+    try {
+      // Force a key-frame every 2 seconds for seekability.
+      const keyFrame = this.frameCounter % (this.fps * 2) === 0
+      this.encoder.encode(frame, { keyFrame })
+    } finally {
+      frame.close()
+    }
+
+    this.frameCounter += 1
+    await this.waitForEncodeQueue()
+  }
+
+  /**
+   * Finish encoding, mux MP4 container, and return video blob.
+   */
+  async stop (): Promise<Blob> {
+    const encoder = this.encoder
+    this.recording = false
+
+    try {
+      if (!encoder) {
+        this.throwIfEncoderErrored()
+        throw new Error('[VideoRecorder] not running')
+      }
+
+      this.throwIfEncoderErrored()
+      if (encoder.state !== 'closed') {
+        await encoder.flush()
+        encoder.close()
+      }
+      this.throwIfEncoderErrored()
+
+      if (!this.mp4File) {
+        return new Blob([], { type: 'video/mp4' })
+      }
+
+      if (this.sampleCount <= 0) {
+        throw new Error(
+          `[VideoRecorder] no encoded samples were muxed into MP4 (droppedWithoutTrack=${this.droppedChunkCountWithoutTrack}).`
+        )
+      }
+
+      // Use the non-downloading serialization path; the caller owns download behavior.
+      const stream = this.mp4File.getBuffer()
+      return new Blob([stream.buffer], { type: 'video/mp4' })
+    } finally {
+      this.encoder = null
+      this.mp4File = null
+      this.trackId = null
+    }
+  }
+
+  private handleEncodedChunk (
+    chunk: EncodedVideoChunk,
+    metadata?: EncodedVideoChunkMetadata
+  ): void {
+    if (!this.mp4File) return
+
+    const data = new Uint8Array(chunk.byteLength)
+    chunk.copyTo(data)
+
+    if (this.trackId === null && metadata?.decoderConfig?.description) {
+      const description = metadata.decoderConfig.description
+      const descriptionBytes = description instanceof ArrayBuffer
+        ? new Uint8Array(description)
+        : new Uint8Array(description.buffer, description.byteOffset, description.byteLength)
+      const avcDecoderConfigRecord = descriptionBytes.slice().buffer
+
+      this.trackId = this.mp4File.addTrack({
+        timescale: 90_000,
+        width: this.width,
+        height: this.height,
+        type: 'avc1',
+        avcDecoderConfigRecord
+      })
+    }
+
+    if (this.trackId === null) {
+      this.droppedChunkCountWithoutTrack += 1
+      console.warn('[VideoRecorder] dropping chunk: no track yet')
+      return
+    }
+
+    const timescale = 90_000
+    const durationTicks = Math.round(((chunk.duration ?? 0) / 1_000_000) * timescale)
+    const dtsTicks = Math.round((chunk.timestamp / 1_000_000) * timescale)
+
+    this.mp4File.addSample(this.trackId, data, {
+      duration: durationTicks,
+      dts: dtsTicks,
+      cts: dtsTicks,
+      is_sync: chunk.type === 'key'
+    })
+    this.sampleCount += 1
+  }
 }
