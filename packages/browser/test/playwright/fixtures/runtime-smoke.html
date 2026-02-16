@@ -55,17 +55,22 @@
           host.canvas.getContext = () => null
         }
 
+        const executionMode = mode === 'legacy' || mode === 'v3' || mode === 'auto'
+          ? mode
+          : 'legacy'
+
         const renderer = new WebGPURenderer({ canvas: host.canvas })
         const runtime = new HydraBrowserRuntime({
           host,
           renderer,
+          executionMode,
           autoLoop: false,
           errorPolicy: 'throw'
         })
 
         try {
-          if (mode === 'auto' && !navigator.gpu) {
-            publish({ status: 'no-webgpu' })
+          if ((mode === 'legacy' || mode === 'v3' || mode === 'auto') && !navigator.gpu) {
+            publish({ status: 'no-webgpu', requestedMode: mode })
             return
           }
 
@@ -73,8 +78,16 @@
           const synth = runtime.synth
           synth.solid(1, 0, 0, 1).out()
           runtime.tick(16)
+          const snapshot = runtime.getProfilerSnapshot()
           runtime.dispose()
-          publish({ status: 'ok' })
+          publish({
+            status: 'ok',
+            requestedMode: mode,
+            configuredMode: snapshot.scheduler.routingConfiguredMode,
+            activeMode: snapshot.scheduler.routingActiveMode,
+            routingFallbackCount: snapshot.scheduler.routingFallbackCount,
+            routingCompileFailures: snapshot.scheduler.routingCompileFailures
+          })
         } catch (error) {
           const message = toMessage(error)
           const causeMessage = toMessage(toCause(error))
@@ -88,9 +101,10 @@
           )
 
           runtime.dispose()
-          if (mode === 'auto' && isUnavailableError) {
+          if ((mode === 'legacy' || mode === 'v3' || mode === 'auto') && isUnavailableError) {
             publish({
               status: 'no-webgpu',
+              requestedMode: mode,
               message,
               causeMessage
             })

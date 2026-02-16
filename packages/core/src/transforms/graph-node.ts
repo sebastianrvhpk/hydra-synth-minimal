@@ -29,8 +29,15 @@ export class HydraGraphNode {
   out (targetOutput?: HydraOutputAdapter): void {
     const output = targetOutput ?? this.defaultOutput
     if (!output) return
-    const passes = this.wgsl()
-    output.render(passes)
+    if (output.renderGraph) {
+      output.renderGraph({
+        transforms: this.transforms.slice(),
+        compileLegacyPasses: () => this.wgsl(),
+        compilePlanV3: () => this.planV3()
+      })
+      return
+    }
+    output.render(this.wgsl())
   }
 
   wgsl (): HydraCompiledPass[] {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { HydraCompiledPass } from 'hydra-synth-core'
+import type { HydraCompiledPass, HydraOutputGraphSource } from 'hydra-synth-core'
 import { WebGPUOutputNode } from '../src/runtime/output-node.ts'
 
 interface DispatchLogEntry {
@@ -223,6 +223,61 @@ describe('WebGPUOutputNode texture exposure', () => {
     node.render([passA, passB])
 
     expect((node as unknown as { pendingPasses: HydraCompiledPass[] | null }).pendingPasses).toEqual([passA, passB])
+  })
+
+  it('stores and updates graph sources through renderGraph()', () => {
+    const node = new WebGPUOutputNode({
+      renderer: null,
+      width: 1,
+      height: 1,
+      label: 'o-graph'
+    })
+
+    const sourceA: HydraOutputGraphSource = {
+      transforms: [],
+      compileLegacyPasses: () => []
+    }
+    const sourceB: HydraOutputGraphSource = {
+      transforms: [],
+      compileLegacyPasses: () => []
+    }
+    const routedSources: HydraOutputGraphSource[] = []
+    node.setGraphRenderHandler((_output, source) => {
+      routedSources.push(source)
+    })
+
+    node.renderGraph(sourceA)
+    expect(node.getGraphSource()).toBe(sourceA)
+
+    node.renderGraph(sourceB)
+    expect(node.getGraphSource()).toBe(sourceB)
+    expect(routedSources).toEqual([sourceA, sourceB])
+  })
+
+  it('clears graph source when rendering direct pass arrays', () => {
+    const node = new WebGPUOutputNode({
+      renderer: null,
+      width: 1,
+      height: 1,
+      label: 'o-graph-clear'
+    })
+    const source: HydraOutputGraphSource = {
+      transforms: [],
+      compileLegacyPasses: () => []
+    }
+    node.renderGraph(source)
+    expect(node.getGraphSource()).toBe(source)
+
+    node.render([{
+      signature: 'direct-pass',
+      wgsl: 'direct',
+      uniforms: [],
+      textures: []
+    }])
+
+    expect(node.getGraphSource()).toBeNull()
+    node.clearGraphSource()
+    expect(node.getGraphSource()).toBeNull()
   })
 
   it('extracts output dependencies from pass texture source references', () => {

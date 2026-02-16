@@ -5,6 +5,7 @@ import {
   type HydraExecutionPlanV3,
   type HydraEngineError,
   type HydraErrorPolicy,
+  type HydraOutputGraphSource,
   type HydraOutputAdapter,
   type HydraTransformCall,
   type HydraTransformDefinition,
@@ -28,6 +29,27 @@ const mapTuningPolicyToVariantPolicy = (
   return 'compat'
 }
 
+export type HydraRuntimeExecutionMode = 'legacy' | 'v3' | 'auto'
+
+export const normalizeRuntimeExecutionMode = (
+  value: unknown,
+  fallback: HydraRuntimeExecutionMode = 'legacy'
+): HydraRuntimeExecutionMode => {
+  if (typeof value !== 'string') return fallback
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'legacy' || normalized === 'v3' || normalized === 'auto') return normalized
+  return fallback
+}
+
+const prefersV3Path = (mode: HydraRuntimeExecutionMode): boolean => mode !== 'legacy'
+
+interface HydraRuntimeRoutingDiagnostics {
+  configuredMode: HydraRuntimeExecutionMode
+  activeMode: 'legacy' | 'v3'
+  compileFailures: number
+  fallbackCount: number
+}
+
 export interface HydraBrowserRuntimeOptions {
   host: BrowserHost
   renderer: WebGPURenderer
@@ -39,6 +61,7 @@ export interface HydraBrowserRuntimeOptions {
   fps?: number
   speed?: number
   bpm?: number
+  executionMode?: HydraRuntimeExecutionMode
   errorPolicy?: HydraErrorPolicy
   onError?: (error: HydraEngineError) => void
 }
@@ -60,8 +83,10 @@ export class HydraBrowserRuntime {
   private disposed = false
   private readonly frameTimesMs: number[] = []
   private readonly autotuner = new HydraAutotunerV3()
+  private executionMode: HydraRuntimeExecutionMode
   private executorV3: HydraExecutorV3 | null = null
   private lastExecuteResultV3: ExecutePlanV3Result | null = null
+  private readonly routingDiagnostics: HydraRuntimeRoutingDiagnostics
 
   constructor ({
     host,
@@ -74,12 +99,20 @@ export class HydraBrowserRuntime {
     fps,
     speed = 1,
     bpm = 30,
+    executionMode = 'legacy',
     errorPolicy = 'emit',
     onError
   }: HydraBrowserRuntimeOptions) {
     this.host = host
     this.renderer = renderer
     this.patchbay = patchbay
+    this.executionMode = normalizeRuntimeExecutionMode(executionMode, 'legacy')
+    this.routingDiagnostics = {
+      configuredMode: this.executionMode,
+      activeMode: 'legacy',
+      compileFailures: 0,
+      fallbackCount: 0
+    }
 
     const sourceCount = Math.max(0, Math.floor(numSources))
     const outputCount = Math.max(1, Math.floor(numOutputs))
@@ -92,6 +125,9 @@ export class HydraBrowserRuntime {
         label: `o${index}`
       })
       output.id = index
+      output.setGraphRenderHandler((targetOutput, graphSource) => {
+        this.routeGraphRender(targetOutput, graphSource)
+      })
       return output
     })
 
@@ -142,6 +178,8 @@ export class HydraBrowserRuntime {
     this.synth.emitEvent = this.emitEvent.bind(this)
     this.synth.createSource = this.createSource.bind(this)
     this.synth.getPassStats = this.getPassStats.bind(this)
+    this.synth.getExecutionMode = this.getExecutionMode.bind(this)
+    this.synth.setExecutionMode = this.setExecutionMode.bind(this)
     this.synth.compilePlanV3 = this.compilePlanV3.bind(this)
     this.synth.executePlanV3 = this.executePlanV3.bind(this)
     this.synth.getProfilerSnapshot = this.getProfilerSnapshot.bind(this)
@@ -259,6 +297,99 @@ export class HydraBrowserRuntime {
     return stats
   }
 
+  getExecutionMode (): HydraRuntimeExecutionMode {
+    return this.executionMode
+  }
+
+  setExecutionMode (mode: HydraRuntimeExecutionMode | string): HydraRuntimeExecutionMode {
+    this.executionMode = normalizeRuntimeExecutionMode(mode, this.executionMode)
+    this.routingDiagnostics.configuredMode = this.executionMode
+    return this.executionMode
+  }
+
+  private ensureExecutorV3 (): HydraExecutorV3 {
+    if (!this.executorV3) {
+      this.executorV3 = new HydraExecutorV3({
+        resourceManager: new HydraResourceManagerV3(this.renderer)
+      })
+    }
+    return this.executorV3
+  }
+
+  private getCurrentFrameState (): {
+    time: number
+    bpm: number
+    resolution: [number, number]
+    deltaMs: number
+  } {
+    return {
+      time: Number(this.synth.time ?? 0),
+      bpm: Number(this.synth.bpm ?? 30),
+      resolution: [this.host.canvas.width, this.host.canvas.height],
+      deltaMs: this.frameTimesMs[this.frameTimesMs.length - 1] ?? 16
+    }
+  }
+
+  private routeGraphFallback (
+    output: WebGPUOutputNode,
+    graphSource: HydraOutputGraphSource,
+    error: unknown,
+    isCompileFailure = false
+  ): void {
+    if (isCompileFailure) this.routingDiagnostics.compileFailures += 1
+    this.routingDiagnostics.fallbackCount += 1
+    this.routingDiagnostics.activeMode = 'legacy'
+    try {
+      this.engine.reportCompileError(`${output.label}:v3-route`, error)
+    } catch {
+      // Fallback routing must remain deterministic even under throw-on-error policies.
+    }
+    output.render(graphSource.compileLegacyPasses())
+  }
+
+  private routeGraphRender (output: WebGPUOutputNode, graphSource: HydraOutputGraphSource): void {
+    this.routingDiagnostics.configuredMode = this.executionMode
+    if (!prefersV3Path(this.executionMode)) {
+      this.routingDiagnostics.activeMode = 'legacy'
+      output.render(graphSource.compileLegacyPasses())
+      return
+    }
+
+    let plan: HydraExecutionPlanV3 | null = null
+    try {
+      plan = graphSource.compilePlanV3
+        ? (graphSource.compilePlanV3() as HydraExecutionPlanV3 | null)
+        : this.compilePlanV3({ transforms: graphSource.transforms })
+    } catch (error) {
+      this.routeGraphFallback(output, graphSource, error, true)
+      return
+    }
+
+    if (!plan) {
+      this.routeGraphFallback(
+        output,
+        graphSource,
+        new Error('V3 plan compilation produced no plan for the current graph output.'),
+        true
+      )
+      return
+    }
+
+    try {
+      this.lastExecuteResultV3 = this.ensureExecutorV3().executePlan(
+        output,
+        plan,
+        this.getCurrentFrameState(),
+        {
+          queueMode: plan.executionPolicy?.queueModeDefault
+        }
+      )
+      this.routingDiagnostics.activeMode = 'v3'
+    } catch (error) {
+      this.routeGraphFallback(output, graphSource, error)
+    }
+  }
+
   compilePlanV3 (graphNode: { transforms?: HydraTransformCall[] } | null | undefined): HydraExecutionPlanV3 | null {
     const transforms = Array.isArray(graphNode?.transforms) ? graphNode?.transforms : null
     if (!transforms || transforms.length === 0) return null
@@ -281,22 +412,13 @@ export class HydraBrowserRuntime {
   ): HydraExecutionPlanV3 | null {
     const plan = this.compilePlanV3(graphNode)
     if (!plan) return null
-    if (!this.executorV3) {
-      this.executorV3 = new HydraExecutorV3({
-        resourceManager: new HydraResourceManagerV3(this.renderer)
-      })
-    }
-    this.lastExecuteResultV3 = this.executorV3.executePlan(output, plan, {
-      time: Number(this.synth.time ?? 0),
-      bpm: Number(this.synth.bpm ?? 30),
-      resolution: [this.host.canvas.width, this.host.canvas.height],
-      deltaMs: this.frameTimesMs[this.frameTimesMs.length - 1] ?? 16
-    }, {
+    this.lastExecuteResultV3 = this.ensureExecutorV3().executePlan(output, plan, this.getCurrentFrameState(), {
       queueMode: options.queueMode ?? plan.executionPolicy?.queueModeDefault,
       queueConvergenceCheckInterval: options.queueConvergenceCheckInterval,
       queueHooks: options.queueHooks,
       forceQueueIndirect: options.forceQueueIndirect
     })
+    this.routingDiagnostics.activeMode = 'v3'
     return plan
   }
 
@@ -321,7 +443,13 @@ export class HydraBrowserRuntime {
             indirectDispatches: this.lastExecuteResultV3.queueIndirectDispatches,
             convergenceChecks: this.lastExecuteResultV3.queueConvergenceChecks
           }
-        : null
+        : null,
+      routingMetrics: {
+        configuredMode: this.routingDiagnostics.configuredMode,
+        activeMode: this.routingDiagnostics.activeMode,
+        compileFailures: this.routingDiagnostics.compileFailures,
+        fallbackCount: this.routingDiagnostics.fallbackCount
+      }
     })
   }
 
@@ -397,6 +525,7 @@ export class HydraBrowserRuntime {
     if (this.disposed) return
     this.disposed = true
     this.stop()
+    this.outputs.forEach((output) => output.setGraphRenderHandler(null))
     this.executorV3?.dispose()
     this.executorV3 = null
     this.lastExecuteResultV3 = null

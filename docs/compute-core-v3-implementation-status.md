@@ -1,75 +1,86 @@
-# Hydra v3 Compute-Core Implementation Status (1->8)
+# Compute Core V3 Implementation Status (Phases 1-6)
 
-This document tracks the concrete implementation of the compute-core hooks/plumbing plan.
+Last updated: 2026-02-16
 
-## 1. Internal Contracts (Plan/Executor ABI)
-- `HydraExecutionPlanV3` now carries `version: 'v3.0'`.
-- Added strict validator:
-  - `packages/core/src/compiler-v3/validate-plan-v3.ts`
-  - checks step/node references, barrier order, queue invariants, slot/interval alias collisions.
-- `compileGraphV3` runs plan validation by default (`validateExecutionPlan: true`).
+## Phase Status
 
-## 2. Primitive Runtime Integration
-- Added primitive substitution stage:
-  - `packages/core/src/compiler-v3/primitive-substitution.ts`
-- The compiler now links nodes to primitive descriptors/modules and can substitute known kernels.
-- Substitution currently active for:
-  - `pyramid.downsample` (`bloomDownsample`)
-  - `pyramid.upsample` (`bloomUpsample`)
+| Phase | Status | Notes |
+|---|---|---|
+| 1 | Completed | Unified runtime routing (`legacy`/`v3`/`auto`) with deterministic fallback diagnostics. |
+| 2 | Not started | Slot-backed execution refinements pending. |
+| 3 | Not started | Data-first kernel semantics pending. |
+| 4 | Not started | Queue policy hardening pending. |
+| 5 | Not started | Measured autotune loop pending. |
+| 6 | Not started | Default flip + CI hard gates pending. |
 
-## 3. Pattern Matching + Substitution
-- Pattern matching implemented at node-level transform analysis.
-- Execution steps include primitive metadata:
-  - kind, descriptor id, module id, entry point, substituted flag.
-- Planner diagnostics now include primitive selection counts.
+---
 
-## 4. Queue-Native Execution Path
-- Executor queue path upgraded to support indirect dispatch buffers when a resource manager is available.
-- Contiguous queue steps in the same `queueControl.groupId` are executed in iteration-major segment order (`A1,B1,A2,B2`), not step-major batches (`A1,A2,B1,B2`).
-- Queue iterations now populate:
-  - indirect args buffers
-  - queue counter buffers
-- Runtime metrics include:
-  - queue iterations
-  - queue overflow count
-  - queue indirect dispatch count
-  - queue convergence check count
+## Phase 1 Report
 
-## 5. Slot-Backed Residency and Aliasing
-- Resource manager now works by slot key, not only resource id.
-- Added resource-to-slot registration and residency snapshot reporting.
-- Executor materializes plan resources by `allocation.slot`.
+### Implemented Plan Items
 
-## 6. Observability Upgrade
-- Pass stats now include:
-  - fallback count
-  - variant
-  - dispatch domain
-  - last workgroup geometry
-  - per-pass GPU ms placeholders (enabled when timestamp-query capability is available)
-- Profiler snapshot now reports:
-  - queue metrics
-  - residency snapshot
-  - dispatch geometry per pass
+- `P1.1` `packages/browser/src/runtime/runtime.ts`, `packages/browser/src/index.ts`
+  - Added runtime execution mode support: `legacy`, `v3`, `auto`.
+  - Added mode normalization helper and runtime mode getter/setter bindings.
+  - Kept default behavior on `legacy`.
+- `P1.2` `packages/core/src/types.ts`, `packages/core/src/index.d.ts`
+  - Extended `HydraOutputAdapter` with optional graph-aware hook:
+    - `renderGraph?(source: HydraOutputGraphSource): void`
+  - Preserved existing `render(passes)` API path.
+- `P1.3` `packages/core/src/transforms/graph-node.ts`
+  - Updated `.out()` routing:
+    - Uses `renderGraph` when available.
+    - Falls back to existing legacy pass render path.
+- `P1.4` `packages/browser/src/runtime/output-node.ts`
+  - Added graph source lifecycle support:
+    - `setGraphRenderHandler`
+    - `renderGraph`
+    - `getGraphSource`
+    - `clearGraphSource`
+  - Direct `render(passes)` clears graph source unless called from graph routing.
+- `P1.5` `packages/browser/src/runtime/runtime.ts`
+  - Added mode-based graph routing:
+    - `legacy`: legacy pass path only.
+    - `v3`/`auto`: attempt v3 compile+execute, fallback to legacy on failure.
+  - Fallback is deterministic and explicit in diagnostics.
+- `P1.6` `packages/browser/src/runtime/profiler-v3.ts`, `packages/browser/src/runtime/runtime.ts`
+  - Added routing diagnostics to profiler snapshot:
+    - `routingConfiguredMode`
+    - `routingActiveMode`
+    - `routingCompileFailures`
+    - `routingFallbackCount`
+- `P1.7` `packages/browser/test/playwright/runtime-smoke.spec.ts`, `packages/browser/test/playwright/fixtures/runtime-smoke.html`
+  - Added smoke scenarios for `legacy`, `v3`, and `auto` modes.
+  - Kept explicit unavailable-path smoke check.
 
-## 7. Autotuner Closed Loop
-- Autotuner now accepts profiler data and runtime fingerprints:
-  - adapter fingerprint
-  - browser fingerprint
-  - kernel signature
-  - resolution class
-- Candidate scoring now uses frame p95, fallback rate, and residency estimates.
-- Profiles persist with a fingerprint key.
+### Tests Added/Updated
 
-## 8. Hard Gates and Regression Coverage
-- Compatibility matrix and v3 core tests expanded.
-- Benchmark corpus gate tests include:
-  - full-corpus pass path
-  - regression-fail path
-- Capability-loss fallback test added (subgroup unavailable path).
-- Bench script enforces per-scene acceptance checks:
-  - `scripts/bench-v3.mjs`
+- `packages/browser/test/v3-foundation.test.ts`
+  - Added mode normalization/default tests.
+  - Added runtime graph-route diagnostics tests for v3 success and fallback.
+  - Updated profiler assertions for new routing fields.
+- `packages/browser/test/output-node.test.ts`
+  - Added graph source set/update and clear lifecycle tests.
+- `packages/core/test/v3-compatibility-matrix.test.ts`
+  - Added graph-aware output hook compatibility test.
+- `packages/browser/test/playwright/runtime-smoke.spec.ts`
+  - Added mode matrix smoke tests (`legacy`, `v3`, `auto`).
 
-## Notes
-- DSL compatibility contracts remain unchanged.
-- Queue execution is indirect-buffer capable with segment-level ordering, but still host-orchestrated (not full GPU work-graph dispatch chaining yet).
+### Validation Results
+
+All required Phase 1 gates passed:
+
+1. `pnpm test:unit -- packages/core/test/v3-core.test.ts packages/core/test/v3-compatibility-matrix.test.ts packages/core/test/registry.test.ts` ✅
+2. `pnpm test:unit -- packages/browser/test/v3-foundation.test.ts packages/browser/test/output-node.test.ts packages/browser/test/renderer-adapter.test.ts` ✅
+3. `pnpm test:browser -- packages/browser/test/playwright/runtime-smoke.spec.ts` ✅
+4. `pnpm --filter hydra-synth run typecheck` ✅
+5. `node scripts/bench-v3.mjs .tmp/bench/phase-samples.json` ✅
+
+### Benchmark Sample Artifact
+
+- Generated deterministic benchmark samples:
+  - `.tmp/bench/phase-samples.json`
+- Generation rule:
+  - Uses a fixed scene list and deterministic multipliers per acceptance gate.
+  - Produces 3 samples per scene with fallback count `0` and stable dispatch count `12`.
+

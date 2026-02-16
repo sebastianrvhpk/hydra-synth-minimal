@@ -6,6 +6,69 @@ import { HydraAutotunerV3 } from '../src/runtime/autotune-v3.ts'
 import { HydraExecutorV3 } from '../src/runtime/executor-v3.ts'
 import { buildProfilerSnapshotV3 } from '../src/runtime/profiler-v3.ts'
 import { decideQueueDispatchV3 } from '../src/runtime/queue-v3.ts'
+import { HydraBrowserRuntime, normalizeRuntimeExecutionMode } from '../src/runtime/runtime.ts'
+
+const createMinimalExecutionPlan = (): HydraExecutionPlanV3 => ({
+  version: 'v3.0',
+  id: 'plan-minimal',
+  sourceGraph: {
+    id: 'graph-minimal',
+    source: 'hydra-dsl',
+    compatibilityMode: 'dsl-v2',
+    nodes: [],
+    resources: [],
+    edges: []
+  },
+  steps: [],
+  barriers: [],
+  resources: [],
+  diagnostics: {
+    score: 0,
+    scoreBreakdown: { dispatchCost: 0, memoryCost: 0, fallbackRiskCost: 0 },
+    selectedVariantPolicy: 'compat',
+    peakTransientBytes: 0,
+    totalPlannedBytes: 0,
+    fallbackRiskRate: 0,
+    selectedVariantCounts: { generic: 0, tiled: 0, subgroup: 0 },
+    primitiveSelectionCounts: {},
+    queueStepCount: 0,
+    queueSegmentCount: 0,
+    barrierCount: 0,
+    nodeOrder: []
+  },
+  cacheKey: 'minimal'
+})
+
+const createRuntimeHarness = (executionMode?: 'legacy' | 'v3' | 'auto'): HydraBrowserRuntime => {
+  const canvas = { width: 4, height: 4 } as HTMLCanvasElement
+  const host = {
+    canvas,
+    start: () => {},
+    stop: () => {},
+    setResolution: (width: number, height: number) => {
+      canvas.width = width
+      canvas.height = height
+    },
+    dispose: () => {}
+  }
+  const renderer = {
+    ready: false,
+    init: async () => {},
+    beginFrame: () => null,
+    renderFrame: () => {},
+    submitFrame: () => {},
+    setResolution: () => {},
+    dispose: () => {},
+    getCapabilities: () => null
+  }
+
+  return new HydraBrowserRuntime({
+    host: host as never,
+    renderer: renderer as never,
+    autoLoop: false,
+    ...(executionMode ? { executionMode } : {})
+  })
+}
 
 describe('v3 browser foundation', () => {
   it('builds and validates benchmark reports from sample streams', () => {
@@ -94,7 +157,103 @@ describe('v3 browser foundation', () => {
     expect(snapshot.scheduler.fallbackRate).toBeCloseTo(1 / 6, 5)
     expect(snapshot.scheduler.queueIterations).toBe(0)
     expect(snapshot.scheduler.queueConvergenceChecks).toBe(0)
+    expect(snapshot.scheduler.routingConfiguredMode).toBe('legacy')
+    expect(snapshot.scheduler.routingActiveMode).toBe('legacy')
+    expect(snapshot.scheduler.routingCompileFailures).toBe(0)
+    expect(snapshot.scheduler.routingFallbackCount).toBe(0)
     expect(snapshot.passes['o0:passA']?.dispatchDomain).toBe('pixel2d')
+  })
+
+  it('normalizes runtime execution mode values and defaults', () => {
+    expect(normalizeRuntimeExecutionMode('legacy')).toBe('legacy')
+    expect(normalizeRuntimeExecutionMode('V3')).toBe('v3')
+    expect(normalizeRuntimeExecutionMode(' auto ')).toBe('auto')
+    expect(normalizeRuntimeExecutionMode('invalid')).toBe('legacy')
+    expect(normalizeRuntimeExecutionMode('invalid', 'auto')).toBe('auto')
+  })
+
+  it('defaults browser runtime execution mode to legacy', () => {
+    const runtime = createRuntimeHarness()
+    expect(runtime.getExecutionMode()).toBe('legacy')
+    runtime.dispose()
+  })
+
+  it('routes graph rendering through v3 mode and reports active mode diagnostics', () => {
+    const runtime = createRuntimeHarness('v3')
+    const executeCalls: HydraExecutionPlanV3[] = []
+    ;(runtime as unknown as {
+      executorV3: {
+        executePlan: (output: unknown, plan: HydraExecutionPlanV3) => {
+          submittedPasses: number
+          scheduledBarriers: number
+          queueIterations: number
+          queueOverflowCount: number
+          queueIndirectDispatches: number
+          queueConvergenceChecks: number
+          allocatedResourceCount: number
+        }
+        getResidentByteEstimate: () => number
+        getResidencySnapshot: () => null
+        dispose: () => void
+      }
+    }).executorV3 = {
+      executePlan: (_output, plan) => {
+        executeCalls.push(plan)
+        return {
+          submittedPasses: 0,
+          scheduledBarriers: 0,
+          queueIterations: 0,
+          queueOverflowCount: 0,
+          queueIndirectDispatches: 0,
+          queueConvergenceChecks: 0,
+          allocatedResourceCount: 0
+        }
+      },
+      getResidentByteEstimate: () => 0,
+      getResidencySnapshot: () => null,
+      dispose: () => {}
+    }
+
+    const output = runtime.outputs[0]
+    if (!output) throw new Error('Missing runtime output.')
+    output.renderGraph({
+      transforms: [],
+      compileLegacyPasses: () => [],
+      compilePlanV3: () => createMinimalExecutionPlan()
+    })
+
+    const snapshot = runtime.getProfilerSnapshot()
+    expect(executeCalls).toHaveLength(1)
+    expect(snapshot.scheduler.routingConfiguredMode).toBe('v3')
+    expect(snapshot.scheduler.routingActiveMode).toBe('v3')
+    expect(snapshot.scheduler.routingCompileFailures).toBe(0)
+    expect(snapshot.scheduler.routingFallbackCount).toBe(0)
+    runtime.dispose()
+  })
+
+  it('falls back to legacy deterministically when v3 plan compilation fails', () => {
+    const runtime = createRuntimeHarness('v3')
+    const output = runtime.outputs[0]
+    if (!output) throw new Error('Missing runtime output.')
+    output.renderGraph({
+      transforms: [],
+      compileLegacyPasses: () => [{
+        signature: 'legacy-fallback',
+        wgsl: '@compute @workgroup_size(1, 1, 1) fn csMain() {}',
+        uniforms: [],
+        textures: []
+      }],
+      compilePlanV3: () => {
+        throw new Error('compile failed')
+      }
+    })
+
+    const snapshot = runtime.getProfilerSnapshot()
+    expect(snapshot.scheduler.routingConfiguredMode).toBe('v3')
+    expect(snapshot.scheduler.routingActiveMode).toBe('legacy')
+    expect(snapshot.scheduler.routingCompileFailures).toBe(1)
+    expect(snapshot.scheduler.routingFallbackCount).toBe(1)
+    runtime.dispose()
   })
 
   it('stores autotune profiles and exposes policy controls', () => {

@@ -5,6 +5,7 @@ import {
   lowerDslToIrV3,
   type HydraCompiledPass,
   type HydraOutputAdapter,
+  type HydraOutputGraphSource,
   type HydraTransformDefinition
 } from '../src/index.ts'
 
@@ -13,6 +14,15 @@ class CaptureOutput implements HydraOutputAdapter {
 
   render (passes: HydraCompiledPass[]): void {
     this.passes = passes
+  }
+}
+
+class GraphAwareCaptureOutput extends CaptureOutput {
+  graphSource: HydraOutputGraphSource | null = null
+
+  renderGraph (source: HydraOutputGraphSource): void {
+    this.graphSource = source
+    this.render(source.compileLegacyPasses())
   }
 }
 
@@ -181,5 +191,15 @@ describe('v3 DSL compatibility matrix', () => {
     expect(planA.cacheKey).toBe(planB.cacheKey)
     expect(planA.sourceGraph.compatibilityMode).toBe('dsl-v2')
     expect(planA.steps.length).toBe(planB.steps.length)
+  })
+
+  it('uses graph-aware output hooks without breaking legacy render adapters', () => {
+    const output = new GraphAwareCaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators.osc(4, 0.1, 0).out()
+
+    expect(output.graphSource).not.toBeNull()
+    expect(output.passes.length).toBeGreaterThan(0)
   })
 })

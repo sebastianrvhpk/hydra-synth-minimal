@@ -30,6 +30,10 @@ export interface HydraProfilerSnapshotV3 {
     queueOverflowCount: number
     queueIndirectDispatches: number
     queueConvergenceChecks: number
+    routingConfiguredMode: 'legacy' | 'v3' | 'auto'
+    routingActiveMode: 'legacy' | 'v3'
+    routingCompileFailures: number
+    routingFallbackCount: number
   }
   capability: {
     features: string[]
@@ -51,7 +55,8 @@ export const buildProfilerSnapshotV3 = ({
   capabilities,
   residentBytesEstimate = 0,
   residency = null,
-  queueMetrics = null
+  queueMetrics = null,
+  routingMetrics = null
 }: {
   frameTimesMs: number[]
   outputs: WebGPUOutputNode[]
@@ -63,6 +68,12 @@ export const buildProfilerSnapshotV3 = ({
     overflowCount: number
     indirectDispatches: number
     convergenceChecks: number
+  } | null
+  routingMetrics?: {
+    configuredMode: 'legacy' | 'v3' | 'auto'
+    activeMode: 'legacy' | 'v3'
+    compileFailures: number
+    fallbackCount: number
   } | null
 }): HydraProfilerSnapshotV3 => {
   const avgFrameMs = frameTimesMs.length > 0
@@ -112,7 +123,11 @@ export const buildProfilerSnapshotV3 = ({
       queueIterations: Math.max(0, Math.floor(queueMetrics?.iterations ?? 0)),
       queueOverflowCount: Math.max(0, Math.floor(queueMetrics?.overflowCount ?? 0)),
       queueIndirectDispatches: Math.max(0, Math.floor(queueMetrics?.indirectDispatches ?? 0)),
-      queueConvergenceChecks: Math.max(0, Math.floor(queueMetrics?.convergenceChecks ?? 0))
+      queueConvergenceChecks: Math.max(0, Math.floor(queueMetrics?.convergenceChecks ?? 0)),
+      routingConfiguredMode: routingMetrics?.configuredMode ?? 'legacy',
+      routingActiveMode: routingMetrics?.activeMode ?? 'legacy',
+      routingCompileFailures: Math.max(0, Math.floor(routingMetrics?.compileFailures ?? 0)),
+      routingFallbackCount: Math.max(0, Math.floor(routingMetrics?.fallbackCount ?? 0))
     },
     capability: {
       features: capabilities?.features ?? [],

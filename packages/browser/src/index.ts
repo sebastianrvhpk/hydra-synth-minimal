@@ -39,7 +39,12 @@ import {
   type FfmpegCommandSet
 } from './capture/frame-sequence.js'
 import { BrowserHost, type BrowserHostOptions } from './runtime/browser-host.js'
-import { HydraBrowserRuntime, type HydraBrowserRuntimeOptions } from './runtime/runtime.js'
+import {
+  HydraBrowserRuntime,
+  normalizeRuntimeExecutionMode,
+  type HydraBrowserRuntimeOptions,
+  type HydraRuntimeExecutionMode
+} from './runtime/runtime.js'
 import {
   HydraAutotunerV3,
   type HydraAutotuneProfileV3,
@@ -143,7 +148,8 @@ export type {
   HydraCapabilityMatrix,
   HydraWorkloadClass,
   BuildBenchmarkReportOptions,
-  ValidateBenchmarkReportResult
+  ValidateBenchmarkReportResult,
+  HydraRuntimeExecutionMode
 }
 
 export {
@@ -157,6 +163,7 @@ export {
   HydraResourceManagerV3,
   HydraAutotunerV3,
   buildProfilerSnapshotV3,
+  normalizeRuntimeExecutionMode,
   decideQueueDispatchV3,
   toQueueIndirectArgsV3,
   shouldTerminateQueueLoopV3,

@@ -2,6 +2,7 @@ import type {
   HydraAnalysisOutputBinding,
   HydraCompiledPass,
   HydraFrameState,
+  HydraOutputGraphSource,
   HydraOutputAdapter,
   HydraStorageBufferBinding,
   HydraStorageTextureBinding
@@ -184,6 +185,9 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
   private readonly persistentTextures = new Map<string, PersistentTextureState>()
   private readonly persistentBuffers = new Map<string, GPUBuffer>()
   private readonly persistentBufferSizes = new Map<string, number>()
+  private graphSource: HydraOutputGraphSource | null = null
+  private graphRenderHandler: ((output: WebGPUOutputNode, source: HydraOutputGraphSource) => void) | null = null
+  private inGraphRenderDispatch = false
   private historyTextures: Array<GPUTexture | null> = []
   private historyCursor = -1
   private historyCount = 0
@@ -204,6 +208,38 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
 
   setPipelineErrorHandler (handler: ((context: PipelineErrorContext) => void) | null): void {
     this.pipelineErrorHandler = handler
+  }
+
+  setGraphRenderHandler (handler: ((output: WebGPUOutputNode, source: HydraOutputGraphSource) => void) | null): void {
+    this.graphRenderHandler = handler
+  }
+
+  getGraphSource (): HydraOutputGraphSource | null {
+    return this.graphSource
+  }
+
+  clearGraphSource (): void {
+    this.graphSource = null
+  }
+
+  renderGraph (source: HydraOutputGraphSource): void {
+    this.graphSource = source
+    if (!this.graphRenderHandler) {
+      this.inGraphRenderDispatch = true
+      try {
+        this.render(source.compileLegacyPasses())
+      } finally {
+        this.inGraphRenderDispatch = false
+      }
+      return
+    }
+
+    this.inGraphRenderDispatch = true
+    try {
+      this.graphRenderHandler(this, source)
+    } finally {
+      this.inGraphRenderDispatch = false
+    }
   }
 
   emitEvent (name: string): void {
@@ -540,6 +576,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
   }
 
   render (passes: HydraCompiledPass[]): void {
+    if (!this.inGraphRenderDispatch) this.clearGraphSource()
     this.pendingPasses = passes.slice()
     this.reportedPipelineErrors.clear()
     this.updateRequiredHistoryDepth(this.pendingPasses)
@@ -1749,6 +1786,9 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     this.activePasses = []
     this.activeSourcePasses = []
     this.activePipelineEntries = []
+    this.graphSource = null
+    this.graphRenderHandler = null
+    this.inGraphRenderDispatch = false
     this.reportedPipelineErrors.clear()
     this.pipelineErrorHandler = null
     this.passStats.clear()

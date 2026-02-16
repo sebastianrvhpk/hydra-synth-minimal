@@ -306,8 +306,15 @@ export interface HydraCompiledPass {
   fallbackPass?: HydraCompiledPass
 }
 
+export interface HydraOutputGraphSource {
+  transforms: HydraTransformCall[]
+  compileLegacyPasses: () => HydraCompiledPass[]
+  compilePlanV3?: () => unknown
+}
+
 export interface HydraOutputAdapter {
   render (passes: HydraCompiledPass[]): void
+  renderGraph? (source: HydraOutputGraphSource): void
 }
 
 export interface HydraTextureProvider {

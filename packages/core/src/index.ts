@@ -42,6 +42,7 @@ export type {
   HydraFrameState,
   HydraGraphNode as HydraGraphNodeShape,
   HydraOutputAdapter,
+  HydraOutputGraphSource,
   HydraOutputTextureBinding,
   HydraPassIRNode,
   HydraPassIRResourceRef,
