@@ -1,11 +1,10 @@
 /**
- * GPU-native readback utilities for capturing rgba16float output textures
- * directly from WebGPU, bypassing the lossy canvas.toBlob() path.
+ * GPU-native readback utilities for capturing rgba16float output textures.
  *
- * Key design decisions:
- * - Supports double-buffered readback for pipelined capture
- * - Handles WebGPU 256-byte row alignment requirement
- * - Provides float16→uint8 conversion with linear→sRGB gamma
+ * This module provides two paths:
+ * 1. `readbackTexture` (original): Reads raw rgba16float data.
+ * 2. `readbackTextureWithConversion` (new): Uses a compute shader to convert
+ *    linear rgba16float -> sRGB rgba8unorm on the GPU, avoiding expensive CPU loops.
  */
 
 /** Result of creating a readback buffer with computed row alignment. */
@@ -47,7 +46,7 @@ export const createReadbackBuffer = (
     const bufferSize = paddedBytesPerRow * height
 
     const buffer = device.createBuffer({
-        label: 'hydra-capture-readback',
+        label: `hydra-capture-readback-${format}`,
         size: bufferSize,
         usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
     })
@@ -57,7 +56,7 @@ export const createReadbackBuffer = (
 
 /**
  * Encode a copyTextureToBuffer command from an output texture to a readback buffer.
- * This must be called before the command encoder is submitted.
+ * This handles raw data copy without conversion.
  */
 export const readbackTexture = (
     encoder: GPUCommandEncoder,
@@ -79,11 +78,140 @@ export const readbackTexture = (
     )
 }
 
+// ─── GPU-Side Color Conversion ────────────────────────────────────────
+
+const CONVERSION_WGSL = `
+@group(0) @binding(0) var splitInput: texture_2d<f32>;
+@group(0) @binding(1) var splitOutput: texture_storage_2d<rgba8unorm, write>;
+
+fn linearToSrgb(linear: vec3f) -> vec3f {
+  let a = 0.055;
+  let cutoff = 0.0031308;
+  let higher = (1.0 + a) * pow(linear, vec3f(1.0 / 2.4)) - a;
+  let lower = 12.92 * linear;
+  return select(higher, lower, linear <= vec3f(cutoff));
+}
+
+@compute @workgroup_size(16, 16)
+fn main(@builtin(global_invocation_id) id: vec3u) {
+  let dims = textureDimensions(splitInput);
+  if (id.x >= dims.x || id.y >= dims.y) {
+    return;
+  }
+  
+  let color = textureLoad(splitInput, vec2i(id.xy), 0);
+  let srgb = linearToSrgb(clamp(color.rgb, vec3f(0.0), vec3f(1.0)));
+  
+  textureStore(splitOutput, vec2i(id.xy), vec4f(srgb, color.a));
+}
+`
+
+// Cache for compute pipeline / bind group layouts to avoid recreation
+interface ConversionContext {
+    pipeline: GPUComputePipeline
+    bindGroupLayout: GPUBindGroupLayout
+}
+
+let conversionContext: ConversionContext | null = null
+
+const getConversionContext = (device: GPUDevice): ConversionContext => {
+    if (conversionContext) return conversionContext
+
+    const module = device.createShaderModule({
+        label: 'hydra-capture-conversion',
+        code: CONVERSION_WGSL
+    })
+
+    const bindGroupLayout = device.createBindGroupLayout({
+        entries: [
+            { binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'float' } },
+            { binding: 1, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: 'rgba8unorm' } }
+        ]
+    })
+
+    const pipelineLayout = device.createPipelineLayout({
+        bindGroupLayouts: [bindGroupLayout]
+    })
+
+    const pipeline = device.createComputePipeline({
+        label: 'hydra-capture-conversion-pipeline',
+        layout: pipelineLayout,
+        compute: {
+            module,
+            entryPoint: 'main'
+        }
+    })
+
+    conversionContext = { pipeline, bindGroupLayout }
+    return conversionContext
+}
+
 /**
- * Map the readback buffer for CPU access. Returns the raw ArrayBuffer
- * containing the texture data. The caller must call `unmap()` when done.
- *
- * Includes a configurable timeout to prevent indefinite GPU hangs.
+ * Perform GPU-side conversion from rgba16float -> rgba8unorm sRGB, then copy to buffer.
+ * Requires a temporary intermediate texture for the compute shader output.
+ */
+export const readbackTextureWithConversion = (
+    device: GPUDevice,
+    encoder: GPUCommandEncoder,
+    sourceTexture: GPUTexture,
+    activeInfo: ReadbackBufferInfo,
+    intermediateTexture: GPUTexture
+): void => {
+    const ctx = getConversionContext(device)
+
+    const bindGroup = device.createBindGroup({
+        layout: ctx.bindGroupLayout,
+        entries: [
+            { binding: 0, resource: sourceTexture.createView() },
+            { binding: 1, resource: intermediateTexture.createView() }
+        ]
+    })
+
+    const pass = encoder.beginComputePass({ label: 'hydra-capture-conversion-pass' })
+    pass.setPipeline(ctx.pipeline)
+    pass.setBindGroup(0, bindGroup)
+    pass.dispatchWorkgroups(
+        Math.ceil(activeInfo.width / 16),
+        Math.ceil(activeInfo.height / 16)
+    )
+    pass.end()
+
+    // Now copy from the intermediate rgba8unorm texture to the buffer
+    encoder.copyTextureToBuffer(
+        { texture: intermediateTexture },
+        {
+            buffer: activeInfo.buffer,
+            bytesPerRow: activeInfo.paddedBytesPerRow,
+            rowsPerImage: activeInfo.height
+        },
+        {
+            width: activeInfo.width,
+            height: activeInfo.height,
+            depthOrArrayLayers: 1
+        }
+    )
+}
+
+/**
+ * Helper to create the intermediate texture needed for conversion.
+ */
+export const createintermediateConversionTexture = (
+    device: GPUDevice,
+    width: number,
+    height: number
+): GPUTexture => {
+    return device.createTexture({
+        label: 'hydra-capture-intermediate-rgba8',
+        size: [width, height],
+        format: 'rgba8unorm',
+        usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.TEXTURE_BINDING
+    })
+}
+
+// ─── CPU Readback Utilities ──────────────────────────────────────────
+
+/**
+ * Map the readback buffer for CPU access. Returns the raw ArrayBuffer.
  */
 export const mapReadbackBuffer = async (
     buffer: GPUBuffer,
@@ -111,13 +239,8 @@ export const mapReadbackBuffer = async (
 }
 
 /**
- * Convert rgba16float readback data to RGBA 8-bit with sRGB gamma.
- *
- * The input is raw GPU buffer data containing IEEE 754 half-precision
- * floats (4 channels × 2 bytes = 8 bytes per pixel), potentially with
- * row padding from WebGPU's 256-byte alignment.
- *
- * Values are clamped to [0, 1] and converted from linear to sRGB.
+ * Legacy/Testing: CPU-side float16 -> uint8 conversion.
+ * Kept for specific raw data capture needs, but generally superseded by GPU path.
  */
 export const float16ToUint8 = (
     source: ArrayBuffer,
@@ -131,7 +254,7 @@ export const float16ToUint8 = (
     for (let y = 0; y < height; y += 1) {
         const rowOffset = y * paddedBytesPerRow
         for (let x = 0; x < width; x += 1) {
-            const pixelOffset = rowOffset + x * 8 // 8 bytes per rgba16float pixel
+            const pixelOffset = rowOffset + x * 8
             const outIndex = (y * width + x) * 4
 
             const r = decodeFloat16(sourceView.getUint16(pixelOffset, true))
@@ -145,13 +268,12 @@ export const float16ToUint8 = (
             output[outIndex + 3] = Math.round(clamp01(a) * 255)
         }
     }
-
     return output
 }
 
 /**
- * Strip row padding from readback data when the format is rgba8unorm.
- * If no padding exists, returns a view of the original data.
+ * Strip row padding from readback data (rgba8unorm).
+ * This is the only CPU step needed for the GPU-converted path.
  */
 export const stripRowPadding = (
     source: ArrayBuffer,
@@ -170,6 +292,7 @@ export const stripRowPadding = (
     for (let y = 0; y < height; y += 1) {
         const srcOffset = y * paddedBytesPerRow
         const dstOffset = y * bytesPerRow
+        // Fastest way to copy rows in JS
         output.set(sourceBytes.subarray(srcOffset, srcOffset + bytesPerRow), dstOffset)
     }
 
@@ -178,7 +301,6 @@ export const stripRowPadding = (
 
 // ─── Internal helpers ────────────────────────────────────────────────
 
-/** Decode an IEEE 754 half-precision (binary16) float from a 16-bit unsigned integer. */
 const decodeFloat16 = (packed: number): number => {
     const sign = (packed & 0x8000) === 0 ? 1 : -1
     const exponent = (packed >> 10) & 0x1f
@@ -195,17 +317,12 @@ const decodeFloat16 = (packed: number): number => {
     return sign * Math.pow(2, exponent - 15) * (1 + fraction / 1024)
 }
 
-/** Clamp a value to [0, 1]. */
 const clamp01 = (value: number): number => {
     if (!Number.isFinite(value) || value < 0) return 0
     if (value > 1) return 1
     return value
 }
 
-/**
- * Convert a linear-light value to sRGB 8-bit.
- * Uses the standard IEC 61966-2-1 transfer function.
- */
 const linearToSrgb8 = (linear: number): number => {
     const clamped = clamp01(linear)
     const srgb = clamped <= 0.0031308

@@ -3,11 +3,14 @@ import type { WebGPUOutputNode } from '../runtime/output-node.js'
 import {
   createReadbackBuffer,
   readbackTexture,
+  readbackTextureWithConversion,
+  createintermediateConversionTexture,
   mapReadbackBuffer,
   float16ToUint8,
   stripRowPadding,
   type ReadbackBufferInfo
 } from './gpu-readback.js'
+import { VideoRecorder, type VideoRecorderOptions } from './video-recorder.js'
 /// <reference path="./webgpu-types.d.ts" />
 
 export type CaptureFrameSequenceExtension = 'png' | 'jpg' | 'jpeg' | 'webp'
@@ -362,8 +365,8 @@ export const captureHydraFrameSequence = async (options: CaptureHydraFrameSequen
   const hasFpsBinding = Object.prototype.hasOwnProperty.call(synth, 'fps')
   const previousFpsBinding = synth.fps
   const shouldResize = Number.isFinite(width) || Number.isFinite(height)
-  const nextWidth = Number.isFinite(width) ? Math.max(1, Math.floor(width)) : previousWidth
-  const nextHeight = Number.isFinite(height) ? Math.max(1, Math.floor(height)) : previousHeight
+  const nextWidth = Number.isFinite(width) ? Math.max(1, Math.floor(width!)) : previousWidth
+  const nextHeight = Number.isFinite(height) ? Math.max(1, Math.floor(height!)) : previousHeight
 
   // Resolve GPU readback availability
   const device = runtime.renderer?.device ?? null
@@ -430,11 +433,17 @@ export const captureHydraFrameSequence = async (options: CaptureHydraFrameSequen
     }
   }
 
+  let intermediateTexture: GPUTexture | null = null
+
   const cleanupReadbackBuffers = (): void => {
     for (const info of readbackBuffers) {
       try { info.buffer.destroy() } catch { /* ignore */ }
     }
     readbackBuffers.length = 0
+    if (intermediateTexture) {
+      try { intermediateTexture.destroy() } catch { /* ignore */ }
+      intermediateTexture = null
+    }
   }
 
   try {
@@ -478,6 +487,10 @@ export const captureHydraFrameSequence = async (options: CaptureHydraFrameSequen
         createReadbackBuffer(device, captureWidth, captureHeight, readbackFormat)
       )
 
+      if (readbackFormat === 'rgba8unorm') {
+        intermediateTexture = createintermediateConversionTexture(device, captureWidth, captureHeight)
+      }
+
       for (let frame = 0; frame < totalFrames; frame += 1) {
         if (captureOptions.signal?.aborted) {
           throw new Error('Capture aborted.')
@@ -520,7 +533,13 @@ export const captureHydraFrameSequence = async (options: CaptureHydraFrameSequen
           const bufferIndex = frame % 2
           const bufferInfo = readbackBuffers[bufferIndex]!
           const encoder = device.createCommandEncoder({ label: `hydra-capture-readback-${frame}` })
-          readbackTexture(encoder, outputTexture, bufferInfo)
+
+          if (readbackFormat === 'rgba8unorm' && intermediateTexture) {
+            readbackTextureWithConversion(device, encoder, outputTexture, bufferInfo, intermediateTexture)
+          } else {
+            readbackTexture(encoder, outputTexture, bufferInfo)
+          }
+
           device.queue.submit([encoder.finish()])
 
           pendingReadback = {
@@ -632,6 +651,152 @@ export const captureHydraFrameSequence = async (options: CaptureHydraFrameSequen
     if (!captureFailed && restoreError) {
       throw restoreError
     }
+  }
+}
+
+export interface CaptureVideoOptions extends VideoRecorderOptions {
+  canvas: HTMLCanvasElement
+  step: (info: CaptureFrameSequenceFrameInfo) => void | Promise<void>
+  duration: number
+  signal?: AbortSignal
+  onProgress?: (percent: number) => void
+}
+
+export const captureVideo = async (options: CaptureVideoOptions): Promise<Blob> => {
+  const { canvas, step, duration, fps, width, height, bitrate, signal, onProgress } = options
+  const totalFrames = Math.ceil(duration * fps)
+  const deltaTime = 1 / fps
+
+  const recorder = new VideoRecorder({ width, height, fps, ...(bitrate != null ? { bitrate } : {}) })
+  await recorder.start()
+
+  try {
+    for (let frame = 0; frame < totalFrames; frame += 1) {
+      if (signal?.aborted) throw new Error('Capture aborted.')
+
+      const time = frame * deltaTime
+      const playhead = totalFrames <= 1 ? 0 : frame / (totalFrames - 1)
+
+      await step({
+        frame,
+        totalFrames,
+        fps,
+        time,
+        deltaTime,
+        playhead,
+        duration,
+        width,
+        height,
+        canvas
+      })
+
+      // Wait for rendering to complete (e.g. via RAF or GPU queue if handled in step)
+      // For generic canvas, we assume 'step' draws the frame.
+
+      // We pass the canvas directly to the recorder.
+      // Note: This relies on the canvas context being preserved.
+      await recorder.appendFrame(canvas)
+
+      if (onProgress) onProgress(((frame + 1) / totalFrames) * 100)
+    }
+  } catch (err) {
+    await recorder.stop() // cleanup
+    throw err
+  }
+
+  return await recorder.stop()
+}
+
+export interface CaptureHydraVideoOptions extends Omit<CaptureVideoOptions, 'canvas' | 'step' | 'width' | 'height'> {
+  runtime: HydraBrowserRuntime
+  output?: WebGPUOutputNode
+  step?: (info: CaptureHydraFrameSequenceFrameInfo) => void | Promise<void>
+  waitForGPU?: boolean
+  resumeAfterCapture?: boolean
+  restoreResolution?: boolean
+  ignoreEngineFpsGate?: boolean
+  width?: number
+  height?: number
+}
+
+export const captureHydraVideo = async (options: CaptureHydraVideoOptions): Promise<Blob> => {
+  const runtime = options.runtime
+  if (!runtime) throw new Error('captureHydraVideo: runtime is required')
+  if (activeRuntimeCaptures.has(runtime)) {
+    throw new Error('captureHydraVideo: a capture is already in progress')
+  }
+
+  const {
+    output,
+    step,
+    waitForGPU = true,
+    resumeAfterCapture = true,
+    restoreResolution = true,
+    ignoreEngineFpsGate = true,
+    width,
+    height,
+    ...videoOptions
+  } = options
+
+  await runtime.init()
+  const synth = runtime.synth as Record<string, unknown>
+  const wasRunning = runtime.host.isRunning
+  const previousWidth = runtime.host.canvas.width
+  const previousHeight = runtime.host.canvas.height
+  const hasFpsBinding = Object.prototype.hasOwnProperty.call(synth, 'fps')
+  const previousFpsBinding = synth.fps
+  const shouldResize = Number.isFinite(width) || Number.isFinite(height)
+  const nextWidth = Number.isFinite(width) ? Math.max(1, Math.floor(width!)) : previousWidth
+  const nextHeight = Number.isFinite(height) ? Math.max(1, Math.floor(height!)) : previousHeight
+
+  activeRuntimeCaptures.add(runtime)
+  runtime.stop()
+  if (output) runtime.render(output)
+  if (shouldResize) runtime.setResolution(nextWidth, nextHeight)
+  if (ignoreEngineFpsGate) synth.fps = undefined
+
+  let captureFailed = false
+  let restoreError: unknown = null
+
+  try {
+    return await captureVideo({
+      ...videoOptions,
+      canvas: runtime.host.canvas,
+      width: nextWidth,
+      height: nextHeight,
+      step: async (frameInfo) => {
+        if (step) {
+          await step({ ...frameInfo, runtime, synth })
+        } else {
+          runtime.tick(frameInfo.deltaTime * 1000)
+        }
+
+        if (waitForGPU) {
+          await waitForGPUQueue(runtime)
+        }
+      }
+    })
+  } catch (error) {
+    captureFailed = true
+    throw error
+  } finally {
+    try {
+      if (ignoreEngineFpsGate) {
+        if (hasFpsBinding) synth.fps = previousFpsBinding
+        else delete synth.fps
+      }
+      if (restoreResolution && shouldResize) {
+        runtime.setResolution(previousWidth, previousHeight)
+      }
+      if (resumeAfterCapture && wasRunning) {
+        await runtime.start()
+      }
+    } catch (e) {
+      restoreError = e
+    } finally {
+      activeRuntimeCaptures.delete(runtime)
+    }
+    if (!captureFailed && restoreError) throw restoreError
   }
 }
 
