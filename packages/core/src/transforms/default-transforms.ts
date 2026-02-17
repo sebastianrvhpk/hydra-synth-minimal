@@ -416,6 +416,33 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
 `
   },
   {
+    name: 'scrollX',
+    type: 'coord',
+    inputs: [
+      { type: 'float', name: 'scrollX', default: 0.5 },
+      { type: 'float', name: 'speed', default: 0 }
+    ],
+    wgsl: `
+  var st = _st;
+  st.x += scrollX + globals.time * speed;
+  return fract(st);
+`
+  },
+  {
+    name: 'scrollY',
+    type: 'coord',
+    inputs: [
+      { type: 'float', name: 'scrollY', default: 0.5 },
+      { type: 'float', name: 'speed', default: 0 }
+    ],
+    wgsl: `
+  var st = _st;
+  st.y += scrollY + globals.time * speed;
+  return fract(st);
+`
+  },
+  {
+    // Syntactic sugar: modulate(tex.mask(tex.color(1,0)), scrollX).scrollX(0, speed)
     name: 'modulateScrollX',
     type: 'combineCoord',
     inputs: [
@@ -429,6 +456,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
 `
   },
   {
+    // Syntactic sugar: modulate(tex.mask(tex.color(1,0)), scrollX).scrollX(0, speed)
     name: 'modulateScrollY',
     type: 'combineCoord',
     inputs: [
@@ -598,29 +626,8 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
   return _st + _c0.xy * amount;
 `
   },
-  {
-    name: 'flow',
-    type: 'combineCoord',
-    inputs: [
-      { type: 'float', name: 'amount', default: 0.1 }
-    ],
-    wgsl: `
-  let field = (_c0.xy * 2.0) - vec2f(1.0);
-  return fract(_st + field * amount);
-`
-  },
-  {
-    name: 'curlModulate',
-    type: 'combineCoord',
-    inputs: [
-      { type: 'float', name: 'amount', default: 0.1 }
-    ],
-    wgsl: `
-  let field = (_c0.xy * 2.0) - vec2f(1.0);
-  let curl = vec2f(-field.y, field.x);
-  return fract(_st + curl * amount);
-`
-  },
+
+
   {
     name: 'modulateScale',
     type: 'combineCoord',
@@ -648,6 +655,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
 `
   },
   {
+    // Syntactic sugar: rotate(tex.mult(multiple).add(offset))
     name: 'modulateRotate',
     type: 'combineCoord',
     inputs: [
@@ -664,6 +672,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
 `
   },
   {
+    // Syntactic sugar: modulate(tex.sub(tex.r, tex.g).color(1,0,0), amount) ... roughly
     name: 'modulateHue',
     type: 'combineCoord',
     inputs: [
@@ -675,6 +684,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
 `
   },
   {
+    // Syntactic sugar: mult(-1).add(1)
     name: 'invert',
     type: 'color',
     inputs: [
@@ -685,6 +695,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
 `
   },
   {
+    // Syntactic sugar: sub(0.5).mult(amount).add(0.5)
     name: 'contrast',
     type: 'color',
     inputs: [
@@ -696,6 +707,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
 `
   },
   {
+    // Syntactic sugar: add(amount)
     name: 'brightness',
     type: 'color',
     inputs: [
