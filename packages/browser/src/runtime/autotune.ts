@@ -5,7 +5,7 @@ import type {
   HydraAutotuneRunOptions
 } from 'hydra-synth-core'
 
-export {
+export type {
   HydraTuningPolicy,
   HydraAutotuneProfilerInput,
   HydraAutotuneProfile,
