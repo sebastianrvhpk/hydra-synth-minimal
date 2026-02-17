@@ -29,7 +29,12 @@ export interface RendererAdapter {
   init(): Promise<void>
   beginFrame(frame: HydraFrameState): unknown
   renderFrame(frameHandle: unknown, frame: HydraFrameState): void
-  submitFrame(frameHandle: unknown): void
+  // Developer / Debugging Tools
+  dumpShaders?(): string[]
+  getPassStats?(): Record<string, unknown>
+  autotune?(options?: unknown): unknown
+  getProfilerSnapshot?(): unknown
+  checkCompatibility?(): boolean
   setResolution?(width: number, height: number): void
   dispose(): void
 }
