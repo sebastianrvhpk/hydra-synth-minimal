@@ -11,8 +11,8 @@ interface SourceInitOptions {
 }
 
 export interface PatchBayAdapter {
-  initSource (name: string): void
-  on (event: string, callback: (nick: string, video: HTMLVideoElement) => void): (() => void) | void
+  initSource(name: string): void
+  on(event: string, callback: (nick: string, video: HTMLVideoElement) => void): (() => void) | void
   off?: (event: string, callback: (nick: string, video: HTMLVideoElement) => void) => void
 }
 
@@ -35,19 +35,19 @@ export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
   private readonly canvases: Record<string, CanvasRenderingContext2D> = {}
   private readonly cleanups: Cleanup[] = []
 
-  constructor ({ renderer, pb, label = '' }: { renderer: WebGPURenderer | null, pb: PatchBayAdapter | null, label?: string }) {
+  constructor({ renderer, pb, label = '' }: { renderer: WebGPURenderer | null, pb: PatchBayAdapter | null, label?: string }) {
     this.renderer = renderer
     this.pb = pb
     this.label = label
   }
 
-  attachRenderer (renderer: WebGPURenderer): void {
+  attachRenderer(renderer: WebGPURenderer): void {
     this.renderer = renderer
     this.ensureTexture(1, 1)
     this.needsUpload = true
   }
 
-  init (opts: SourceInitOptions = {}, params: StreamInitParams = {}): void {
+  init(opts: SourceInitOptions = {}, params: StreamInitParams = {}): void {
     if (this.disposed) return
     this.clearRegisteredCleanups()
     if ('dynamic' in opts && typeof opts.dynamic === 'boolean') this.dynamic = opts.dynamic
@@ -59,7 +59,7 @@ export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
     }
   }
 
-  initVideo (url = '', params: StreamInitParams = {}): void {
+  initVideo(url = '', params: StreamInitParams = {}): void {
     if (this.disposed) return
     this.clearRegisteredCleanups()
     const video = document.createElement('video')
@@ -77,7 +77,7 @@ export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
       this.dynamic = true
       this.needsUpload = true
       this.uploadedStatic = false
-      void video.play().catch(() => {})
+      void video.play().catch(() => { })
     }
 
     this.listen(video, 'loadeddata', loaded)
@@ -87,7 +87,7 @@ export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
     })
   }
 
-  initImage (url = '', params: StreamInitParams = {}): void {
+  initImage(url = '', params: StreamInitParams = {}): void {
     if (this.disposed) return
     this.clearRegisteredCleanups()
     const image = document.createElement('img')
@@ -104,7 +104,7 @@ export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
     this.listen(image, 'load', loaded)
   }
 
-  initStream (streamName: string, params: StreamInitParams = {}): void {
+  initStream(streamName: string, params: StreamInitParams = {}): void {
     if (!streamName || !this.pb || this.disposed) return
     this.clearRegisteredCleanups()
     this.pb.initSource(streamName)
@@ -128,7 +128,98 @@ export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
     }
   }
 
-  initCanvas (width = 1000, height = 1000): CanvasRenderingContext2D {
+  async initCam(
+    constraintsOrId?: MediaStreamConstraints | number | string
+  ): Promise<void> {
+    if (this.disposed) return
+    this.clearRegisteredCleanups()
+
+    let constraints: MediaStreamConstraints = {
+      video: {
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        facingMode: 'user'
+      },
+      audio: false
+    }
+
+    if (typeof constraintsOrId === 'number') {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices()
+        const videoDevices = devices.filter((d) => d.kind === 'videoinput')
+        const device = videoDevices[constraintsOrId]
+        if (device && device.deviceId) {
+          constraints = {
+            video: {
+              deviceId: { exact: device.deviceId },
+              width: { ideal: 1280 },
+              height: { ideal: 720 }
+            },
+            audio: false
+          }
+        }
+      } catch (err) {
+        console.warn('Hydra: failed to enumerate devices for initCam index', err)
+      }
+    } else if (typeof constraintsOrId === 'object') {
+      // If the user passed a MediaStreamConstraints object (e.g. { video: { ... } }), use it.
+      // If they passed a simple object with { facingMode: ... }, wrap it.
+      if ('video' in constraintsOrId || 'audio' in constraintsOrId) {
+        constraints = constraintsOrId
+      } else {
+        constraints = {
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            ...(constraintsOrId as MediaTrackConstraints)
+          },
+          audio: false
+        }
+      }
+    } else if (typeof constraintsOrId === 'string') {
+      constraints = {
+        video: {
+          deviceId: { exact: constraintsOrId },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      }
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(constraints)
+      if (this.disposed) {
+        stream.getTracks().forEach((t) => t.stop())
+        return
+      }
+
+      const video = document.createElement('video')
+      video.autoplay = true
+      video.muted = true
+      video.playsInline = true
+      video.srcObject = stream
+
+      // Keep track of the stream to stop it later
+      this.registerCleanup(() => {
+        stream.getTracks().forEach((t) => t.stop())
+        video.srcObject = null
+      })
+
+      await video.play()
+
+      this.src = video
+      this.dynamic = true
+      this.needsUpload = true
+      this.uploadedStatic = false
+      this.flipY = false // Webcams are usually mirrored in user-facing mode, but Hydra conventionally flips texture coords? 
+      // Actually, let's default to typical webcam behavior. simpler to flip geometry if needed. 
+    } catch (err) {
+      console.error('Hydra: initCam failed', err)
+    }
+  }
+
+  initCanvas(width = 1000, height = 1000): CanvasRenderingContext2D {
     if (!this.canvases[this.label]) {
       const canvas = document.createElement('canvas')
       const context = canvas.getContext('2d')
@@ -137,6 +228,8 @@ export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
     }
 
     const context = this.canvases[this.label]
+    if (!context) throw new Error('Failed to retrieve 2D canvas context.')
+
     const canvas = context.canvas
     if (canvas.width !== width || canvas.height !== height) {
       canvas.width = width
@@ -149,11 +242,11 @@ export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
     return context
   }
 
-  private registerCleanup (cleanup: Cleanup): void {
+  private registerCleanup(cleanup: Cleanup): void {
     this.cleanups.push(cleanup)
   }
 
-  private clearRegisteredCleanups (): void {
+  private clearRegisteredCleanups(): void {
     while (this.cleanups.length > 0) {
       const cleanup = this.cleanups.pop()
       if (!cleanup) continue
@@ -165,7 +258,7 @@ export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
     }
   }
 
-  private listen (
+  private listen(
     target: EventTarget,
     type: string,
     listener: EventListenerOrEventListenerObject,
@@ -177,7 +270,7 @@ export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
     })
   }
 
-  private getSourceSize (): { width: number, height: number } {
+  private getSourceSize(): { width: number, height: number } {
     if (!this.src) return { width: 1, height: 1 }
 
     if ('videoWidth' in this.src && this.src.videoWidth && this.src.videoHeight) {
@@ -195,7 +288,7 @@ export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
     return { width: 1, height: 1 }
   }
 
-  private ensureTexture (width: number, height: number): void {
+  private ensureTexture(width: number, height: number): void {
     if (!this.renderer || !this.renderer.ready) return
 
     const w = Math.max(1, Math.floor(width))
@@ -213,7 +306,7 @@ export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
     this.textureHeight = h
   }
 
-  clear (): void {
+  clear(): void {
     if (this.src && 'srcObject' in this.src && this.src.srcObject && 'getTracks' in this.src.srcObject) {
       this.src.srcObject.getTracks().forEach((track) => track.stop())
     }
@@ -226,7 +319,7 @@ export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
     this.ensureTexture(1, 1)
   }
 
-  private uploadSource (): void {
+  private uploadSource(): void {
     if (!this.renderer || !this.renderer.ready || !this.renderer.device || !this.src) return
 
     const { width, height } = this.getSourceSize()
@@ -235,7 +328,8 @@ export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
     this.ensureTexture(width, height)
     if (!this.texture) return
 
-    this.renderer.device.queue.copyExternalImageToTexture(
+    const queue = this.renderer.device.queue as unknown as { copyExternalImageToTexture: (source: object, dest: object, size: object) => void }
+    queue.copyExternalImageToTexture(
       {
         source: this.src,
         flipY: this.flipY
@@ -250,7 +344,7 @@ export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
     )
   }
 
-  tick (_frame: HydraFrameState): void {
+  tick(_frame: HydraFrameState): void {
     if (this.disposed || !this.renderer || !this.renderer.ready) return
 
     if (!this.src) {
@@ -271,13 +365,13 @@ export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
     }
   }
 
-  getTexture (): GPUTexture | null {
+  getTexture(): GPUTexture | null {
     if (this.texture) return this.texture
     if (this.renderer && this.renderer.ready) return this.renderer.getFallbackTexture()
     return null
   }
 
-  dispose (): void {
+  dispose(): void {
     if (this.disposed) return
     this.disposed = true
 

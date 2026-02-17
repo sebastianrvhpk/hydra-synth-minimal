@@ -36,6 +36,9 @@ export interface RendererAdapter {
 
 export interface SourceAdapter {
   tick(frame: HydraFrameState): void
+  initCam?(constraintsOrId?: unknown): Promise<void>
+  initVideo?(url: string, params?: unknown): void
+  initImage?(url: string, params?: unknown): void
   dispose(): void
 }
 
