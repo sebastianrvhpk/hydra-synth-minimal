@@ -173,26 +173,32 @@ fn hydraGrad4(j: f32, ip: vec4f) -> vec4f {
     dependencies: ['hydraPermute', 'hydraPermuteScalar', 'hydraTaylorInvSqrt', 'hydraGrad4'],
     wgsl: `
 fn hydraNoise4(v: vec4f) -> f32 {
-  let F4 = 0.30901699437494745;
-  let G4 = 0.138196601125011;
+  let C = vec4f(0.138196601125011, 0.276393202250021, 0.414589803375032, -0.447213595499958);
+  var i = floor(v + vec4f(dot(v, vec4f(0.30901699437494745))));
+  let x0 = v - i + vec4f(dot(i, vec4f(C.x)));
 
-  var i = floor(v + vec4f(dot(v, vec4f(F4))));
-  let x0 = v - i + vec4f(dot(i, vec4f(G4)));
+  let isX = step(x0.yzw, x0.xxx);
+  let isYZ = step(x0.zww, x0.yyz);
 
-  var rank = vec4f(0.0);
-  rank.x = step(x0.y, x0.x) + step(x0.z, x0.x) + step(x0.w, x0.x);
-  rank.y = step(x0.x, x0.y) + step(x0.z, x0.y) + step(x0.w, x0.y);
-  rank.z = step(x0.x, x0.z) + step(x0.y, x0.z) + step(x0.w, x0.z);
-  rank.w = step(x0.x, x0.w) + step(x0.y, x0.w) + step(x0.z, x0.w);
+  var i0 = vec4f(0.0);
+  i0.x = isX.x + isX.y + isX.z;
+  i0.y = 1.0 - isX.x;
+  i0.z = 1.0 - isX.y;
+  i0.w = 1.0 - isX.z;
+  i0.y += isYZ.x + isYZ.y;
+  i0.z += 1.0 - isYZ.x;
+  i0.w += 1.0 - isYZ.y;
+  i0.z += isYZ.z;
+  i0.w += 1.0 - isYZ.z;
 
-  let i1 = clamp(rank - vec4f(2.0), vec4f(0.0), vec4f(1.0));
-  let i2 = clamp(rank - vec4f(1.0), vec4f(0.0), vec4f(1.0));
-  let i3 = clamp(rank, vec4f(0.0), vec4f(1.0));
+  let i3 = clamp(i0, vec4f(0.0), vec4f(1.0));
+  let i2 = clamp(i0 - vec4f(1.0), vec4f(0.0), vec4f(1.0));
+  let i1 = clamp(i0 - vec4f(2.0), vec4f(0.0), vec4f(1.0));
 
-  let x1 = x0 - i1 + vec4f(G4);
-  let x2 = x0 - i2 + vec4f(2.0 * G4);
-  let x3 = x0 - i3 + vec4f(3.0 * G4);
-  let x4 = x0 - vec4f(1.0) + vec4f(4.0 * G4);
+  let x1 = x0 - i1 + vec4f(C.x);
+  let x2 = x0 - i2 + vec4f(C.y);
+  let x3 = x0 - i3 + vec4f(C.z);
+  let x4 = x0 + vec4f(C.w);
 
   i = hydraMod289Vec4(i);
   let j0 = hydraPermuteScalar(
