@@ -831,6 +831,37 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     return null
   }
 
+  private restorePassOutputHistory (
+    previousSourcePasses: HydraCompiledPass[],
+    previousHistory: Array<GPUTexture | null>,
+    nextSourcePasses: HydraCompiledPass[]
+  ): Array<GPUTexture | null> {
+    const restored: Array<GPUTexture | null> = new Array(nextSourcePasses.length).fill(null)
+    if (previousSourcePasses.length === 0 || previousHistory.length === 0) return restored
+
+    const historyBySignature = new Map<string, GPUTexture[]>()
+    for (let index = 0; index < previousSourcePasses.length; index += 1) {
+      const previousPass = previousSourcePasses[index]
+      const texture = previousHistory[index]
+      if (!previousPass || !texture) continue
+      const bucket = historyBySignature.get(previousPass.signature)
+      if (bucket) bucket.push(texture)
+      else historyBySignature.set(previousPass.signature, [texture])
+    }
+
+    for (let index = 0; index < nextSourcePasses.length; index += 1) {
+      const nextPass = nextSourcePasses[index]
+      if (!nextPass) continue
+      const bucket = historyBySignature.get(nextPass.signature)
+      if (!bucket || bucket.length === 0) continue
+      const restoredTexture = bucket.shift()
+      if (!restoredTexture) continue
+      restored[index] = restoredTexture
+    }
+
+    return restored
+  }
+
   private resolvePassEntry (
     sourcePass: HydraCompiledPass,
     passIndex: number
@@ -873,6 +904,8 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     if (!this.renderer || !this.renderer.ready) return null
 
     if (this.pendingPasses) {
+      const previousSourcePasses = this.activeSourcePasses.slice()
+      const previousHistory = this.passOutputHistory.slice()
       const nextPasses: HydraCompiledPass[] = []
       const nextSourcePasses: HydraCompiledPass[] = []
       const nextEntries: PipelineEntry[] = []
@@ -889,7 +922,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
       this.activeSourcePasses = nextSourcePasses
       this.activePasses = nextPasses
       this.activePipelineEntries = nextEntries
-      this.passOutputHistory = new Array(nextPasses.length).fill(null)
+      this.passOutputHistory = this.restorePassOutputHistory(previousSourcePasses, previousHistory, nextSourcePasses)
       this.pendingPasses = null
       this.invalidateBindGroupCache()
     }

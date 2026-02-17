@@ -216,7 +216,7 @@
   <div id="live-panel" hidden>
     <div id="live-panel-header">
       <strong>Livecoding Editor</strong>
-      <button id="live-run" type="button">Run (Ctrl/Cmd+Enter)</button>
+      <button id="live-run" type="button">Run Selection/Line (Ctrl/Cmd+Enter)</button>
     </div>
     <textarea id="live-editor" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off"></textarea>
     <div id="live-status"></div>
@@ -535,6 +535,7 @@ speed = 0.75`
     let activeCaptureFormat = null
     let detachLivecoding = null
     let livecodingPlugin = null
+    let lastFullBufferBlocks = null
 
     const captureLabel = (format) => {
       if (format === 'gif') return 'GIF'
@@ -804,22 +805,129 @@ speed = 0.75`
     setCaptureDurationSeconds(loadCaptureDurationSeconds())
     updateCaptureButtonState()
 
-    const runEditorSnippet = () => {
+    const getLiveSelectionSnippet = () => {
+      if (!liveEditor) return ''
+      const start = Math.max(0, Math.min(liveEditor.value.length, liveEditor.selectionStart ?? 0))
+      const end = Math.max(start, Math.min(liveEditor.value.length, liveEditor.selectionEnd ?? start))
+      if (end <= start) return ''
+      return liveEditor.value.slice(start, end)
+    }
+
+    const getLiveLineSnippet = () => {
+      if (!liveEditor) return ''
+      const code = liveEditor.value
+      if (!code) return ''
+
+      const cursor = Math.max(
+        0,
+        Math.min(
+          code.length,
+          (typeof liveEditor.selectionEnd === 'number' ? liveEditor.selectionEnd : liveEditor.selectionStart) ?? 0
+        )
+      )
+      const lineStart = code.lastIndexOf('\n', Math.max(0, cursor - 1)) + 1
+      const lineBreakIndex = code.indexOf('\n', cursor)
+      const lineEnd = lineBreakIndex >= 0 ? lineBreakIndex : code.length
+      return code.slice(lineStart, lineEnd)
+    }
+
+    const resolveLiveSnippet = (scope = 'smart') => {
+      if (!liveEditor) return { code: '', scopeLabel: 'buffer' }
+      if (scope === 'all') return { code: liveEditor.value, scopeLabel: 'buffer' }
+
+      const selection = getLiveSelectionSnippet()
+      if (selection.trim()) return { code: selection, scopeLabel: 'selection' }
+
+      const line = getLiveLineSnippet()
+      if (line.trim()) return { code: line, scopeLabel: 'line' }
+
+      return { code: '', scopeLabel: 'line' }
+    }
+
+    const splitLiveExecutionBlocks = (code) => {
+      const normalized = String(code ?? '').replace(/\r\n?/g, '\n')
+      const lines = normalized.split('\n')
+      const blocks = []
+      let blockLines = []
+
+      const flushBlock = () => {
+        if (blockLines.length === 0) return
+        const block = blockLines.join('\n').trim()
+        if (block) blocks.push(block)
+        blockLines = []
+      }
+
+      for (const line of lines) {
+        if (!line.trim()) {
+          flushBlock()
+          continue
+        }
+        blockLines.push(line)
+      }
+      flushBlock()
+      return blocks
+    }
+
+    const runEditorSnippet = (scope = 'smart') => {
       if (!liveEditor) return
       if (!livecodingPlugin || typeof livecodingPlugin.run !== 'function') {
         setLiveStatus('Livecoding plugin is not attached.', 'error')
         return
       }
 
-      const code = liveEditor.value
+      const snippet = resolveLiveSnippet(scope)
+      const code = snippet.code
       if (!code.trim()) {
-        setLiveStatus('Editor is empty.', 'error')
+        if (scope === 'all') {
+          setLiveStatus('Editor is empty.', 'error')
+        } else {
+          setLiveStatus('Selection/line is empty. Use Shift+Ctrl/Cmd+Enter for full buffer.', 'error')
+        }
         return
       }
 
+      if (scope === 'all') {
+        const blocks = splitLiveExecutionBlocks(code)
+        const previousBlocks = Array.isArray(lastFullBufferBlocks) ? lastFullBufferBlocks : []
+        let executedBlocks = 0
+        let skippedBlocks = 0
+        let executeRemaining = false
+
+        try {
+          for (let index = 0; index < blocks.length; index += 1) {
+            const block = blocks[index]
+            if (!executeRemaining && previousBlocks[index] === block) {
+              skippedBlocks += 1
+              continue
+            }
+
+            executeRemaining = true
+            try {
+              livecodingPlugin.run(block)
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              throw new Error(`Block ${index + 1}: ${message}`)
+            }
+            executedBlocks += 1
+          }
+
+          lastFullBufferBlocks = blocks
+          setLiveStatus(
+            `Ran buffer at ${new Date().toLocaleTimeString()} (${executedBlocks} block(s), ${skippedBlocks} unchanged).`,
+            'ok'
+          )
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          setLiveStatus(`Error: ${message}`, 'error')
+          console.error('[hydra] live editor run failed', error)
+        }
+        return
+      }
+
+      lastFullBufferBlocks = null
       try {
         livecodingPlugin.run(code)
-        setLiveStatus(`Ran at ${new Date().toLocaleTimeString()}.`, 'ok')
+        setLiveStatus(`Ran ${snippet.scopeLabel} at ${new Date().toLocaleTimeString()}.`, 'ok')
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         setLiveStatus(`Error: ${message}`, 'error')
@@ -834,12 +942,12 @@ speed = 0.75`
         const wantsRun = (event.ctrlKey || event.metaKey) && event.key === 'Enter'
         if (!wantsRun) return
         event.preventDefault()
-        runEditorSnippet()
+        runEditorSnippet(event.shiftKey ? 'all' : 'smart')
       })
     }
 
     if (liveRunButton) {
-      liveRunButton.addEventListener('click', runEditorSnippet)
+      liveRunButton.addEventListener('click', () => runEditorSnippet('smart'))
     }
 
     if (captureGifToggle) {
@@ -877,9 +985,9 @@ speed = 0.75`
       window.livecodingDetach = detachLivecoding
       if (livePanel) livePanel.hidden = false
       if (livecodingNote) {
-        livecodingNote.innerHTML = 'Live editor enabled: <code>Ctrl/Cmd+Enter</code> to run. Capture via buttons, <code>captureAndSaveGif()</code>, or <code>captureAndSaveVideo()</code>.'
+        livecodingNote.innerHTML = 'Live editor enabled: <code>Ctrl/Cmd+Enter</code> runs selection/line. <code>Shift+Ctrl/Cmd+Enter</code> runs full buffer incrementally (unchanged blank-line blocks are skipped). Capture via buttons, <code>captureAndSaveGif()</code>, or <code>captureAndSaveVideo()</code>.'
       }
-      setLiveStatus('Ready. Press Ctrl/Cmd+Enter or click Run.')
+      setLiveStatus('Ready. Ctrl/Cmd+Enter runs selection/line; Shift+Ctrl/Cmd+Enter runs full buffer incrementally.')
       console.info('[hydra] livecoding plugin attached')
       console.info('[hydra] live editor ready: use panel or livecoding.run(...)')
     } else if (livecodingNote) {
@@ -900,6 +1008,7 @@ speed = 0.75`
         detachLivecoding = null
       }
       livecodingPlugin = null
+      lastFullBufferBlocks = null
       originalDispose()
     }
 
