@@ -299,6 +299,21 @@ describe('HydraTransformRegistry', () => {
     expect(output.passes[0].textures[0].sourceRef).toEqual({ historyOffset: 3 })
   })
 
+  it('compiles prevN(source, lag) into output-scoped history bindings', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+    const sourceOutput = {
+      id: 1,
+      getTexture: () => null
+    }
+
+    registry.generators.prevN(sourceOutput, 5).out()
+
+    expect(output.passes.length).toBe(1)
+    expect(output.passes[0].textures.length).toBe(1)
+    expect(output.passes[0].textures[0].sourceRef).toEqual({ id: 1, historyOffset: 5 })
+  })
+
   it('prevents uniform name collisions when sequential transforms reuse argument names', () => {
     const output = new CaptureOutput()
     const registry = new HydraTransformRegistry({ defaultOutput: output })

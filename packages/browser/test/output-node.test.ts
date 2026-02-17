@@ -1157,6 +1157,82 @@ describe('WebGPUOutputNode texture exposure', () => {
     expect(sampledEntry?.resource.texture).toBe(historyTexture)
   })
 
+  it('resolves prevN(source, lag) bindings from another output history ring', () => {
+    const renderer = createRendererMock()
+    const sourceNode = new WebGPUOutputNode({
+      renderer: renderer as never,
+      width: 2,
+      height: 2,
+      label: 'o-src'
+    })
+    sourceNode.id = 0
+
+    const delayedNode = new WebGPUOutputNode({
+      renderer: renderer as never,
+      width: 2,
+      height: 2,
+      label: 'o-delay'
+    })
+    delayedNode.id = 1
+
+    const sourcePass: HydraCompiledPass = {
+      signature: 'source-history',
+      wgsl: '@compute @workgroup_size(1, 1, 1) fn csMain() {}',
+      uniforms: [],
+      textures: [],
+      dispatch: {
+        mode: 'direct',
+        workgroupSize: [1, 1, 1]
+      }
+    }
+
+    const delayedPass: HydraCompiledPass = {
+      signature: 'delay-history',
+      wgsl: '@compute @workgroup_size(1, 1, 1) fn csMain() {}',
+      uniforms: [],
+      textures: [
+        {
+          name: 'historyTex',
+          variableName: 'historyTex',
+          getTexture: () => null,
+          isPrev: false,
+          sourceRef: { id: 0, historyOffset: 1 },
+          binding: 3
+        }
+      ],
+      dispatch: {
+        mode: 'direct',
+        workgroupSize: [1, 1, 1]
+      }
+    }
+
+    sourceNode.render([sourcePass])
+    delayedNode.render([delayedPass])
+
+    const dispatches: DispatchLogEntry[] = []
+    const encoder = createTestEncoder(dispatches)
+    const frame = { time: 0, bpm: 120, resolution: [2, 2], deltaMs: 16 } as unknown as Parameters<WebGPUOutputNode['tick']>[0]
+
+    sourceNode.tick(frame, encoder)
+    delayedNode.tick(frame, encoder)
+    sourceNode.tick({ ...frame, time: 0.016 }, encoder)
+    delayedNode.tick({ ...frame, time: 0.016 }, encoder)
+
+    expect(dispatches.map((entry) => entry.pipelineId)).toEqual([
+      'source-history',
+      'delay-history',
+      'source-history',
+      'delay-history'
+    ])
+
+    const sampledBindGroup = dispatches[3].bindGroup as { entries: Array<{ binding: number, resource: { texture: GPUTexture } }> }
+    const sampledEntry = sampledBindGroup.entries.find((entry) => entry.binding === 3)
+    const sourceHistoryTexture = (sourceNode as unknown as { historyTextures: Array<GPUTexture | null> }).historyTextures[0]
+    expect(sampledEntry?.resource.texture).toBe(sourceHistoryTexture)
+    sourceNode.dispose()
+    delayedNode.dispose()
+  })
+
   it('copies only the produced pass extent into history when running scaled passes', () => {
     const renderer = createRendererMock()
     const node = new WebGPUOutputNode({

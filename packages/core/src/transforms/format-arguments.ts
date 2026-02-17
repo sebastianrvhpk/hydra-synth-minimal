@@ -91,6 +91,70 @@ const normalizeUniformValue = (
   return 0
 }
 
+const isTextureLike = (value: unknown): value is { getTexture: () => unknown, id?: unknown } => (
+  Boolean(value) &&
+  typeof value === 'object' &&
+  'getTexture' in value &&
+  typeof (value as { getTexture?: unknown }).getTexture === 'function'
+)
+
+const normalizeHistoryOffset = (value: unknown, fallback = 1): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return Math.max(1, Math.floor(fallback))
+  return Math.max(1, Math.floor(value))
+}
+
+const normalizeOutputId = (value: unknown): number | null => {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) return null
+  return value
+}
+
+const parsePrevNBinding = (
+  userArgs: unknown[],
+  fallbackValue: unknown
+): { historyOffset: number, targetId: number | null, getTexture: (() => unknown) | null } => {
+  const first = userArgs.length > 0 ? userArgs[0] : fallbackValue
+  const second = userArgs.length > 1 ? userArgs[1] : undefined
+
+  let historyOffset = 1
+  let targetId: number | null = null
+  let getTexture: (() => unknown) | null = null
+
+  if (typeof first === 'number' && Number.isFinite(first)) {
+    historyOffset = normalizeHistoryOffset(first)
+    return { historyOffset, targetId, getTexture }
+  }
+
+  if (first && typeof first === 'object') {
+    const candidate = first as Record<string, unknown>
+
+    if (isTextureLike(first)) {
+      getTexture = () => first.getTexture()
+      targetId = normalizeOutputId(first.id)
+    }
+
+    if ('source' in candidate && isTextureLike(candidate.source)) {
+      const source = candidate.source
+      getTexture = () => source.getTexture()
+      targetId = normalizeOutputId(source.id)
+    }
+
+    if ('id' in candidate && targetId === null) {
+      targetId = normalizeOutputId(candidate.id)
+    }
+
+    if ('historyOffset' in candidate) {
+      historyOffset = normalizeHistoryOffset(candidate.historyOffset, historyOffset)
+      return { historyOffset, targetId, getTexture }
+    }
+  }
+
+  if (typeof second !== 'undefined') {
+    historyOffset = normalizeHistoryOffset(second, historyOffset)
+  }
+
+  return { historyOffset, targetId, getTexture }
+}
+
 export const formatArguments = (
   transform: HydraTransformCall,
   startIndex = 0
@@ -117,23 +181,14 @@ export const formatArguments = (
 
     if (input.type === 'sampler2D') {
       if (transform.name === 'prevN') {
-        let historyOffset = 1
-        if (typeof typedArg.value === 'number' && Number.isFinite(typedArg.value)) {
-          historyOffset = Math.max(1, Math.floor(typedArg.value))
-        } else if (
-          typedArg.value &&
-          typeof typedArg.value === 'object' &&
-          'historyOffset' in typedArg.value &&
-          typeof (typedArg.value as { historyOffset?: unknown }).historyOffset === 'number' &&
-          Number.isFinite((typedArg.value as { historyOffset?: number }).historyOffset)
-        ) {
-          historyOffset = Math.max(1, Math.floor((typedArg.value as { historyOffset: number }).historyOffset))
-        }
+        const parsed = parsePrevNBinding(userArgs, typedArg.value)
 
         typedArg.isTexture = true
         typedArg.textureName = `${sanitizeName(input.name)}_${startIndex + index}`
-        typedArg.value = () => null
-        typedArg.textureSource = { historyOffset }
+        typedArg.value = parsed.getTexture ?? (() => null)
+        typedArg.textureSource = parsed.targetId === null
+          ? { historyOffset: parsed.historyOffset }
+          : { id: parsed.targetId, historyOffset: parsed.historyOffset }
         return typedArg
       }
 

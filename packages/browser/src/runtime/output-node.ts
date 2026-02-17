@@ -154,6 +154,26 @@ const decodeFloat16 = (packed: number): number => {
 }
 
 export class WebGPUOutputNode implements HydraOutputAdapter {
+  private static readonly liveNodes = new Set<WebGPUOutputNode>()
+  private static recomputeHistoryDepths (): void {
+    for (const target of WebGPUOutputNode.liveNodes) {
+      let externalDepth = DEFAULT_HISTORY_DEPTH
+      for (const requester of WebGPUOutputNode.liveNodes) {
+        if (requester === target) continue
+        const requested = requester.outboundHistoryRequests.get(target.id)
+        if (typeof requested === 'number' && Number.isFinite(requested)) {
+          externalDepth = Math.max(externalDepth, Math.max(1, Math.floor(requested)))
+        }
+      }
+
+      const nextDepth = Math.max(target.ownHistoryDepth, externalDepth)
+      if (nextDepth === target.historyDepth) continue
+      target.historyDepth = nextDepth
+      target.resetHistoryTextures()
+      target.ensureHistoryTextures()
+    }
+  }
+
   readonly label: string
   id = -1
 
@@ -193,6 +213,8 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
   private historyCursor = -1
   private historyCount = 0
   private historyDepth = DEFAULT_HISTORY_DEPTH
+  private ownHistoryDepth = DEFAULT_HISTORY_DEPTH
+  private outboundHistoryRequests = new Map<number, number>()
   private lastOutputTexture: GPUTexture | null = null
   private passOutputHistory: Array<GPUTexture | null> = []
   private frameCounter = 0
@@ -205,6 +227,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     this.label = label
     this.width = width
     this.height = height
+    WebGPUOutputNode.liveNodes.add(this)
   }
 
   setPipelineErrorHandler (handler: ((context: PipelineErrorContext) => void) | null): void {
@@ -346,6 +369,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
 
   private updateRequiredHistoryDepth (passes: HydraCompiledPass[]): void {
     let requiredDepth = DEFAULT_HISTORY_DEPTH
+    const outboundRequests = new Map<number, number>()
     const queue = passes.slice()
     const visited = new Set<string>()
 
@@ -361,17 +385,23 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
         if (!('historyOffset' in source)) return
         const offset = (source as { historyOffset?: unknown }).historyOffset
         if (typeof offset !== 'number' || !Number.isFinite(offset)) return
-        requiredDepth = Math.max(requiredDepth, Math.max(1, Math.floor(offset)))
+        const normalizedOffset = Math.max(1, Math.floor(offset))
+        const targetId = (source as { id?: unknown }).id
+        if (typeof targetId === 'number' && Number.isInteger(targetId) && targetId >= 0 && targetId !== this.id) {
+          const existing = outboundRequests.get(targetId) ?? DEFAULT_HISTORY_DEPTH
+          outboundRequests.set(targetId, Math.max(existing, normalizedOffset))
+          return
+        }
+
+        requiredDepth = Math.max(requiredDepth, normalizedOffset)
       })
 
       if (candidate.fallbackPass) queue.push(candidate.fallbackPass)
     }
 
-    if (requiredDepth !== this.historyDepth) {
-      this.historyDepth = requiredDepth
-      this.resetHistoryTextures()
-      this.ensureHistoryTextures()
-    }
+    this.ownHistoryDepth = requiredDepth
+    this.outboundHistoryRequests = outboundRequests
+    WebGPUOutputNode.recomputeHistoryDepths()
   }
 
   private collectPassSignatures (passes: HydraCompiledPass[]): Set<string> {
@@ -421,6 +451,21 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     const offset = historyOffset - 1
     const index = (this.historyCursor - offset + depth) % depth
     return this.historyTextures[index] ?? null
+  }
+
+  private resolveHistoryTargetOutput (sourceRef: unknown): WebGPUOutputNode | null {
+    if (!sourceRef || typeof sourceRef !== 'object') return this
+    const candidateId = (sourceRef as { id?: unknown }).id
+    if (typeof candidateId !== 'number' || !Number.isInteger(candidateId) || candidateId < 0) return this
+    if (candidateId === this.id) return this
+
+    for (const candidate of WebGPUOutputNode.liveNodes) {
+      if (candidate.id !== candidateId) continue
+      if (candidate.renderer !== this.renderer) continue
+      return candidate
+    }
+
+    return null
   }
 
   private recordHistoryTexture (
@@ -987,22 +1032,37 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     this.renderer.device.queue.writeBuffer(this.dynamicUniformBuffer, 0, this.dynamicUniformData, 0, floatCount)
   }
 
-  private resolveTextureBinding (textureBinding: HydraCompiledPass['textures'][number], readTexture: GPUTexture): GPUTexture | null {
-    if (textureBinding.isPrev) return readTexture
-    const source = textureBinding.sourceRef
-    if (source && typeof source === 'object' && 'historyOffset' in source) {
-      const rawOffset = (source as { historyOffset?: unknown }).historyOffset
-      if (typeof rawOffset === 'number' && Number.isFinite(rawOffset)) {
-        const historyOffset = Math.max(1, Math.floor(rawOffset))
-        return this.resolveHistoryTexture(historyOffset) ?? readTexture
-      }
-    }
+  private resolveTextureProviderBinding (textureBinding: HydraCompiledPass['textures'][number]): GPUTexture | null {
     if (!textureBinding.getTexture) return null
     try {
       return textureBinding.getTexture() as GPUTexture
     } catch {
       return null
     }
+  }
+
+  private resolveTextureBinding (textureBinding: HydraCompiledPass['textures'][number], readTexture: GPUTexture): GPUTexture | null {
+    if (textureBinding.isPrev) return readTexture
+
+    const source = textureBinding.sourceRef
+    if (source && typeof source === 'object' && 'historyOffset' in source) {
+      const rawOffset = (source as { historyOffset?: unknown }).historyOffset
+      if (typeof rawOffset === 'number' && Number.isFinite(rawOffset)) {
+        const historyOffset = Math.max(1, Math.floor(rawOffset))
+        const targetOutput = this.resolveHistoryTargetOutput(source)
+
+        if (targetOutput) {
+          const historyTexture = targetOutput.resolveHistoryTexture(historyOffset)
+          if (historyTexture) return historyTexture
+          const latestTexture = targetOutput.getTexture()
+          if (latestTexture) return latestTexture
+        }
+
+        return this.resolveTextureProviderBinding(textureBinding) ?? readTexture
+      }
+    }
+
+    return this.resolveTextureProviderBinding(textureBinding)
   }
 
   private shouldRunPass (pass: HydraCompiledPass, passIndex: number): boolean {
@@ -1853,6 +1913,9 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
   }
 
   dispose (): void {
+    WebGPUOutputNode.liveNodes.delete(this)
+    WebGPUOutputNode.recomputeHistoryDepths()
+
     this.pendingPasses = null
     this.activePasses = []
     this.activeSourcePasses = []
