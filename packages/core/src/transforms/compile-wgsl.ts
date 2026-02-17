@@ -413,12 +413,11 @@ const buildTransformCall = (
 }
 
 const buildNestedInputs = (inputs: HydraTypedArgument[], shaderParams: ShaderParams): ((cVar: string, stVar: string) => string) => {
-  let generator = (): string => ''
-  let previous = generator
+  let generator = (cVar: string, stVar: string): string => ''
 
   inputs.forEach((input, index) => {
     if (input.value && typeof input.value === 'object' && 'transforms' in input.value) {
-      previous = generator
+      const currentPrevious = generator
       generator = (cVar, stVar) => {
         const nestedColorVar = generateInputName(cVar, index)
         const nestedUvVar = generateInputName(`${stVar}_${cVar}`, index)
@@ -426,7 +425,7 @@ const buildNestedInputs = (inputs: HydraTypedArgument[], shaderParams: ShaderPar
           (input.value as { transforms: HydraTransformCall[] }).transforms,
           shaderParams
         )
-        return `var ${nestedUvVar}: vec2f = ${stVar};\n${previous(cVar, stVar)}\nvar ${nestedColorVar}: vec4f = vec4f(0.0);\n${nestedGenerator(nestedColorVar, nestedUvVar)}`
+        return `var ${nestedUvVar}: vec2f = ${stVar};\nvar ${nestedColorVar}: vec4f = vec4f(0.0);\n${currentPrevious(cVar, stVar)}\n${nestedGenerator(nestedColorVar, nestedUvVar)}`
       }
     }
   })
@@ -435,7 +434,7 @@ const buildNestedInputs = (inputs: HydraTypedArgument[], shaderParams: ShaderPar
 }
 
 const generateWgslTransforms = (transforms: HydraTransformCall[], shaderParams: ShaderParams): ((cVar: string, stVar: string) => string) => {
-  let generator = (): string => ''
+  let generator = (cVar: string, stVar: string): string => ''
 
   transforms.forEach((transform, index) => {
     const namespaceSeed = shaderParams.argumentNamespaceSeed
