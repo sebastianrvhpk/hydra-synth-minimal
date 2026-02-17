@@ -9,7 +9,7 @@ Browser host/runtime package for Hydra v2.
 - `HydraBrowserRuntime` (core engine + registry + host + renderer composition)
 - `HydraSourceNode` and `WebGPUOutputNode` adapters
 - output dependency scheduling (topological when possible, stable order fallback on cycles)
-- compute-plan execution route (`compileGraph` + `HydraExecutor`) with deterministic legacy fallback
+- compute-plan execution route (`compileGraph` + `HydraExecutor`)
 - runtime profiler snapshots (`getProfilerSnapshot`) and autotune profile helpers
 - queue execution utilities and resource residency tracking helpers
 - benchmark utilities (`BENCHMARK_CORPUS`, report build/validation helpers)
@@ -20,9 +20,8 @@ Use `createHydraBrowserRuntime()` for default composition, or wire `BrowserHost`
 
 `HydraBrowserRuntime` supports:
 
-- `auto` (default): prefer compute-plan routing, fallback to legacy pass rendering on route failures
-- `compute`: force compute-plan routing first, same deterministic fallback behavior
-- `legacy`: always render legacy pass chains
+- `auto` (default): compute-plan routing with automatic policy selection
+- `compute`: force compute-plan routing
 
 ## Capture APIs
 

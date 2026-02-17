@@ -14,9 +14,9 @@ for (const dir of packageDirs) {
   }
 }
 
-for (const legacy of ['src', 'dev', 'assets']) {
-  if (existsSync(path.join(rootDir, legacy))) {
-    fail(`Legacy directory must be removed: ${legacy}`)
+for (const deprecatedDir of ['src', 'dev', 'assets']) {
+  if (existsSync(path.join(rootDir, deprecatedDir))) {
+    fail(`Deprecated directory must be removed: ${deprecatedDir}`)
   }
 }
 
@@ -42,7 +42,7 @@ const scan = (dir) => {
       const relative = path.relative(rootDir, fullPath).replaceAll('\\', '/')
       const content = readFileSync(fullPath, 'utf8')
       for (const pattern of forbiddenPatterns) {
-        if (pattern.test(content)) fail(`Forbidden legacy API reference (${pattern}) found in ${relative}`)
+        if (pattern.test(content)) fail(`Forbidden deprecated API reference (${pattern}) found in ${relative}`)
       }
       if (relative.startsWith('packages/core/') && /\beval\s*\(/u.test(content)) {
         fail(`Core package cannot include eval() usage: ${relative}`)

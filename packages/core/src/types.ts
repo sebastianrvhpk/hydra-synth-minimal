@@ -122,7 +122,7 @@ export type HydraResourceFormat =
 export type HydraResourceElementType = 'f32' | 'vec2f' | 'vec3f' | 'vec4f' | 'u32' | 'i32'
 
 export type HydraComputeKernelVariant = 'generic' | 'tiled' | 'subgroup'
-export type HydraKernelSemantics = 'compat_uv' | 'index_first'
+export type HydraKernelSemantics = 'uv' | 'index_first'
 
 export interface HydraSeparableBlurKernelDescriptor {
   kind: 'separableBlur'
@@ -354,7 +354,7 @@ export interface HydraCompiledPass {
 
 export interface HydraOutputGraphSource {
   transforms: HydraTransformCall[]
-  compileLegacyPasses: () => HydraCompiledPass[]
+  compilePasses: () => HydraCompiledPass[]
   compilePlan?: () => unknown
 }
 

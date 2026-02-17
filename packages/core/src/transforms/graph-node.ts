@@ -1,5 +1,5 @@
 import { compileWgslPass } from './compile-wgsl.js'
-import { splitLegacyPasses } from './split-legacy-passes.js'
+import { splitPasses } from './split-passes.js'
 import { compileGraph } from '../compiler/compile-graph.js'
 import type { HydraCompiledPass, HydraOutputAdapter, HydraTransformCall } from '../types.js'
 import type { HydraExecutionPlan } from '../compiler/types.js'
@@ -32,7 +32,7 @@ export class HydraGraphNode {
     if (output.renderGraph) {
       output.renderGraph({
         transforms: this.transforms.slice(),
-        compileLegacyPasses: () => this.wgsl(),
+        compilePasses: () => this.wgsl(),
         compilePlan: () => this.plan()
       })
       return
@@ -42,7 +42,7 @@ export class HydraGraphNode {
 
   wgsl (): HydraCompiledPass[] {
     if (this.transforms.length === 0) return []
-    return splitLegacyPasses(this.transforms).map((pass) => this.compile(pass))
+    return splitPasses(this.transforms).map((pass) => this.compile(pass))
   }
 
   plan (): HydraExecutionPlan {

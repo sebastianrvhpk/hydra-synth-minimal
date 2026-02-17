@@ -4,7 +4,7 @@ export { createHydraEngineError, HydraEngineFailure } from './errors.js'
 export { HydraTransformRegistry } from './transforms/registry.js'
 export { HydraGraphNode } from './transforms/graph-node.js'
 export { compileWgslPass, buildStructureSignature } from './transforms/compile-wgsl.js'
-export { splitLegacyPasses } from './transforms/split-legacy-passes.js'
+export { splitPasses } from './transforms/split-passes.js'
 export {
   lowerDslToIr,
   getTextureResourceId,

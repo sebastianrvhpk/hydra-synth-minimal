@@ -93,14 +93,14 @@ const mergeUpdateRates = (values: HydraPassSchedule['updateRate'][]): HydraPassS
 
 interface PassExecutionConfig {
   domain: 'pixel2d' | 'linear1d'
-  kernelSemantics: 'compat_uv' | 'index_first'
+  kernelSemantics: 'uv' | 'index_first'
   writesOutput: boolean
   dispatchItems?: number
 }
 
 const resolvePassExecutionConfig = (transforms: HydraTransformCall[]): PassExecutionConfig => {
   const domains = new Set<'pixel2d' | 'linear1d'>()
-  const semantics = new Set<'compat_uv' | 'index_first'>()
+  const semantics = new Set<'uv' | 'index_first'>()
   let writesOutput = false
   let dispatchItems = 0
   let largestResourceLength = 0
@@ -108,7 +108,7 @@ const resolvePassExecutionConfig = (transforms: HydraTransformCall[]): PassExecu
   transforms.forEach((call) => {
     const domain = call.transform.executionDomain === 'linear1d' ? 'linear1d' : 'pixel2d'
     domains.add(domain)
-    semantics.add(call.transform.kernelSemantics === 'index_first' ? 'index_first' : 'compat_uv')
+    semantics.add(call.transform.kernelSemantics === 'index_first' ? 'index_first' : 'uv')
     writesOutput = writesOutput || Boolean(call.transform.writesOutput)
     dispatchItems = Math.max(dispatchItems, Math.max(0, Math.floor(Number(call.transform.dispatchItems) || 0)))
     const resources = call.transform.resources ?? []
@@ -128,7 +128,7 @@ const resolvePassExecutionConfig = (transforms: HydraTransformCall[]): PassExecu
   const resolvedItems = Math.max(dispatchItems, largestResourceLength)
   const kernelSemantics = domain === 'linear1d' && semantics.has('index_first')
     ? 'index_first'
-    : 'compat_uv'
+    : 'uv'
 
   return {
     domain,

@@ -39,5 +39,5 @@
 
 ### Removed
 
-- Legacy monolithic `src/` runtime tree.
-- Legacy `dev/` examples and old static asset paths tied to pre-workspace layout.
+- Previous monolithic `src/` runtime tree.
+- Previous `dev/` examples and old static asset paths tied to pre-workspace layout.

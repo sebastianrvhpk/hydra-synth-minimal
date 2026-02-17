@@ -258,7 +258,7 @@ export const mapReadbackBuffer = async (
 // sRGB transfer function removed - standard hardware conversion used instead
 
 /**
- * Legacy/testing fallback: CPU-side float16 -> uint8 conversion.
+ * Testing fallback: CPU-side float16 -> uint8 conversion.
  * Kept for raw-data workflows, but generally superseded by GPU conversion.
  */
 export const float16ToUint8 = (

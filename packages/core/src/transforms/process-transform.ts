@@ -91,7 +91,7 @@ const normalizeDispatchItems = (definition: HydraTransformDefinition): number | 
 
 const normalizeKernelSemantics = (definition: HydraTransformDefinition): HydraKernelSemantics => {
   if (definition.kernelSemantics === 'index_first') return 'index_first'
-  return 'compat_uv'
+  return 'uv'
 }
 
 export const processTransformDefinition = (definition: HydraTransformDefinition): ProcessedHydraTransform => {

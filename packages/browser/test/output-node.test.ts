@@ -237,11 +237,11 @@ describe('WebGPUOutputNode texture exposure', () => {
 
     const sourceA: HydraOutputGraphSource = {
       transforms: [],
-      compileLegacyPasses: () => []
+      compilePasses: () => []
     }
     const sourceB: HydraOutputGraphSource = {
       transforms: [],
-      compileLegacyPasses: () => []
+      compilePasses: () => []
     }
     const routedSources: HydraOutputGraphSource[] = []
     node.setGraphRenderHandler((_output, source) => {
@@ -265,7 +265,7 @@ describe('WebGPUOutputNode texture exposure', () => {
     })
     const source: HydraOutputGraphSource = {
       transforms: [],
-      compileLegacyPasses: () => []
+      compilePasses: () => []
     }
     node.renderGraph(source)
     expect(node.getGraphSource()).toBe(source)

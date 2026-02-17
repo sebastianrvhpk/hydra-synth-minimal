@@ -15,7 +15,7 @@ const createPrevTransform = (anchor: HydraTransformCall): HydraTransformCall | n
   }
 }
 
-export const splitLegacyPasses = (transforms: HydraTransformCall[]): HydraTransformCall[][] => {
+export const splitPasses = (transforms: HydraTransformCall[]): HydraTransformCall[][] => {
   const passes: HydraTransformCall[][] = []
   let currentPass: HydraTransformCall[] = []
   let shouldInjectPrev = false
@@ -48,4 +48,3 @@ export const splitLegacyPasses = (transforms: HydraTransformCall[]): HydraTransf
   pushCurrentPass()
   return passes
 }
-

@@ -35,10 +35,10 @@ export interface HydraProfilerSnapshot {
     queueConvergenceChecks: number
     queueTerminationReason: HydraQueueTerminationReason | 'none' | 'mixed'
     queueChecksPerSegment: number[]
-    routingConfiguredMode: 'legacy' | 'compute' | 'auto'
-    routingActiveMode: 'legacy' | 'compute'
+    routingConfiguredMode: 'compute' | 'auto'
+    routingActiveMode: 'compute'
     routingCompileFailures: number
-    routingFallbackCount: number
+    routingRouteFailureCount: number
   }
   capability: {
     features: string[]
@@ -89,10 +89,10 @@ export const buildProfilerSnapshot = ({
     checksPerSegment: number[]
   } | null
   routingMetrics?: {
-    configuredMode: 'legacy' | 'compute' | 'auto'
-    activeMode: 'legacy' | 'compute'
+    configuredMode: 'compute' | 'auto'
+    activeMode: 'compute'
     compileFailures: number
-    fallbackCount: number
+    routeFailureCount: number
   } | null
 }): HydraProfilerSnapshot => {
   const avgFrameMs = frameTimesMs.length > 0
@@ -151,10 +151,10 @@ export const buildProfilerSnapshot = ({
       queueConvergenceChecks: Math.max(0, Math.floor(queueMetrics?.convergenceChecks ?? 0)),
       queueTerminationReason: summarizeQueueTermination(queueMetrics?.terminationReasons ?? null),
       queueChecksPerSegment: queueChecksPerSegment.map((value) => Math.max(0, Math.floor(Number(value) || 0))),
-      routingConfiguredMode: routingMetrics?.configuredMode ?? 'legacy',
-      routingActiveMode: routingMetrics?.activeMode ?? 'legacy',
+      routingConfiguredMode: routingMetrics?.configuredMode ?? 'compute',
+      routingActiveMode: routingMetrics?.activeMode ?? 'compute',
       routingCompileFailures: Math.max(0, Math.floor(routingMetrics?.compileFailures ?? 0)),
-      routingFallbackCount: Math.max(0, Math.floor(routingMetrics?.fallbackCount ?? 0))
+      routingRouteFailureCount: Math.max(0, Math.floor(routingMetrics?.routeFailureCount ?? 0))
     },
     capability: {
       features: capabilities?.features ?? [],

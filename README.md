@@ -5,7 +5,7 @@ Hydra v2 is a workspace-split rewrite with strict package boundaries and ESM-onl
 ## Packages
 
 - `hydra-synth-core`: engine lifecycle, transform registry, WGSL pass compilation, DSL-to-IR lowering, execution-plan compilation/validation, primitive descriptors and CPU references.
-- `hydra-synth`: browser host, WebGPU renderer, runtime routing (`legacy` and compute-plan execution), capture helpers, queue execution utilities, profiler/autotune helpers, benchmark corpus/report utilities.
+- `hydra-synth`: browser host, WebGPU renderer, compute-plan runtime execution, capture helpers, queue execution utilities, profiler/autotune helpers, benchmark corpus/report utilities.
 - `hydra-synth-livecoding`: optional plugin for explicit livecoding attach/run/dispose behavior and controlled global binding injection.
 
 ## Architecture
@@ -42,9 +42,8 @@ runtime.dispose()
 
 `executionMode` values:
 
-- `auto` (default): compute-plan route first, deterministic fallback to legacy pass rendering on compile/execute failures.
-- `compute`: force compute-plan route first, with the same deterministic legacy fallback behavior.
-- `legacy`: always render legacy pass chains (no plan executor route).
+- `auto` (default): compute-plan routing with automatic policy selection.
+- `compute`: force compute-plan routing.
 
 You can also wire components explicitly:
 

@@ -1,5 +1,5 @@
 import { compileWgslPass } from '../transforms/compile-wgsl.js'
-import { splitLegacyPasses } from '../transforms/split-legacy-passes.js'
+import { splitPasses } from '../transforms/split-passes.js'
 import type {
   HydraCompiledPass,
   HydraPassUpdateRate,
@@ -303,7 +303,7 @@ export const lowerDslToIr = (
   transforms: HydraTransformCall[],
   { maxDynamicUniforms = 256, graphId = 'hydra-dsl-graph', validate = true }: LowerDslToIrOptions = {}
 ): HydraKernelGraph => {
-  const passGroups = splitLegacyPasses(transforms)
+  const passGroups = splitPasses(transforms)
   const nodes = passGroups.map((group, index) => {
     const pass = compileWgslPass(group, maxDynamicUniforms)
     return createKernelNode(group, index, pass)

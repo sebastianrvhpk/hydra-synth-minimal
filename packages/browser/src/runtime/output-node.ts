@@ -251,7 +251,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     if (!this.graphRenderHandler) {
       this.inGraphRenderDispatch = true
       try {
-        this.render(source.compileLegacyPasses())
+        this.render(source.compilePasses())
       } finally {
         this.inGraphRenderDispatch = false
       }

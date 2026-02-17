@@ -14,7 +14,6 @@ export type HydraQueueConvergenceStrategy =
   | 'queue_counter'
   | 'hook_or_queue_counter'
   | 'none'
-  | 'legacy_decay'
 
 export interface HydraQueueTerminationPolicy {
   mode: HydraQueueTerminationMode

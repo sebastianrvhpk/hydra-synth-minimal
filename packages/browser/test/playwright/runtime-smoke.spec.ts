@@ -85,7 +85,7 @@ test.afterAll(async () => {
 
 const runFixture = async (
   page: import('@playwright/test').Page,
-  mode: 'default' | 'legacy' | 'compute' | 'auto' | 'force-unavailable'
+  mode: 'default' | 'compute' | 'auto' | 'force-unavailable'
 ) => {
   if (!fixtureServer) throw new Error('Fixture server was not initialized.')
   const target = `${fixtureServer.baseUrl}${fixturePath}?mode=${mode}`
@@ -100,17 +100,7 @@ test('browser runtime smoke: default mode is auto-compute-preferred', async ({ p
   if (result.status === 'ok') {
     expect(result.requestedMode).toBe('default')
     expect(result.configuredMode).toBe('auto')
-    expect(['legacy', 'compute']).toContain(result.activeMode)
-  }
-})
-
-test('browser runtime smoke: legacy mode init + one frame + dispose', async ({ page }) => {
-  const result = await runFixture(page, 'legacy')
-  expect(['ok', 'no-webgpu'], `unexpected result: ${JSON.stringify(result)}`).toContain(result.status)
-  if (result.status === 'ok') {
-    expect(result.requestedMode).toBe('legacy')
-    expect(result.configuredMode).toBe('legacy')
-    expect(result.activeMode).toBe('legacy')
+    expect(result.activeMode).toBe('compute')
   }
 })
 
@@ -120,7 +110,7 @@ test('browser runtime smoke: compute mode init + one frame + dispose', async ({ 
   if (result.status === 'ok') {
     expect(result.requestedMode).toBe('compute')
     expect(result.configuredMode).toBe('compute')
-    expect(['legacy', 'compute']).toContain(result.activeMode)
+    expect(result.activeMode).toBe('compute')
   }
 })
 
@@ -130,7 +120,7 @@ test('browser runtime smoke: auto mode init + one frame + dispose', async ({ pag
   if (result.status === 'ok') {
     expect(result.requestedMode).toBe('auto')
     expect(result.configuredMode).toBe('auto')
-    expect(['legacy', 'compute']).toContain(result.activeMode)
+    expect(result.activeMode).toBe('compute')
   }
 })
 

@@ -39,7 +39,7 @@ const createMinimalExecutionPlan = (): HydraExecutionPlan => ({
   cacheKey: 'minimal'
 })
 
-const createRuntimeHarness = (executionMode?: 'legacy' | 'compute' | 'auto'): HydraBrowserRuntime => {
+const createRuntimeHarness = (executionMode?: 'compute' | 'auto'): HydraBrowserRuntime => {
   const canvas = { width: 4, height: 4 } as HTMLCanvasElement
   const host = {
     canvas,
@@ -85,7 +85,7 @@ const createQueueControl = ({
   maxIterations?: number
   overflowPolicy?: 'ignore' | 'terminate_segment'
   maxOverflow?: number
-  strategy?: 'hooks' | 'queue_counter' | 'hook_or_queue_counter' | 'none' | 'legacy_decay'
+  strategy?: 'hooks' | 'queue_counter' | 'hook_or_queue_counter' | 'none'
 } = {}) => ({
   modeHint,
   convergenceCheckInterval,
@@ -224,20 +224,20 @@ describe('browser foundation', () => {
     expect(snapshot.scheduler.queueConvergenceChecks).toBe(0)
     expect(snapshot.scheduler.queueTerminationReason).toBe('none')
     expect(snapshot.scheduler.queueChecksPerSegment).toEqual([])
-    expect(snapshot.scheduler.routingConfiguredMode).toBe('legacy')
-    expect(snapshot.scheduler.routingActiveMode).toBe('legacy')
+    expect(snapshot.scheduler.routingConfiguredMode).toBe('compute')
+    expect(snapshot.scheduler.routingActiveMode).toBe('compute')
     expect(snapshot.scheduler.routingCompileFailures).toBe(0)
-    expect(snapshot.scheduler.routingFallbackCount).toBe(0)
+    expect(snapshot.scheduler.routingRouteFailureCount).toBe(0)
     expect(snapshot.passes['o0:passA']?.dispatchDomain).toBe('pixel2d')
     expect(snapshot.passes['o0:passA']?.gpuTimingSource).toBe('unavailable')
   })
 
   it('normalizes runtime execution mode values and defaults', () => {
-    expect(normalizeRuntimeExecutionMode('legacy')).toBe('legacy')
+    expect(normalizeRuntimeExecutionMode('deprecated-mode')).toBe('auto')
     expect(normalizeRuntimeExecutionMode('compute')).toBe('compute')
     expect(normalizeRuntimeExecutionMode(' auto ')).toBe('auto')
     expect(normalizeRuntimeExecutionMode('invalid')).toBe('auto')
-    expect(normalizeRuntimeExecutionMode('invalid', 'legacy')).toBe('legacy')
+    expect(normalizeRuntimeExecutionMode('invalid', 'compute')).toBe('compute')
   })
 
   it('defaults browser runtime execution mode to auto', () => {
@@ -292,7 +292,7 @@ describe('browser foundation', () => {
     if (!output) throw new Error('Missing runtime output.')
     output.renderGraph({
       transforms: [],
-      compileLegacyPasses: () => [],
+      compilePasses: () => [],
       compilePlan: () => createMinimalExecutionPlan()
     })
 
@@ -301,18 +301,18 @@ describe('browser foundation', () => {
     expect(snapshot.scheduler.routingConfiguredMode).toBe('compute')
     expect(snapshot.scheduler.routingActiveMode).toBe('compute')
     expect(snapshot.scheduler.routingCompileFailures).toBe(0)
-    expect(snapshot.scheduler.routingFallbackCount).toBe(0)
+    expect(snapshot.scheduler.routingRouteFailureCount).toBe(0)
     runtime.dispose()
   })
 
-  it('falls back to legacy deterministically when plan compilation fails', () => {
+  it('records deterministic route failures when plan compilation fails', () => {
     const runtime = createRuntimeHarness('compute')
     const output = runtime.outputs[0]
     if (!output) throw new Error('Missing runtime output.')
     output.renderGraph({
       transforms: [],
-      compileLegacyPasses: () => [{
-        signature: 'legacy-fallback',
+      compilePasses: () => [{
+        signature: 'route-failure-pass',
         wgsl: '@compute @workgroup_size(1, 1, 1) fn csMain() {}',
         uniforms: [],
         textures: []
@@ -324,9 +324,9 @@ describe('browser foundation', () => {
 
     const snapshot = runtime.getProfilerSnapshot()
     expect(snapshot.scheduler.routingConfiguredMode).toBe('compute')
-    expect(snapshot.scheduler.routingActiveMode).toBe('legacy')
+    expect(snapshot.scheduler.routingActiveMode).toBe('compute')
     expect(snapshot.scheduler.routingCompileFailures).toBe(1)
-    expect(snapshot.scheduler.routingFallbackCount).toBe(1)
+    expect(snapshot.scheduler.routingRouteFailureCount).toBe(1)
     runtime.dispose()
   })
 

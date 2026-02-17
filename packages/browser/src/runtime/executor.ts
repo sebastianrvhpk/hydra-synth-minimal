@@ -538,14 +538,6 @@ export class HydraExecutor {
               } else {
                 nextActiveCount = 0
               }
-            } else if (strategy === 'legacy_decay') {
-              if (typeof fromHook === 'number' && Number.isFinite(fromHook)) {
-                nextActiveCount = Math.max(0, Math.floor(fromHook))
-              } else if (typeof fromManager === 'number' && Number.isFinite(fromManager)) {
-                nextActiveCount = Math.max(0, Math.floor(fromManager))
-              } else {
-                nextActiveCount = Math.max(0, Math.floor(previousActiveCount * 0.5))
-              }
             }
           }
         }

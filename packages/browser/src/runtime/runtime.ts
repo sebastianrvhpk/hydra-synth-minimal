@@ -36,7 +36,7 @@ const mapTuningPolicyToVariantPolicy = (
   return 'compat'
 }
 
-export type HydraRuntimeExecutionMode = 'legacy' | 'compute' | 'auto'
+export type HydraRuntimeExecutionMode = 'compute' | 'auto'
 
 export const normalizeRuntimeExecutionMode = (
   value: unknown,
@@ -44,17 +44,15 @@ export const normalizeRuntimeExecutionMode = (
 ): HydraRuntimeExecutionMode => {
   if (typeof value !== 'string') return fallback
   const normalized = value.trim().toLowerCase()
-  if (normalized === 'legacy' || normalized === 'compute' || normalized === 'auto') return normalized
+  if (normalized === 'compute' || normalized === 'auto') return normalized
   return fallback
 }
 
-const prefersComputePath = (mode: HydraRuntimeExecutionMode): boolean => mode !== 'legacy'
-
 interface HydraRuntimeRoutingDiagnostics {
   configuredMode: HydraRuntimeExecutionMode
-  activeMode: 'legacy' | 'compute'
+  activeMode: 'compute'
   compileFailures: number
-  fallbackCount: number
+  routeFailureCount: number
 }
 
 export interface HydraBrowserRuntimeOptions {
@@ -121,9 +119,9 @@ export class HydraBrowserRuntime {
     this.onDebugCallback = onDebug
     this.routingDiagnostics = {
       configuredMode: this.executionMode,
-      activeMode: 'legacy',
+      activeMode: 'compute',
       compileFailures: 0,
-      fallbackCount: 0
+      routeFailureCount: 0
     }
 
     const sourceCount = Math.max(0, Math.floor(numSources))
@@ -364,30 +362,9 @@ export class HydraBrowserRuntime {
     }
   }
 
-  private routeGraphFallback(
-    output: WebGPUOutputNode,
-    graphSource: HydraOutputGraphSource,
-    error: unknown,
-    isCompileFailure = false
-  ): void {
-    if (isCompileFailure) this.routingDiagnostics.compileFailures += 1
-    this.routingDiagnostics.fallbackCount += 1
-    this.routingDiagnostics.activeMode = 'legacy'
-    try {
-      this.engine.reportCompileError(`${output.label}:compute-route`, error)
-    } catch {
-      // Fallback routing must remain deterministic even under throw-on-error policies.
-    }
-    output.render(graphSource.compileLegacyPasses())
-  }
-
   private routeGraphRender(output: WebGPUOutputNode, graphSource: HydraOutputGraphSource): void {
     this.routingDiagnostics.configuredMode = this.executionMode
-    if (!prefersComputePath(this.executionMode)) {
-      this.routingDiagnostics.activeMode = 'legacy'
-      output.render(graphSource.compileLegacyPasses())
-      return
-    }
+    this.routingDiagnostics.activeMode = 'compute'
 
     let plan: HydraExecutionPlan | null = null
     try {
@@ -395,16 +372,18 @@ export class HydraBrowserRuntime {
         ? (graphSource.compilePlan() as HydraExecutionPlan | null)
         : this.compilePlan({ transforms: graphSource.transforms })
     } catch (error) {
-      this.routeGraphFallback(output, graphSource, error, true)
+      this.routingDiagnostics.compileFailures += 1
+      this.routingDiagnostics.routeFailureCount += 1
+      this.engine.reportCompileError(`${output.label}:compute-route`, error)
       return
     }
 
     if (!plan) {
-      this.routeGraphFallback(
-        output,
-        graphSource,
-        new Error('Plan compilation produced no plan for the current graph output.'),
-        true
+      this.routingDiagnostics.compileFailures += 1
+      this.routingDiagnostics.routeFailureCount += 1
+      this.engine.reportCompileError(
+        `${output.label}:compute-route`,
+        new Error('Plan compilation produced no plan for the current graph output.')
       )
       return
     }
@@ -422,7 +401,8 @@ export class HydraBrowserRuntime {
       this.lastPlan = plan
       this.routingDiagnostics.activeMode = 'compute'
     } catch (error) {
-      this.routeGraphFallback(output, graphSource, error)
+      this.routingDiagnostics.routeFailureCount += 1
+      this.engine.reportCompileError(`${output.label}:compute-route`, error)
     }
   }
 
@@ -490,7 +470,7 @@ export class HydraBrowserRuntime {
         configuredMode: this.routingDiagnostics.configuredMode,
         activeMode: this.routingDiagnostics.activeMode,
         compileFailures: this.routingDiagnostics.compileFailures,
-        fallbackCount: this.routingDiagnostics.fallbackCount
+        routeFailureCount: this.routingDiagnostics.routeFailureCount
       }
     })
   }
