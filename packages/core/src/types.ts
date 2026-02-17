@@ -32,11 +32,68 @@ export interface RendererAdapter {
   // Developer / Debugging Tools
   dumpShaders?(): string[]
   getPassStats?(): Record<string, unknown>
-  autotune?(options?: unknown): unknown
+  autotune?(options?: HydraAutotuneRunOptions): HydraAutotuneProfile
   getProfilerSnapshot?(): unknown
   checkCompatibility?(): boolean
   setResolution?(width: number, height: number): void
   dispose(): void
+}
+
+export type HydraTuningPolicy = 'compat_stable' | 'throughput' | 'balanced_research'
+
+export interface HydraAutotuneProfilerInput {
+  frameWindow?: {
+    p95FrameMs?: number
+  }
+  scheduler?: {
+    fallbackRate?: number
+  }
+  resources?: {
+    residentBytesEstimate?: number
+  }
+}
+
+export interface HydraAutotuneProfile {
+  profileKey: string
+  policy: HydraTuningPolicy
+  selectedWorkgroupSize: [number, number, number]
+  variantPreference: 'generic' | 'tiled' | 'subgroup'
+  score: number
+  candidateSignature: string
+  fingerprintKey: string
+  adapterFingerprint: string
+  browserFingerprint: string
+  kernelSignature: string
+  resolutionClass: string
+  candidateCount: number
+  warmupTrials: number
+  sampleTrials: number
+  selectedMeasuredMeanMs: number
+  selectedMeasuredP95Ms: number
+  baselineP95FrameMs: number
+  baselineFallbackRate: number
+  evaluatedAt: string
+}
+
+export interface HydraAutotuneRunOptions {
+  profileKey: string
+  policy?: HydraTuningPolicy
+  candidateWorkgroups?: Array<[number, number, number]>
+  profilerSnapshot?: HydraAutotuneProfilerInput | null
+  adapterFingerprint?: string
+  browserFingerprint?: string
+  kernelSignature?: string
+  resolutionClass?: string
+  correctnessEquivalent?: boolean
+  warmupTrials?: number
+  sampleTrials?: number
+  measureCandidate?: (context: {
+    workgroup: [number, number, number]
+    variant: HydraAutotuneProfile['variantPreference']
+    phase: 'warmup' | 'sample'
+    trialIndex: number
+    baselineP95FrameMs: number
+  }) => number | null | undefined
 }
 
 export interface SourceAdapter {
@@ -174,6 +231,11 @@ export interface HydraAnalysisOutputBinding {
 export interface HydraTransformInput {
   type: HydraTransformInputType
   name: string
+  /**
+   * Default value.
+   * NOTE: If a function is passed as a value for this input at runtime,
+   * it will be automatically converted to a dynamic uniform.
+   */
   default: unknown
 }
 
@@ -209,6 +271,11 @@ export interface HydraTransformDefinition {
   kernelSemantics?: HydraKernelSemantics
   writesOutput?: boolean
   dispatchItems?: number
+}
+
+export interface HydraLinearTransformDefinition extends Omit<HydraTransformDefinition, 'executionDomain'> {
+  executionDomain: 'linear1d'
+  dispatchItems: number
 }
 
 export interface ProcessedHydraTransform extends HydraTransformDefinition {

@@ -1,58 +1,15 @@
-export type HydraTuningPolicy = 'compat_stable' | 'throughput' | 'balanced_research'
+import type {
+  HydraTuningPolicy,
+  HydraAutotuneProfilerInput,
+  HydraAutotuneProfile,
+  HydraAutotuneRunOptions
+} from 'hydra-synth-core'
 
-export interface HydraAutotuneProfilerInput {
-  frameWindow?: {
-    p95FrameMs?: number
-  }
-  scheduler?: {
-    fallbackRate?: number
-  }
-  resources?: {
-    residentBytesEstimate?: number
-  }
-}
-
-export interface HydraAutotuneProfile {
-  profileKey: string
-  policy: HydraTuningPolicy
-  selectedWorkgroupSize: [number, number, number]
-  variantPreference: 'generic' | 'tiled' | 'subgroup'
-  score: number
-  candidateSignature: string
-  fingerprintKey: string
-  adapterFingerprint: string
-  browserFingerprint: string
-  kernelSignature: string
-  resolutionClass: string
-  candidateCount: number
-  warmupTrials: number
-  sampleTrials: number
-  selectedMeasuredMeanMs: number
-  selectedMeasuredP95Ms: number
-  baselineP95FrameMs: number
-  baselineFallbackRate: number
-  evaluatedAt: string
-}
-
-export interface HydraAutotuneRunOptions {
-  profileKey: string
-  policy?: HydraTuningPolicy
-  candidateWorkgroups?: Array<[number, number, number]>
-  profilerSnapshot?: HydraAutotuneProfilerInput | null
-  adapterFingerprint?: string
-  browserFingerprint?: string
-  kernelSignature?: string
-  resolutionClass?: string
-  correctnessEquivalent?: boolean
-  warmupTrials?: number
-  sampleTrials?: number
-  measureCandidate?: (context: {
-    workgroup: [number, number, number]
-    variant: HydraAutotuneProfile['variantPreference']
-    phase: 'warmup' | 'sample'
-    trialIndex: number
-    baselineP95FrameMs: number
-  }) => number | null | undefined
+export {
+  HydraTuningPolicy,
+  HydraAutotuneProfilerInput,
+  HydraAutotuneProfile,
+  HydraAutotuneRunOptions
 }
 
 interface CandidateEvaluation {
@@ -139,11 +96,11 @@ const evaluateCandidate = (
   const syntheticSampleMs = Math.max(
     0.001,
     baselineP95FrameMs +
-      (baselineFallbackRate * 35) +
-      (residentMb * 0.12) +
-      (areaPenalty * 6) +
-      (shapePenalty * 3) +
-      (variantPenalty * 2)
+    (baselineFallbackRate * 35) +
+    (residentMb * 0.12) +
+    (areaPenalty * 6) +
+    (shapePenalty * 3) +
+    (variantPenalty * 2)
   )
 
   for (let trialIndex = 0; trialIndex < warmupTrials; trialIndex += 1) {
@@ -203,15 +160,15 @@ export class HydraAutotuner {
   private readonly profiles = new Map<string, HydraAutotuneProfile>()
   private readonly profilesByFingerprint = new Map<string, HydraAutotuneProfile>()
 
-  setPolicy (policy: HydraTuningPolicy): void {
+  setPolicy(policy: HydraTuningPolicy): void {
     this.policy = policy
   }
 
-  getPolicy (): HydraTuningPolicy {
+  getPolicy(): HydraTuningPolicy {
     return this.policy
   }
 
-  run ({
+  run({
     profileKey,
     policy,
     candidateWorkgroups = [[16, 16, 1], [8, 8, 1], [32, 8, 1]],
@@ -299,19 +256,19 @@ export class HydraAutotuner {
     return profile
   }
 
-  getProfile (profileKey: string): HydraAutotuneProfile | null {
+  getProfile(profileKey: string): HydraAutotuneProfile | null {
     return this.profiles.get(profileKey) ?? null
   }
 
-  getProfileByFingerprint (profileKey: string, fingerprintKey: string): HydraAutotuneProfile | null {
+  getProfileByFingerprint(profileKey: string, fingerprintKey: string): HydraAutotuneProfile | null {
     return this.profilesByFingerprint.get(`${profileKey}|${fingerprintKey}`) ?? null
   }
 
-  getAllProfiles (): HydraAutotuneProfile[] {
+  getAllProfiles(): HydraAutotuneProfile[] {
     return Array.from(this.profiles.values())
   }
 
-  clear (profileKey?: string): void {
+  clear(profileKey?: string): void {
     if (profileKey) {
       this.profiles.delete(profileKey)
       for (const key of Array.from(this.profilesByFingerprint.keys())) {
