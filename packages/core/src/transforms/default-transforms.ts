@@ -6,10 +6,118 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     type: 'src',
     inputs: [
       { type: 'float', name: 'scale', default: 10 },
-      { type: 'float', name: 'offset', default: 0.1 }
+      { type: 'float', name: 'offset', default: 0.1 },
+      { type: 'float', name: 'loopPeriod', default: 0.0 }
     ],
     wgsl: `
-  return vec4f(vec3f(hydraNoise(vec3f(_st * scale, offset * globals.time))), 1.0);
+  let period = max(loopPeriod, 0.0);
+  if (period <= 0.0) {
+    return vec4f(vec3f(hydraNoise(vec3f(_st * scale, offset * globals.time))), 1.0);
+  }
+
+  let angularFreq = 6.28318530718 / max(period, 0.0001);
+  let phase = globals.time * offset * angularFreq;
+  let p0 = vec3f(_st * scale, cos(phase));
+  let p1 = vec3f(_st * scale + vec2f(17.13, 41.71), sin(phase));
+  let value = (hydraNoise(p0) + hydraNoise(p1)) * 0.70710678;
+  return vec4f(vec3f(value), 1.0);
+`
+  },
+  {
+    name: 'fbm',
+    type: 'src',
+    inputs: [
+      { type: 'float', name: 'scale', default: 4.0 },
+      { type: 'float', name: 'speed', default: 0.1 },
+      { type: 'float', name: 'octaves', default: 5.0 },
+      { type: 'float', name: 'lacunarity', default: 2.0 },
+      { type: 'float', name: 'gain', default: 0.5 }
+    ],
+    wgsl: `
+  let octaveCount = clamp(i32(round(max(octaves, 1.0))), 1, 8);
+  var frequency = max(scale, 0.0001);
+  var amplitude = 0.5;
+  var sum = 0.0;
+  var norm = 0.0;
+  let t = globals.time * speed;
+
+  for (var i: i32 = 0; i < 8; i = i + 1) {
+    if (i >= octaveCount) { break; }
+    let fi = f32(i);
+    let p = vec3f(_st * frequency + vec2f(fi * 13.17, fi * 7.31), t * frequency);
+    sum += hydraNoise(p) * amplitude;
+    norm += amplitude;
+    frequency *= max(lacunarity, 1.0);
+    amplitude *= clamp(gain, 0.0, 1.0);
+  }
+
+  let value = sum / max(norm, 0.0001);
+  return vec4f(vec3f(value * 0.5 + 0.5), 1.0);
+`
+  },
+  {
+    name: 'ridged',
+    type: 'src',
+    inputs: [
+      { type: 'float', name: 'scale', default: 4.0 },
+      { type: 'float', name: 'speed', default: 0.1 },
+      { type: 'float', name: 'octaves', default: 5.0 },
+      { type: 'float', name: 'lacunarity', default: 2.0 },
+      { type: 'float', name: 'gain', default: 0.55 }
+    ],
+    wgsl: `
+  let octaveCount = clamp(i32(round(max(octaves, 1.0))), 1, 8);
+  var frequency = max(scale, 0.0001);
+  var amplitude = 0.5;
+  var sum = 0.0;
+  var norm = 0.0;
+  let t = globals.time * speed;
+
+  for (var i: i32 = 0; i < 8; i = i + 1) {
+    if (i >= octaveCount) { break; }
+    let fi = f32(i);
+    let p = vec3f(_st * frequency + vec2f(fi * 19.31, fi * 5.73), t * frequency);
+    let ridge = 1.0 - abs(hydraNoise(p));
+    sum += ridge * ridge * amplitude;
+    norm += amplitude;
+    frequency *= max(lacunarity, 1.0);
+    amplitude *= clamp(gain, 0.0, 1.0);
+  }
+
+  let value = sum / max(norm, 0.0001);
+  return vec4f(vec3f(clamp(value, 0.0, 1.0)), 1.0);
+`
+  },
+  {
+    name: 'turbulence',
+    type: 'src',
+    inputs: [
+      { type: 'float', name: 'scale', default: 4.0 },
+      { type: 'float', name: 'speed', default: 0.1 },
+      { type: 'float', name: 'octaves', default: 5.0 },
+      { type: 'float', name: 'lacunarity', default: 2.0 },
+      { type: 'float', name: 'gain', default: 0.5 }
+    ],
+    wgsl: `
+  let octaveCount = clamp(i32(round(max(octaves, 1.0))), 1, 8);
+  var frequency = max(scale, 0.0001);
+  var amplitude = 0.5;
+  var sum = 0.0;
+  var norm = 0.0;
+  let t = globals.time * speed;
+
+  for (var i: i32 = 0; i < 8; i = i + 1) {
+    if (i >= octaveCount) { break; }
+    let fi = f32(i);
+    let p = vec3f(_st * frequency + vec2f(fi * 11.19, fi * 23.47), t * frequency);
+    sum += abs(hydraNoise(p)) * amplitude;
+    norm += amplitude;
+    frequency *= max(lacunarity, 1.0);
+    amplitude *= clamp(gain, 0.0, 1.0);
+  }
+
+  let value = sum / max(norm, 0.0001);
+  return vec4f(vec3f(clamp(value, 0.0, 1.0)), 1.0);
 `
   },
   {
@@ -367,6 +475,86 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
 `
   },
   {
+    name: 'screen',
+    type: 'combine',
+    inputs: [
+      { type: 'float', name: 'amount', default: 1.0 }
+    ],
+    wgsl: `
+  let blended = vec3f(1.0) - (vec3f(1.0) - _c0.xyz) * (vec3f(1.0) - _c1.xyz);
+  let mixed = mix(_c0.xyz, blended, vec3f(clamp(amount, 0.0, 1.0)));
+  return vec4f(mixed, max(_c0.w, _c1.w));
+`
+  },
+  {
+    name: 'overlay',
+    type: 'combine',
+    inputs: [
+      { type: 'float', name: 'amount', default: 1.0 }
+    ],
+    wgsl: `
+  let low = 2.0 * _c0.xyz * _c1.xyz;
+  let high = vec3f(1.0) - 2.0 * (vec3f(1.0) - _c0.xyz) * (vec3f(1.0) - _c1.xyz);
+  let mask = step(vec3f(0.5), _c0.xyz);
+  let blended = low * (vec3f(1.0) - mask) + high * mask;
+  let mixed = mix(_c0.xyz, blended, vec3f(clamp(amount, 0.0, 1.0)));
+  return vec4f(clamp(mixed, vec3f(0.0), vec3f(1.0)), max(_c0.w, _c1.w));
+`
+  },
+  {
+    name: 'softLight',
+    type: 'combine',
+    inputs: [
+      { type: 'float', name: 'amount', default: 1.0 }
+    ],
+    wgsl: `
+  let blended = (vec3f(1.0) - 2.0 * _c1.xyz) * (_c0.xyz * _c0.xyz) + 2.0 * _c1.xyz * _c0.xyz;
+  let mixed = mix(_c0.xyz, blended, vec3f(clamp(amount, 0.0, 1.0)));
+  return vec4f(clamp(mixed, vec3f(0.0), vec3f(1.0)), max(_c0.w, _c1.w));
+`
+  },
+  {
+    name: 'hardLight',
+    type: 'combine',
+    inputs: [
+      { type: 'float', name: 'amount', default: 1.0 }
+    ],
+    wgsl: `
+  let low = 2.0 * _c0.xyz * _c1.xyz;
+  let high = vec3f(1.0) - 2.0 * (vec3f(1.0) - _c0.xyz) * (vec3f(1.0) - _c1.xyz);
+  let mask = step(vec3f(0.5), _c1.xyz);
+  let blended = low * (vec3f(1.0) - mask) + high * mask;
+  let mixed = mix(_c0.xyz, blended, vec3f(clamp(amount, 0.0, 1.0)));
+  return vec4f(clamp(mixed, vec3f(0.0), vec3f(1.0)), max(_c0.w, _c1.w));
+`
+  },
+  {
+    name: 'colorDodge',
+    type: 'combine',
+    inputs: [
+      { type: 'float', name: 'amount', default: 1.0 }
+    ],
+    wgsl: `
+  let denom = max(vec3f(0.0001), vec3f(1.0) - _c1.xyz);
+  let blended = clamp(_c0.xyz / denom, vec3f(0.0), vec3f(1.0));
+  let mixed = mix(_c0.xyz, blended, vec3f(clamp(amount, 0.0, 1.0)));
+  return vec4f(mixed, max(_c0.w, _c1.w));
+`
+  },
+  {
+    name: 'colorBurn',
+    type: 'combine',
+    inputs: [
+      { type: 'float', name: 'amount', default: 1.0 }
+    ],
+    wgsl: `
+  let denom = max(vec3f(0.0001), _c1.xyz);
+  let blended = vec3f(1.0) - clamp((vec3f(1.0) - _c0.xyz) / denom, vec3f(0.0), vec3f(1.0));
+  let mixed = mix(_c0.xyz, blended, vec3f(clamp(amount, 0.0, 1.0)));
+  return vec4f(clamp(mixed, vec3f(0.0), vec3f(1.0)), max(_c0.w, _c1.w));
+`
+  },
+  {
     name: 'bloomMix',
     type: 'combine',
     inputs: [
@@ -403,6 +591,29 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     ],
     wgsl: `
   return _st + _c0.xy * amount;
+`
+  },
+  {
+    name: 'flow',
+    type: 'combineCoord',
+    inputs: [
+      { type: 'float', name: 'amount', default: 0.1 }
+    ],
+    wgsl: `
+  let field = (_c0.xy * 2.0) - vec2f(1.0);
+  return fract(_st + field * amount);
+`
+  },
+  {
+    name: 'curlModulate',
+    type: 'combineCoord',
+    inputs: [
+      { type: 'float', name: 'amount', default: 0.1 }
+    ],
+    wgsl: `
+  let field = (_c0.xy * 2.0) - vec2f(1.0);
+  let curl = vec2f(-field.y, field.x);
+  return fract(_st + curl * amount);
 `
   },
   {
@@ -1262,6 +1473,58 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
 `
   },
   {
+    name: 'dilate',
+    type: 'renderpass',
+    inputs: [
+      { type: 'float', name: 'radius', default: 1.0 }
+    ],
+    wgsl: `
+  let texel = vec2f(
+    radius / max(globals.width, 1.0),
+    radius / max(globals.height, 1.0)
+  );
+  let c0 = hydraSampleTexture(prevBuffer, fract(_st));
+  let c1 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(texel.x, 0.0)));
+  let c2 = hydraSampleTexture(prevBuffer, fract(_st - vec2f(texel.x, 0.0)));
+  let c3 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(0.0, texel.y)));
+  let c4 = hydraSampleTexture(prevBuffer, fract(_st - vec2f(0.0, texel.y)));
+  let c5 = hydraSampleTexture(prevBuffer, fract(_st + texel));
+  let c6 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(-texel.x, texel.y)));
+  let c7 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(texel.x, -texel.y)));
+  let c8 = hydraSampleTexture(prevBuffer, fract(_st - texel));
+
+  let maxColor = max(max(max(max(c0.xyz, c1.xyz), c2.xyz), max(c3.xyz, c4.xyz)), max(max(c5.xyz, c6.xyz), max(c7.xyz, c8.xyz)));
+  let maxAlpha = max(max(max(max(c0.w, c1.w), c2.w), max(c3.w, c4.w)), max(max(c5.w, c6.w), max(c7.w, c8.w)));
+  return vec4f(maxColor, maxAlpha);
+`
+  },
+  {
+    name: 'erode',
+    type: 'renderpass',
+    inputs: [
+      { type: 'float', name: 'radius', default: 1.0 }
+    ],
+    wgsl: `
+  let texel = vec2f(
+    radius / max(globals.width, 1.0),
+    radius / max(globals.height, 1.0)
+  );
+  let c0 = hydraSampleTexture(prevBuffer, fract(_st));
+  let c1 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(texel.x, 0.0)));
+  let c2 = hydraSampleTexture(prevBuffer, fract(_st - vec2f(texel.x, 0.0)));
+  let c3 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(0.0, texel.y)));
+  let c4 = hydraSampleTexture(prevBuffer, fract(_st - vec2f(0.0, texel.y)));
+  let c5 = hydraSampleTexture(prevBuffer, fract(_st + texel));
+  let c6 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(-texel.x, texel.y)));
+  let c7 = hydraSampleTexture(prevBuffer, fract(_st + vec2f(texel.x, -texel.y)));
+  let c8 = hydraSampleTexture(prevBuffer, fract(_st - texel));
+
+  let minColor = min(min(min(min(c0.xyz, c1.xyz), c2.xyz), min(c3.xyz, c4.xyz)), min(min(c5.xyz, c6.xyz), min(c7.xyz, c8.xyz)));
+  let minAlpha = min(min(min(min(c0.w, c1.w), c2.w), min(c3.w, c4.w)), min(min(c5.w, c6.w), min(c7.w, c8.w)));
+  return vec4f(minColor, minAlpha);
+`
+  },
+  {
     name: 'radialBlur',
     type: 'renderpass',
     inputs: [
@@ -1435,6 +1698,45 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
  `
   },
   {
+    name: 'advect',
+    type: 'simulation',
+    inputs: [
+      { type: 'float', name: 'amount', default: 1.0 }
+    ],
+    wgsl: `
+  let center = hydraSampleTexture(prevBuffer, fract(_st));
+  let velocity = (center.xy * 2.0 - vec2f(1.0)) * amount;
+  let texel = vec2f(
+    1.0 / max(globals.width, 1.0),
+    1.0 / max(globals.height, 1.0)
+  );
+  let backtraceUv = fract(_st - velocity * texel);
+  let advected = hydraSampleTexture(prevBuffer, backtraceUv);
+  return vec4f(advected.xyz, center.w);
+ `
+  },
+  {
+    name: 'diffuse',
+    type: 'simulation',
+    inputs: [
+      { type: 'float', name: 'rate', default: 0.2 }
+    ],
+    wgsl: `
+  let texel = vec2f(
+    1.0 / max(globals.width, 1.0),
+    1.0 / max(globals.height, 1.0)
+  );
+  let c = hydraSampleTexture(prevBuffer, fract(_st));
+  let n = hydraSampleTexture(prevBuffer, fract(_st + vec2f(0.0, texel.y)));
+  let s = hydraSampleTexture(prevBuffer, fract(_st - vec2f(0.0, texel.y)));
+  let e = hydraSampleTexture(prevBuffer, fract(_st + vec2f(texel.x, 0.0)));
+  let w = hydraSampleTexture(prevBuffer, fract(_st - vec2f(texel.x, 0.0)));
+  let mean = (n + s + e + w) * 0.25;
+  let k = clamp(rate, 0.0, 1.0);
+  return vec4f(mix(c.xyz, mean.xyz, vec3f(k)), c.w);
+ `
+  },
+  {
     name: 'lumaProbe',
     type: 'analysis',
     inputs: [
@@ -1462,6 +1764,82 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     hydraLuminance(e.xyz) * 0.15 +
     hydraLuminance(w.xyz) * 0.15;
   return vec4f(vec3f(luma), 1.0);
+ `
+  },
+  {
+    name: 'histogramProbe',
+    type: 'analysis',
+    resolutionScale: 0.5,
+    updateRate: { everyNFrames: 2 },
+    analysisOut: [
+      { uniformName: 'analysis_hist4', type: 'vec4' }
+    ],
+    wgsl: `
+  let c = hydraSampleTexture(prevBuffer, fract(_st));
+  let luma = hydraLuminance(c.xyz);
+  let b0 = 1.0 - step(0.25, luma);
+  let b1 = step(0.25, luma) * (1.0 - step(0.5, luma));
+  let b2 = step(0.5, luma) * (1.0 - step(0.75, luma));
+  let b3 = step(0.75, luma);
+  return vec4f(b0, b1, b2, b3);
+ `
+  },
+  {
+    name: 'edgeDensityProbe',
+    type: 'analysis',
+    inputs: [
+      { type: 'float', name: 'amount', default: 1.0 }
+    ],
+    resolutionScale: 0.5,
+    updateRate: { everyNFrames: 2 },
+    analysisOut: [
+      { uniformName: 'analysis_edge_density', type: 'float' }
+    ],
+    wgsl: `
+  let texel = vec2f(
+    1.0 / max(globals.width, 1.0),
+    1.0 / max(globals.height, 1.0)
+  );
+  let n = hydraLuminance(hydraSampleTexture(prevBuffer, fract(_st + vec2f(0.0, texel.y))).xyz);
+  let s = hydraLuminance(hydraSampleTexture(prevBuffer, fract(_st - vec2f(0.0, texel.y))).xyz);
+  let e = hydraLuminance(hydraSampleTexture(prevBuffer, fract(_st + vec2f(texel.x, 0.0))).xyz);
+  let w = hydraLuminance(hydraSampleTexture(prevBuffer, fract(_st - vec2f(texel.x, 0.0))).xyz);
+  let edge = clamp(length(vec2f(e - w, n - s)) * amount * 2.0, 0.0, 1.0);
+  return vec4f(vec3f(edge), 1.0);
+ `
+  },
+  {
+    name: 'motionProbe',
+    type: 'analysis',
+    inputs: [
+      { type: 'float', name: 'sensitivity', default: 1.0 }
+    ],
+    resources: [
+      {
+        type: 'storageTexture2D',
+        name: 'motionState',
+        access: 'read_write',
+        format: 'rgba16float',
+        lifetime: 'persistent',
+        stateKey: 'motion-probe-state'
+      }
+    ],
+    resolutionScale: 0.5,
+    updateRate: 'everyFrame',
+    analysisOut: [
+      { uniformName: 'analysis_motion', type: 'float' }
+    ],
+    wgsl: `
+  let dims = vec2f(max(globals.width, 1.0), max(globals.height, 1.0));
+  let pix = vec2i(
+    i32(clamp(floor(_st.x * dims.x), 0.0, dims.x - 1.0)),
+    i32(clamp(floor(_st.y * dims.y), 0.0, dims.y - 1.0))
+  );
+  let current = hydraSampleTexture(prevBuffer, fract(_st));
+  let previous = clamp(textureLoad(motionState, pix), vec4f(0.0), vec4f(1.0));
+  let motion = clamp(length(current.xyz - previous.xyz) * sensitivity, 0.0, 1.0);
+  textureStore(motionState, pix, current);
+  return vec4f(vec3f(motion), 1.0);
  `
   },
   {
@@ -1570,6 +1948,73 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
   let coord = hydraLinearCoord();
   let uv = hydraUvFromLinearCoord(coord, vec2u(max(1u, u32(globals.width)), max(1u, u32(globals.height))));
   computeBuffer[index] = vec4f(uv, f32(coord.x), 1.0);
+  return vec4f(0.0);
+ `
+  },
+  {
+    name: 'particleInit',
+    type: 'kernel',
+    executionDomain: 'linear1d',
+    dispatchItems: 4096,
+    writesOutput: false,
+    inputs: [
+      { type: 'float', name: 'seed', default: 0.0 }
+    ],
+    resources: [
+      {
+        type: 'storageBuffer',
+        name: 'particleState',
+        access: 'read_write',
+        elementType: 'vec4f',
+        minLength: 4096,
+        lifetime: 'persistent',
+        stateKey: 'particle-state'
+      }
+    ],
+    wgsl: `
+  let index = hydraLinearIndex();
+  let dims = vec2u(max(1u, u32(globals.width)), max(1u, u32(globals.height)));
+  let uv = hydraUvFromLinearIndex(index, dims);
+  let jitter = hydraNoise(vec3f(uv * 32.0 + vec2f(seed), seed));
+  particleState[index] = vec4f(uv, jitter * 0.5 + 0.5, 1.0);
+  return vec4f(0.0);
+ `
+  },
+  {
+    name: 'particleStep',
+    type: 'kernel',
+    executionDomain: 'linear1d',
+    dispatchItems: 4096,
+    writesOutput: false,
+    inputs: [
+      { type: 'float', name: 'speed', default: 0.35 },
+      { type: 'float', name: 'drift', default: 0.2 }
+    ],
+    resources: [
+      {
+        type: 'storageBuffer',
+        name: 'particleState',
+        access: 'read_write',
+        elementType: 'vec4f',
+        minLength: 4096,
+        lifetime: 'persistent',
+        stateKey: 'particle-state'
+      }
+    ],
+    wgsl: `
+  let index = hydraLinearIndex();
+  var state = particleState[index];
+  var uv = fract(state.xy);
+  let t = globals.time * speed;
+  let vx = hydraNoise(vec3f(uv * 12.7 + vec2f(31.3, 17.9), t));
+  let vy = hydraNoise(vec3f(uv * 11.1 + vec2f(7.7, 53.2), t + 11.0));
+  let velocity = vec2f(vx, vy) * 0.5;
+  let texel = vec2f(
+    1.0 / max(globals.width, 1.0),
+    1.0 / max(globals.height, 1.0)
+  );
+  uv = fract(uv + velocity * drift * texel);
+  particleState[index] = vec4f(uv, velocity.x * 0.5 + 0.5, 1.0);
   return vec4f(0.0);
  `
   },

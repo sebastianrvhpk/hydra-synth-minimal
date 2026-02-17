@@ -736,6 +736,124 @@ describe('HydraTransformRegistry', () => {
     expect(output.passes[0].wgsl).toContain('fn myTint')
   })
 
+  it('registers low-level generator/operator additions for synthesis expansion', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+    const registered = new Set(registry.listTransforms())
+    const expected = [
+      'fbm',
+      'ridged',
+      'turbulence',
+      'screen',
+      'overlay',
+      'softLight',
+      'hardLight',
+      'colorDodge',
+      'colorBurn',
+      'flow',
+      'curlModulate',
+      'dilate',
+      'erode',
+      'advect',
+      'diffuse',
+      'histogramProbe',
+      'edgeDensityProbe',
+      'motionProbe',
+      'particleInit',
+      'particleStep'
+    ]
+
+    expected.forEach((name) => {
+      expect(registered.has(name)).toBe(true)
+    })
+  })
+
+  it('compiles looped/fractal generators with blend and flow operators', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators
+      .fbm(4.0, 0.15, 4.0, 2.0, 0.5)
+      .flow(registry.generators.noise(6.0, 0.2, 8.0), 0.12)
+      .screen(registry.generators.ridged(5.0, 0.2, 4.0, 2.0, 0.55), 0.7)
+      .softLight(registry.generators.turbulence(3.0, 0.1, 3.0, 2.0, 0.5), 0.45)
+      .out()
+
+    expect(output.passes.length).toBe(1)
+    const wgsl = output.passes[0].wgsl
+    expect(wgsl).toContain('fn noise')
+    expect(wgsl).toContain('loopPeriod')
+    expect(wgsl).toContain('cos(phase)')
+    expect(wgsl).toContain('fn fbm')
+    expect(wgsl).toContain('fn ridged')
+    expect(wgsl).toContain('fn turbulence')
+    expect(wgsl).toContain('fn flow')
+    expect(wgsl).toContain('fn screen')
+    expect(wgsl).toContain('fn softLight')
+  })
+
+  it('compiles new morphology and simulation operators as standalone multipass stages', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators
+      .osc(8, 0.1, 0)
+      .dilate(1.0)
+      .erode(1.0)
+      .advect(1.0)
+      .diffuse(0.2)
+      .out()
+
+    expect(output.passes.length).toBe(5)
+    expect(output.passes[1].wgsl).toContain('fn dilate')
+    expect(output.passes[2].wgsl).toContain('fn erode')
+    expect(output.passes[3].wgsl).toContain('fn advect')
+    expect(output.passes[4].wgsl).toContain('fn diffuse')
+  })
+
+  it('propagates new analysis probes and motion state resources', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators
+      .solid(0.2, 0.4, 0.6, 1.0)
+      .histogramProbe()
+      .edgeDensityProbe(1.2)
+      .motionProbe(1.0)
+      .out()
+
+    expect(output.passes.length).toBe(4)
+    expect(output.passes[1].analysisOut).toEqual([{ uniformName: 'analysis_hist4', type: 'vec4' }])
+    expect(output.passes[2].analysisOut).toEqual([{ uniformName: 'analysis_edge_density', type: 'float' }])
+    expect(output.passes[3].analysisOut).toEqual([{ uniformName: 'analysis_motion', type: 'float' }])
+    expect(output.passes[3].storageTextures?.[0].name).toBe('motionState')
+    expect(output.passes[3].storageTextures?.[0].stateKey).toBe('motion-probe-state')
+  })
+
+  it('compiles particle initialization/update kernels as linear data passes', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators
+      .solid(0, 0, 0, 1)
+      .particleInit(0.5)
+      .particleStep(0.35, 0.2)
+      .out()
+
+    expect(output.passes.length).toBe(3)
+    const initPass = output.passes[1]
+    const stepPass = output.passes[2]
+
+    expect(initPass.dispatch?.domain).toBe('linear1d')
+    expect(stepPass.dispatch?.domain).toBe('linear1d')
+    expect(initPass.output).toBeUndefined()
+    expect(stepPass.output).toBeUndefined()
+    expect(initPass.storageBuffers?.[0].stateKey).toBe('particle-state')
+    expect(stepPass.storageBuffers?.[0].stateKey).toBe('particle-state')
+    expect(initPass.wgsl).toContain('hydraUvFromLinearIndex')
+    expect(stepPass.wgsl).toContain('hydraNoise')
+  })
+
   it('reports compile errors through registry callback', () => {
     const output = new CaptureOutput()
     let compileError: unknown = null

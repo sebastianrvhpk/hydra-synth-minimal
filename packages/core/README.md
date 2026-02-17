@@ -7,6 +7,7 @@ Core runtime and compiler package for Hydra v2.
 - engine lifecycle orchestration (`HydraEngine`)
 - typed error envelope and failure wrapper (`HydraEngineError`, `HydraEngineFailure`)
 - transform registry and chain generation (`HydraTransformRegistry`, `HydraGraphNode`)
+- default low-level transform surface includes loopable noise/fractal generators, blend-mode operators, flow/curl domain modulators, morphology/simulation passes, analysis probes, and linear particle buffer kernels
 - WGSL pass compilation (`compileWgslPass`) with:
   - multipass splitting for standalone transform types (`renderpass`, `simulation`, `analysis`, `kernel`)
   - dynamic uniform packing for scalar/vector callback inputs
