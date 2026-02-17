@@ -6,20 +6,25 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     type: 'src',
     inputs: [
       { type: 'float', name: 'scale', default: 10 },
-      { type: 'float', name: 'offset', default: 0.1 },
-      { type: 'float', name: 'loopPeriod', default: 0.0 }
+      { type: 'float', name: 'offset', default: 0.1 }
     ],
     wgsl: `
-  let period = max(loopPeriod, 0.0);
-  if (period <= 0.0) {
-    return vec4f(vec3f(hydraNoise(vec3f(_st * scale, offset * globals.time))), 1.0);
-  }
-
-  let angularFreq = 6.28318530718 / max(period, 0.0001);
-  let phase = globals.time * offset * angularFreq;
-  let p0 = vec3f(_st * scale, cos(phase));
-  let p1 = vec3f(_st * scale + vec2f(17.13, 41.71), sin(phase));
-  let value = (hydraNoise(p0) + hydraNoise(p1)) * 0.70710678;
+  return vec4f(vec3f(hydraNoise(vec3f(_st * scale, offset * globals.time))), 1.0);
+`
+  },
+  {
+    name: 'noiseLoop',
+    type: 'src',
+    inputs: [
+      { type: 'float', name: 'scale', default: 10.0 },
+      { type: 'float', name: 'speed', default: 0.1 },
+      { type: 'float', name: 'radius', default: 1.0 }
+    ],
+    wgsl: `
+  let loopRadius = max(radius, 0.0001);
+  let phase = globals.time * speed * 6.28318530718;
+  let p = vec4f(_st * scale, cos(phase) * loopRadius, sin(phase) * loopRadius);
+  let value = hydraNoise4(p);
   return vec4f(vec3f(value), 1.0);
 `
   },

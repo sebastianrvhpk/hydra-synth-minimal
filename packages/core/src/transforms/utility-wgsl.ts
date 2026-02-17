@@ -49,11 +49,26 @@ fn hydraMod289Vec4(x: vec4f) -> vec4f {
 }
 `
   },
+  hydraMod289Scalar: {
+    wgsl: `
+fn hydraMod289Scalar(x: f32) -> f32 {
+  return x - floor(x / 289.0) * 289.0;
+}
+`
+  },
   hydraPermute: {
     dependencies: ['hydraMod289Vec4'],
     wgsl: `
 fn hydraPermute(x: vec4f) -> vec4f {
   return hydraMod289Vec4(((x * 34.0) + 1.0) * x);
+}
+`
+  },
+  hydraPermuteScalar: {
+    dependencies: ['hydraMod289Scalar'],
+    wgsl: `
+fn hydraPermuteScalar(x: f32) -> f32 {
+  return hydraMod289Scalar(((x * 34.0) + 1.0) * x);
 }
 `
   },
@@ -141,6 +156,93 @@ fn hydraNoise(v: vec3f) -> f32 {
 }
 `
   },
+  hydraGrad4: {
+    wgsl: `
+fn hydraGrad4(j: f32, ip: vec4f) -> vec4f {
+  let ones = vec4f(1.0, 1.0, 1.0, -1.0);
+  var pxyz = floor(fract(vec3f(j, j, j) * ip.xyz) * 7.0) * ip.z - vec3f(1.0);
+  let pw = 1.5 - dot(abs(pxyz), ones.xyz);
+  let sxyz = vec3f(1.0) - step(vec3f(0.0), pxyz);
+  let sw = 1.0 - step(0.0, pw);
+  pxyz = pxyz + (sxyz * 2.0 - vec3f(1.0)) * vec3f(sw);
+  return vec4f(pxyz, pw);
+}
+`
+  },
+  hydraNoise4: {
+    dependencies: ['hydraPermute', 'hydraPermuteScalar', 'hydraTaylorInvSqrt', 'hydraGrad4'],
+    wgsl: `
+fn hydraNoise4(v: vec4f) -> f32 {
+  let F4 = 0.30901699437494745;
+  let G4 = 0.138196601125011;
+
+  var i = floor(v + vec4f(dot(v, vec4f(F4))));
+  let x0 = v - i + vec4f(dot(i, vec4f(G4)));
+
+  var rank = vec4f(0.0);
+  rank.x = step(x0.y, x0.x) + step(x0.z, x0.x) + step(x0.w, x0.x);
+  rank.y = step(x0.x, x0.y) + step(x0.z, x0.y) + step(x0.w, x0.y);
+  rank.z = step(x0.x, x0.z) + step(x0.y, x0.z) + step(x0.w, x0.z);
+  rank.w = step(x0.x, x0.w) + step(x0.y, x0.w) + step(x0.z, x0.w);
+
+  let i1 = clamp(rank - vec4f(2.0), vec4f(0.0), vec4f(1.0));
+  let i2 = clamp(rank - vec4f(1.0), vec4f(0.0), vec4f(1.0));
+  let i3 = clamp(rank, vec4f(0.0), vec4f(1.0));
+
+  let x1 = x0 - i1 + vec4f(G4);
+  let x2 = x0 - i2 + vec4f(2.0 * G4);
+  let x3 = x0 - i3 + vec4f(3.0 * G4);
+  let x4 = x0 - vec4f(1.0) + vec4f(4.0 * G4);
+
+  i = hydraMod289Vec4(i);
+  let j0 = hydraPermuteScalar(
+    hydraPermuteScalar(
+      hydraPermuteScalar(
+        hydraPermuteScalar(i.w) + i.z
+      ) + i.y
+    ) + i.x
+  );
+
+  let j1 = hydraPermute(
+    hydraPermute(
+      hydraPermute(
+        hydraPermute(i.w + vec4f(i1.w, i2.w, i3.w, 1.0)) + i.z + vec4f(i1.z, i2.z, i3.z, 1.0)
+      ) + i.y + vec4f(i1.y, i2.y, i3.y, 1.0)
+    ) + i.x + vec4f(i1.x, i2.x, i3.x, 1.0)
+  );
+
+  let ip = vec4f(1.0 / 294.0, 1.0 / 49.0, 1.0 / 7.0, 0.0);
+  var p0 = hydraGrad4(j0, ip);
+  var p1 = hydraGrad4(j1.x, ip);
+  var p2 = hydraGrad4(j1.y, ip);
+  var p3 = hydraGrad4(j1.z, ip);
+  var p4 = hydraGrad4(j1.w, ip);
+
+  let norm = hydraTaylorInvSqrt(vec4f(dot(p0, p0), dot(p1, p1), dot(p2, p2), dot(p3, p3)));
+  p0 *= norm.x;
+  p1 *= norm.y;
+  p2 *= norm.z;
+  p3 *= norm.w;
+  p4 *= hydraTaylorInvSqrt(vec4f(dot(p4, p4))).x;
+
+  var m0 = max(
+    vec3f(0.6) - vec3f(dot(x0, x0), dot(x1, x1), dot(x2, x2)),
+    vec3f(0.0)
+  );
+  var m1 = max(
+    vec2f(0.6) - vec2f(dot(x3, x3), dot(x4, x4)),
+    vec2f(0.0)
+  );
+  m0 = m0 * m0;
+  m1 = m1 * m1;
+
+  return 49.0 * (
+    dot(m0 * m0, vec3f(dot(p0, x0), dot(p1, x1), dot(p2, x2))) +
+    dot(m1 * m1, vec2f(dot(p3, x3), dot(p4, x4)))
+  );
+}
+`
+  },
   hydraSampleTextureWrapped: {
     wgsl: `
 fn hydraSampleTextureWrapped(tex: texture_2d<f32>, uv: vec2f) -> vec4f {
@@ -191,9 +293,13 @@ const UTILITY_ORDER = [
   'hydraHsvToRgb',
   'hydraMod289Vec3',
   'hydraMod289Vec4',
+  'hydraMod289Scalar',
   'hydraPermute',
+  'hydraPermuteScalar',
   'hydraTaylorInvSqrt',
   'hydraNoise',
+  'hydraGrad4',
+  'hydraNoise4',
   'hydraSampleTextureWrapped',
   'hydraSampleTextureClamped',
   'hydraUvFromLinearCoord',

@@ -741,6 +741,7 @@ describe('HydraTransformRegistry', () => {
     const registry = new HydraTransformRegistry({ defaultOutput: output })
     const registered = new Set(registry.listTransforms())
     const expected = [
+      'noiseLoop',
       'fbm',
       'ridged',
       'turbulence',
@@ -774,22 +775,40 @@ describe('HydraTransformRegistry', () => {
 
     registry.generators
       .fbm(4.0, 0.15, 4.0, 2.0, 0.5)
-      .flow(registry.generators.noise(6.0, 0.2, 8.0), 0.12)
+      .flow(registry.generators.noiseLoop(6.0, 0.2, 0.8), 0.12)
       .screen(registry.generators.ridged(5.0, 0.2, 4.0, 2.0, 0.55), 0.7)
       .softLight(registry.generators.turbulence(3.0, 0.1, 3.0, 2.0, 0.5), 0.45)
       .out()
 
     expect(output.passes.length).toBe(1)
     const wgsl = output.passes[0].wgsl
-    expect(wgsl).toContain('fn noise')
-    expect(wgsl).toContain('loopPeriod')
-    expect(wgsl).toContain('cos(phase)')
+    expect(wgsl).toContain('fn noiseLoop')
+    expect(wgsl).toContain('loopRadius')
+    expect(wgsl).toContain('fn hydraNoise4')
     expect(wgsl).toContain('fn fbm')
     expect(wgsl).toContain('fn ridged')
     expect(wgsl).toContain('fn turbulence')
     expect(wgsl).toContain('fn flow')
     expect(wgsl).toContain('fn screen')
     expect(wgsl).toContain('fn softLight')
+  })
+
+  it('keeps legacy noise semantics and isolates loop behavior in noiseLoop()', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators.noise(6.0, 0.2).out()
+    const legacyWgsl = output.passes[0].wgsl
+    expect(legacyWgsl).toContain('fn noise')
+    expect(legacyWgsl).toContain('offset * globals.time')
+    expect(legacyWgsl).not.toContain('fn noiseLoop')
+
+    registry.generators.noiseLoop(6.0, 0.2, 0.8).out()
+    const loopWgsl = output.passes[0].wgsl
+    expect(loopWgsl).toContain('fn noiseLoop')
+    expect(loopWgsl).toContain('let loopRadius = max(radius, 0.0001);')
+    expect(loopWgsl).toContain('speed * 6.28318530718')
+    expect(loopWgsl).toContain('hydraNoise4')
   })
 
   it('compiles new morphology and simulation operators as standalone multipass stages', () => {

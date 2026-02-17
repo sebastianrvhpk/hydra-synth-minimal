@@ -62,7 +62,7 @@ Transform chains are split into sequential compute passes when standalone transf
 Built-in post/fx and compute-native coverage includes:
 
 - classic Hydra transforms (`osc`, `noise`, `shape`, coord/color/combine ops, `prev`, `prevN`)
-- low-level synthesis/operator extensions (`noise(..., loopPeriod)`, `fbm`, `ridged`, `turbulence`, `screen`, `overlay`, `softLight`, `hardLight`, `colorDodge`, `colorBurn`, `flow`, `curlModulate`)
+- low-level synthesis/operator extensions (`noiseLoop(scale, speed, radius)`, `fbm`, `ridged`, `turbulence`, `screen`, `overlay`, `softLight`, `hardLight`, `colorDodge`, `colorBurn`, `flow`, `curlModulate`)
 - multipass/post-processing transforms (for example `blurX`, `blurY`, `blurTiledX`, `blurSubgroupX`, `blurFast`, `edgeDetect`, `edgeLaplacian`, `radialBlur`, `zoomBlur`, `dualKawaseBlur`, `dualKawaseBloom`, `toneMap`, `exposure`)
 - simulation/analysis/data transforms (`rdStep`, `advect`, `diffuse`, `trailScatter`, `lumaProbe`, `histogramProbe`, `edgeDensityProbe`, `motionProbe`, `bufferFill`, `bufferDecay`, `bufferIndexProbe`, `particleInit`, `particleStep`)
 
