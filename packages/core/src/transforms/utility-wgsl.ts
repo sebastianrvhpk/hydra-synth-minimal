@@ -177,8 +177,10 @@ fn hydraNoise4(v: vec4f) -> f32 {
   var i = floor(v + vec4f(dot(v, vec4f(0.30901699437494745))));
   let x0 = v - i + vec4f(dot(i, vec4f(C.x)));
 
-  let isX = step(x0.yzw, x0.xxx);
-  let isYZ = step(x0.zww, x0.yyz);
+  // Break exact rank ties deterministically to avoid directional simplex seams.
+  let rankInput = x0 + vec4f(1.0e-7, 2.0e-7, 3.0e-7, 4.0e-7);
+  let isX = step(rankInput.yzw, rankInput.xxx);
+  let isYZ = step(rankInput.zww, rankInput.yyz);
 
   var i0 = vec4f(0.0);
   i0.x = isX.x + isX.y + isX.z;

@@ -40,6 +40,24 @@ describe('compute core foundation', () => {
     expect(graphA).toEqual(graphB)
   })
 
+  it('keeps lowered resource references canonical across node resources and dependency edges', () => {
+    const registry = new HydraTransformRegistry({ defaultOutput: new NullOutput() })
+    const node = registry.generators
+      .solid(0, 0, 0, 1)
+      .bufferFill([1, 0, 0, 1])
+      .bufferDecay(0.95)
+
+    const graph = lowerDslToIr(node.transforms, { graphId: 'canonical-resources' })
+    const issues = validateKernelGraph(graph)
+
+    expect(issues.some((issue) => issue.type === 'warning')).toBe(false)
+    const computeBufferResource = graph.resources.find((resource) => resource.id.includes('buffer:binding:computeBuffer'))
+    expect(computeBufferResource).toBeDefined()
+    const computeEdge = graph.edges.find((edge) => edge.resource?.includes('buffer:binding:computeBuffer'))
+    expect(computeEdge).toBeDefined()
+    expect(computeEdge?.resource).toBe(computeBufferResource?.id)
+  })
+
   it('compiles IR to execution plans with stable cache keys', () => {
     const registry = new HydraTransformRegistry({ defaultOutput: new NullOutput() })
     const node = registry.generators

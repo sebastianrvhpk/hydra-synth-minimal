@@ -335,8 +335,8 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     ],
     wgsl: `
   var st = _st * vec2f(repeatX, repeatY);
-  st.x += step(1.0, hydraMod(st.y, 2.0)) + _c0.x * offsetX;
-  st.y += step(1.0, hydraMod(st.x, 2.0)) + _c0.y * offsetY;
+  st.x += step(1.0, hydraMod(st.y, 2.0)) * offsetX + _c0.x * offsetX;
+  st.y += step(1.0, hydraMod(st.x, 2.0)) * offsetY + _c0.y * offsetY;
   return fract(st);
 `
   },
@@ -349,7 +349,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     ],
     wgsl: `
   var st = _st * vec2f(reps, 1.0);
-  st.y += step(1.0, hydraMod(st.x, 2.0)) + _c0.x * offset;
+  st.y += step(1.0, hydraMod(st.x, 2.0)) * offset + _c0.x * offset;
   return fract(st);
 `
   },
@@ -362,7 +362,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     ],
     wgsl: `
   var st = _st * vec2f(1.0, reps);
-  st.x += step(1.0, hydraMod(st.y, 2.0)) + _c0.x * offset;
+  st.x += step(1.0, hydraMod(st.y, 2.0)) * offset + _c0.x * offset;
   return fract(st);
 `
   },

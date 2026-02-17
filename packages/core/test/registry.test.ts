@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { HydraTransformRegistry, type HydraCompiledPass, type HydraOutputAdapter, type HydraTransformDefinition } from '../src/index.ts'
+import {
+  HydraTransformRegistry,
+  getDefaultTransforms,
+  type HydraCompiledPass,
+  type HydraOutputAdapter,
+  type HydraTransformDefinition
+} from '../src/index.ts'
 
 class CaptureOutput implements HydraOutputAdapter {
   passes: HydraCompiledPass[] = []
@@ -809,6 +815,19 @@ describe('HydraTransformRegistry', () => {
     expect(loopWgsl).toContain('let loopRadius = max(radius, 0.0001);')
     expect(loopWgsl).toContain('speed * 6.28318530718')
     expect(loopWgsl).toContain('hydraNoise4')
+    expect(loopWgsl).toContain('let rankInput = x0 + vec4f(1.0e-7, 2.0e-7, 3.0e-7, 4.0e-7);')
+  })
+
+  it('applies declared offset parameters in modulateRepeat variants', () => {
+    const definitions = new Map(getDefaultTransforms().map((definition) => [definition.name, definition]))
+    const modulateRepeat = definitions.get('modulateRepeat')?.wgsl ?? ''
+    const modulateRepeatX = definitions.get('modulateRepeatX')?.wgsl ?? ''
+    const modulateRepeatY = definitions.get('modulateRepeatY')?.wgsl ?? ''
+
+    expect(modulateRepeat).toContain('step(1.0, hydraMod(st.y, 2.0)) * offsetX + _c0.x * offsetX')
+    expect(modulateRepeat).toContain('step(1.0, hydraMod(st.x, 2.0)) * offsetY + _c0.y * offsetY')
+    expect(modulateRepeatX).toContain('step(1.0, hydraMod(st.x, 2.0)) * offset + _c0.x * offset')
+    expect(modulateRepeatY).toContain('step(1.0, hydraMod(st.y, 2.0)) * offset + _c0.x * offset')
   })
 
   it('compiles new morphology and simulation operators as standalone multipass stages', () => {

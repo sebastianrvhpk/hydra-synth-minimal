@@ -105,6 +105,25 @@ const inferDispatchDomain = (pass: HydraCompiledPass): HydraKernelNode['schedule
   return 'pixel2d'
 }
 
+const isNodeUniformRef = (node: HydraKernelNode, resource: string): boolean =>
+  node.uniforms.some((uniform) => uniform.name === resource)
+
+const resolveNodeResourceRef = (node: HydraKernelNode, resource: string): string | null => {
+  if (isNodeUniformRef(node, resource)) return null
+  if (resource === 'outImage') return 'virtual:outImage'
+
+  const texture = node.textures.find((entry) => entry.name === resource)
+  if (texture) return getTextureResourceId(texture)
+
+  const buffer = node.storageBuffers.find((entry) => entry.name === resource)
+  if (buffer) return getStorageBufferResourceId(buffer)
+
+  const storageTexture = node.storageTextures.find((entry) => entry.name === resource)
+  if (storageTexture) return getStorageTextureResourceId(storageTexture)
+
+  return `virtual:${resource}`
+}
+
 const collectResourceSpecs = (nodes: HydraKernelNode[]): HydraKernelResourceSpec[] => {
   const resources = new Map<string, HydraKernelResourceSpec>()
 
@@ -154,8 +173,8 @@ const collectResourceSpecs = (nodes: HydraKernelNode[]): HydraKernelResourceSpec
     })
 
     node.reads.forEach((read) => {
-      if (read === 'outImage') return
-      const key = `virtual:${read}`
+      const key = resolveNodeResourceRef(node, read)
+      if (!key || key === 'virtual:outImage' || !key.startsWith('virtual:')) return
       ensure({
         id: key,
         kind: 'Buffer',
@@ -165,7 +184,9 @@ const collectResourceSpecs = (nodes: HydraKernelNode[]): HydraKernelResourceSpec
     })
 
     node.writes.forEach((write) => {
-      if (write === 'outImage') {
+      const key = resolveNodeResourceRef(node, write)
+      if (!key) return
+      if (key === 'virtual:outImage') {
         ensure({
           id: 'virtual:outImage',
           kind: 'Texture2D',
@@ -175,7 +196,7 @@ const collectResourceSpecs = (nodes: HydraKernelNode[]): HydraKernelResourceSpec
         })
         return
       }
-      const key = `virtual:${write}`
+      if (!key.startsWith('virtual:')) return
       ensure({
         id: key,
         kind: 'Buffer',
@@ -203,9 +224,9 @@ const createKernelNode = (
   const dispatchDomain = inferDispatchDomain(pass)
   const reads = pass.ir?.reads ? pass.ir.reads.slice() : []
   const writes = pass.ir?.writes ? pass.ir.writes.slice() : []
-  const textureResources = pass.textures.map((texture) => `texture:${texture.name}`)
-  const bufferResources = (pass.storageBuffers ?? []).map((buffer) => `buffer:${buffer.name}`)
-  const storageTextureResources = (pass.storageTextures ?? []).map((texture) => `storageTexture:${texture.name}`)
+  const textureResources = pass.textures.map((texture) => getTextureResourceId(texture))
+  const bufferResources = (pass.storageBuffers ?? []).map((buffer) => getStorageBufferResourceId(buffer))
+  const storageTextureResources = (pass.storageTextures ?? []).map((texture) => getStorageTextureResourceId(texture))
   const resources = Array.from(new Set(textureResources.concat(bufferResources, storageTextureResources)))
 
   const loweringNotes: string[] = []
@@ -264,29 +285,33 @@ const buildEdges = (nodes: HydraKernelNode[]): HydraDependencyEdge[] => {
   const lastWriterByResource = new Map<string, string>()
   nodes.forEach((node) => {
     node.reads.forEach((resource) => {
-      const writer = lastWriterByResource.get(resource)
+      const resolved = resolveNodeResourceRef(node, resource)
+      if (!resolved) return
+      const writer = lastWriterByResource.get(resolved)
       if (!writer || writer === node.id) return
       add({
-        id: createEdgeId(writer, node.id, 'RAW', `virtual:${resource}`),
+        id: createEdgeId(writer, node.id, 'RAW', resolved),
         from: writer,
         to: node.id,
         kind: 'RAW',
-        resource: `virtual:${resource}`
+        resource: resolved
       })
     })
 
     node.writes.forEach((resource) => {
-      const priorWriter = lastWriterByResource.get(resource)
+      const resolved = resolveNodeResourceRef(node, resource)
+      if (!resolved) return
+      const priorWriter = lastWriterByResource.get(resolved)
       if (priorWriter && priorWriter !== node.id) {
         add({
-          id: createEdgeId(priorWriter, node.id, 'WAW', `virtual:${resource}`),
+          id: createEdgeId(priorWriter, node.id, 'WAW', resolved),
           from: priorWriter,
           to: node.id,
           kind: 'WAW',
-          resource: `virtual:${resource}`
+          resource: resolved
         })
       }
-      lastWriterByResource.set(resource, node.id)
+      lastWriterByResource.set(resolved, node.id)
     })
   })
 
