@@ -15,3 +15,12 @@ render(o1)
 ---
 
 
+A=()=>height/width,speed=1,fps=60,
+setCanvasDisplay(512,512),rn=()=>Math.random(),
+ns=(f=.3,v=.125,r=.25,x=rn(),y=rn())=>noiseLoop(f,v,r)
+.modulate(solid(width*x,height*y),1).scale(1,A,1,rn())
+
+solid().diff(o0).diff(prevN(75),.25)
+.layer(osc(Math.PI,.75,Math.PI/4).mask(shape(4,1,0).scale(1,1/width,1/height,ns().pixelate(1,1).mult(.5).add(.5),ns().pixelate(1,1).mult(.5).add(.5))))
+.rotate(prevN(16).blur().mult(.05))
+.out(o0)
