@@ -19,10 +19,14 @@
   "sideEffects": false,
   "scripts": {
     "build": "node ../../scripts/build-package.mjs",
+    "build:dist": "vite build",
     "typecheck": "node ../../scripts/build-package.mjs --check"
   },
   "dependencies": {
     "hydra-synth-core": "workspace:*"
   },
-  "license": "AGPL-3.0-or-later"
+  "license": "AGPL-3.0-or-later",
+  "devDependencies": {
+    "vite": "7.3.1"
+  }
 }
