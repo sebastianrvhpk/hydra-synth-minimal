@@ -1715,6 +1715,56 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
  `
   },
   {
+    name: 'rdStepSeeded',
+    type: 'simulation',
+    inputs: [
+      { type: 'vec4', name: 'seed', default: [0, 0, 0, 0] },
+      { type: 'float', name: 'seedAmount', default: 0.0 },
+      { type: 'float', name: 'feed', default: 0.0367 },
+      { type: 'float', name: 'kill', default: 0.0649 },
+      { type: 'float', name: 'diffA', default: 1.0 },
+      { type: 'float', name: 'diffB', default: 0.5 },
+      { type: 'float', name: 'dt', default: 1.0 }
+    ],
+    wgsl: `
+  let texel = vec2f(
+    1.0 / max(globals.width, 1.0),
+    1.0 / max(globals.height, 1.0)
+  );
+  let c = hydraSampleTexture(prevBuffer, fract(_st));
+  let n = hydraSampleTexture(prevBuffer, fract(_st + vec2f(0.0, texel.y)));
+  let s = hydraSampleTexture(prevBuffer, fract(_st - vec2f(0.0, texel.y)));
+  let e = hydraSampleTexture(prevBuffer, fract(_st + vec2f(texel.x, 0.0)));
+  let w = hydraSampleTexture(prevBuffer, fract(_st - vec2f(texel.x, 0.0)));
+  let ne = hydraSampleTexture(prevBuffer, fract(_st + texel));
+  let nw = hydraSampleTexture(prevBuffer, fract(_st + vec2f(-texel.x, texel.y)));
+  let se = hydraSampleTexture(prevBuffer, fract(_st + vec2f(texel.x, -texel.y)));
+  let sw = hydraSampleTexture(prevBuffer, fract(_st - texel));
+
+  var a = c.x;
+  var b = c.y;
+
+  let lapA =
+    n.x * 0.2 + s.x * 0.2 + e.x * 0.2 + w.x * 0.2 +
+    ne.x * 0.05 + nw.x * 0.05 + se.x * 0.05 + sw.x * 0.05 -
+    a;
+  let lapB =
+    n.y * 0.2 + s.y * 0.2 + e.y * 0.2 + w.y * 0.2 +
+    ne.y * 0.05 + nw.y * 0.05 + se.y * 0.05 + sw.y * 0.05 -
+    b;
+
+  let reaction = a * b * b;
+  a += (diffA * lapA - reaction + feed * (1.0 - a)) * dt;
+  b += (diffB * lapB + reaction - (kill + feed) * b) * dt;
+
+  let seedStrength = clamp(seedAmount, 0.0, 1.0) * clamp(hydraLuminance(seed.xyz), 0.0, 1.0);
+  a = clamp(a - seedStrength, 0.0, 1.0);
+  b = clamp(b + seedStrength, 0.0, 1.0);
+
+  return vec4f(a, b, 0.0, 1.0);
+ `
+  },
+  {
     name: 'advect',
     type: 'simulation',
     inputs: [
@@ -1751,6 +1801,48 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
   let mean = (n + s + e + w) * 0.25;
   let k = clamp(rate, 0.0, 1.0);
   return vec4f(mix(c.xyz, mean.xyz, vec3f(k)), c.w);
+ `
+  },
+  {
+    name: 'fluidStep',
+    type: 'simulation',
+    inputs: [
+      { type: 'vec2', name: 'force', default: [0, 0] },
+      { type: 'float', name: 'forceAmount', default: 0.0 },
+      { type: 'vec4', name: 'source', default: [0, 0, 0, 0] },
+      { type: 'float', name: 'sourceAmount', default: 0.0 },
+      { type: 'float', name: 'velocity', default: 1.0 },
+      { type: 'float', name: 'diffuse', default: 0.2 },
+      { type: 'float', name: 'dissipation', default: 0.985 }
+    ],
+    wgsl: `
+  let texel = vec2f(
+    1.0 / max(globals.width, 1.0),
+    1.0 / max(globals.height, 1.0)
+  );
+  let center = hydraSampleTexture(prevBuffer, fract(_st));
+  var velocityField = (center.xy * 2.0 - vec2f(1.0)) * velocity;
+  let forceVec = (force * 2.0 - vec2f(1.0)) * forceAmount;
+  velocityField = clamp(velocityField + forceVec, vec2f(-1.0), vec2f(1.0));
+  let backtraceUv = fract(_st - velocityField * texel);
+  let advected = hydraSampleTexture(prevBuffer, backtraceUv);
+
+  let n = hydraSampleTexture(prevBuffer, fract(_st + vec2f(0.0, texel.y)));
+  let s = hydraSampleTexture(prevBuffer, fract(_st - vec2f(0.0, texel.y)));
+  let e = hydraSampleTexture(prevBuffer, fract(_st + vec2f(texel.x, 0.0)));
+  let w = hydraSampleTexture(prevBuffer, fract(_st - vec2f(texel.x, 0.0)));
+  let mean = (n + s + e + w) * 0.25;
+  let diffuseAmount = clamp(diffuse, 0.0, 1.0);
+  var outColor = mix(advected, mean, vec4f(diffuseAmount));
+
+  let inject = clamp(sourceAmount, 0.0, 1.0);
+  outColor = mix(outColor, source, vec4f(inject));
+
+  let damp = clamp(dissipation, 0.0, 1.0);
+  let vel = (outColor.xy * 2.0 - vec2f(1.0)) * damp;
+  outColor.xy = vel * 0.5 + vec2f(0.5);
+  outColor.zw = outColor.zw * damp;
+  return outColor;
  `
   },
   {
@@ -1969,6 +2061,36 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
  `
   },
   {
+    name: 'particleReset',
+    type: 'kernel',
+    executionDomain: 'linear1d',
+    dispatchItems: 4096,
+    writesOutput: false,
+    updateRate: { onEvent: 'particles-reset' },
+    inputs: [
+      { type: 'float', name: 'seed', default: 0.0 }
+    ],
+    resources: [
+      {
+        type: 'storageBuffer',
+        name: 'particleState',
+        access: 'read_write',
+        elementType: 'vec4f',
+        minLength: 4096,
+        lifetime: 'persistent',
+        stateKey: 'particle-state'
+      }
+    ],
+    wgsl: `
+  let index = hydraLinearIndex();
+  let dims = vec2u(max(1u, u32(globals.width)), max(1u, u32(globals.height)));
+  let uv = hydraUvFromLinearIndex(index, dims);
+  let jitter = hydraNoise(vec3f(uv * 32.0 + vec2f(seed), seed));
+  particleState[index] = vec4f(uv, jitter * 0.5 + 0.5, 1.0);
+  return vec4f(0.0);
+ `
+  },
+  {
     name: 'particleInit',
     type: 'kernel',
     executionDomain: 'linear1d',
@@ -2033,6 +2155,120 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
   uv = fract(uv + velocity * drift * texel);
   particleState[index] = vec4f(uv, velocity.x * 0.5 + 0.5, 1.0);
   return vec4f(0.0);
+ `
+  },
+  {
+    name: 'particleFieldDecay',
+    type: 'kernel',
+    inputs: [
+      { type: 'float', name: 'decay', default: 0.985 }
+    ],
+    resources: [
+      {
+        type: 'storageTexture2D',
+        name: 'particleField',
+        access: 'read_write',
+        format: 'rgba16float',
+        lifetime: 'persistent',
+        stateKey: 'particle-field'
+      }
+    ],
+    wgsl: `
+  let dims = vec2i(textureDimensions(particleField));
+  let pix = vec2i(
+    i32(clamp(floor(_st.x * f32(dims.x)), 0.0, f32(dims.x - 1))),
+    i32(clamp(floor(_st.y * f32(dims.y)), 0.0, f32(dims.y - 1)))
+  );
+  let existing = textureLoad(particleField, pix);
+  let next = clamp(existing * vec4f(decay), vec4f(0.0), vec4f(1.0));
+  textureStore(particleField, pix, next);
+  return vec4f(next.xyz, 1.0);
+ `
+  },
+  {
+    name: 'particleScatter',
+    type: 'kernel',
+    executionDomain: 'linear1d',
+    dispatchItems: 4096,
+    writesOutput: false,
+    inputs: [
+      { type: 'float', name: 'amount', default: 0.8 },
+      { type: 'float', name: 'radius', default: 1.0 }
+    ],
+    resources: [
+      {
+        type: 'storageBuffer',
+        name: 'particleState',
+        access: 'read_write',
+        elementType: 'vec4f',
+        minLength: 4096,
+        lifetime: 'persistent',
+        stateKey: 'particle-state'
+      },
+      {
+        type: 'storageTexture2D',
+        name: 'particleField',
+        access: 'read_write',
+        format: 'rgba16float',
+        lifetime: 'persistent',
+        stateKey: 'particle-field'
+      }
+    ],
+    wgsl: `
+  let index = hydraLinearIndex();
+  let state = particleState[index];
+  let uv = fract(state.xy);
+  let dims = vec2i(textureDimensions(particleField));
+  let base = vec2i(
+    i32(clamp(floor(uv.x * f32(dims.x)), 0.0, f32(dims.x - 1))),
+    i32(clamp(floor(uv.y * f32(dims.y)), 0.0, f32(dims.y - 1)))
+  );
+  let rad = max(radius, 0.5);
+
+  for (var oy: i32 = -1; oy <= 1; oy = oy + 1) {
+    for (var ox: i32 = -1; ox <= 1; ox = ox + 1) {
+      let dist = length(vec2f(f32(ox), f32(oy)));
+      let w = max(0.0, 1.0 - dist / rad);
+      if (w <= 0.0) { continue; }
+      let pix = clamp(base + vec2i(ox, oy), vec2i(0), dims - vec2i(1));
+      let existing = textureLoad(particleField, pix);
+      let add = amount * w;
+      let next = clamp(existing + vec4f(add), vec4f(0.0), vec4f(1.0));
+      textureStore(particleField, pix, next);
+    }
+  }
+
+  return vec4f(0.0);
+ `
+  },
+  {
+    name: 'particleFieldRender',
+    type: 'renderpass',
+    inputs: [
+      { type: 'vec3', name: 'tint', default: [1, 1, 1] },
+      { type: 'float', name: 'gain', default: 1.0 },
+      { type: 'float', name: 'gamma', default: 1.0 }
+    ],
+    resources: [
+      {
+        type: 'storageTexture2D',
+        name: 'particleField',
+        access: 'read',
+        format: 'rgba16float',
+        lifetime: 'persistent',
+        stateKey: 'particle-field'
+      }
+    ],
+    wgsl: `
+  let dims = vec2i(textureDimensions(particleField));
+  let pix = vec2i(
+    i32(clamp(floor(_st.x * f32(dims.x)), 0.0, f32(dims.x - 1))),
+    i32(clamp(floor(_st.y * f32(dims.y)), 0.0, f32(dims.y - 1)))
+  );
+  let value = textureLoad(particleField, pix);
+  let intensity = pow(max(value.x, 0.0), 1.0 / max(gamma, 0.0001)) * max(gain, 0.0);
+  let color = clamp(tint * intensity, vec3f(0.0), vec3f(1.0));
+  return vec4f(color, clamp(intensity, 0.0, 1.0));
  `
   },
   {

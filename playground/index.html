@@ -978,7 +978,20 @@ speed = 0.75`
           toggleVideoCapture,
           buildFfmpegCommands
         },
-        allowedBindings: ['speed', 'bpm', 'fps', 'time', 'update', 'afterUpdate']
+        allowedBindings: [
+          'speed',
+          'bpm',
+          'fps',
+          'time',
+          'update',
+          'afterUpdate',
+          'emitEvent',
+          'analysis',
+          'systems',
+          'particles',
+          'reactionDiffusion',
+          'fluid'
+        ]
       })
       detachLivecoding = runtime.attachPlugin(livecodingPlugin)
       window.livecoding = livecodingPlugin

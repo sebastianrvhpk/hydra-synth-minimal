@@ -459,3 +459,127 @@ export declare const optimizePassIR: (pass: HydraCompiledPass) => HydraCompiledP
 export declare const compileWgslPass: (transforms: HydraTransformCall[], maxDynamicUniforms?: number) => HydraCompiledPass
 export declare const getDefaultTransforms: () => HydraTransformDefinition[]
 export declare const collectUtilityDeclarations: (wgslFunctions?: Array<{ transform: { wgsl: string } }>) => string
+
+export type HydraSystemInputKind =
+  | 'texture'
+  | 'scalar'
+  | 'vec2'
+  | 'vec3'
+  | 'vec4'
+  | 'color'
+  | 'boolean'
+  | 'callback'
+  | 'enum'
+
+export interface HydraSystemInputSpec {
+  name: string
+  kind: HydraSystemInputKind
+  description: string
+  default?: unknown
+  range?: [number, number]
+}
+
+export interface HydraSystemDefinition<Options = Record<string, unknown>> {
+  name: string
+  description: string
+  inputs: HydraSystemInputSpec[]
+  build: (bindings: Record<string, unknown>, options?: Options, context?: HydraSystemContext) => HydraGraphNodeShape
+}
+
+export interface HydraSystemContext {
+  emitEvent?: (name: string) => void
+  emitOnce?: (name: string) => void
+}
+
+export interface AttachSystemsOptions {
+  emitEvent?: (name: string) => void
+  namespace?: string
+  attachNamespace?: boolean
+  attachLegacyTopLevel?: boolean
+  attachAnalysisHelper?: boolean
+}
+
+export interface ParticlesOptions {
+  seed?: number
+  speed?: number
+  drift?: number
+  decay?: number
+  amount?: number
+  radius?: number
+  tint?: [number, number, number] | [number, number, number, number]
+  gain?: number
+  gamma?: number
+  reset?: boolean
+}
+
+export interface ReactionDiffusionOptions {
+  seed?: unknown
+  seedAmount?: number | ((props: HydraFrameState) => number)
+  seedDuration?: number
+  feed?: number
+  kill?: number
+  diffA?: number
+  diffB?: number
+  dt?: number
+}
+
+export interface FluidOptions {
+  force?: unknown
+  forceAmount?: number
+  source?: unknown
+  sourceAmount?: number | ((props: HydraFrameState) => number)
+  sourceDuration?: number
+  velocity?: number
+  diffuse?: number
+  dissipation?: number
+}
+
+export interface FeedbackOptions {
+  source?: unknown
+  feedback?: unknown
+  mix?: number
+  modulate?: number
+  scale?: number
+  rotate?: number
+  blur?: number
+  brightness?: number
+  contrast?: number
+}
+
+export interface DisplaceOptions {
+  source?: unknown
+  driver?: unknown
+  detail?: unknown
+  amount?: number
+  detailAmount?: number
+  driverScale?: number
+  driverSpeed?: number
+  driverRadius?: number
+  detailScale?: number
+  detailSpeed?: number
+  detailRadius?: number
+}
+
+export type ProbeName = 'luma' | 'histogram' | 'edge' | 'motion'
+
+export interface ProbeOptions {
+  source?: unknown
+  probes?: ProbeName[]
+  lumaRadius?: number
+  edgeAmount?: number
+  motionSensitivity?: number
+}
+
+export declare const SYSTEM_DEFINITIONS: HydraSystemDefinition[]
+
+export declare const attachSystems: (
+  bindings: Record<string, unknown>,
+  options?: AttachSystemsOptions
+) => void
+
+export type AttachHighLevelHelpersOptions = AttachSystemsOptions
+
+export declare const attachHighLevelHelpers: (
+  bindings: Record<string, unknown>,
+  options?: AttachHighLevelHelpersOptions
+) => void

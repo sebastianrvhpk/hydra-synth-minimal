@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   HydraTransformRegistry,
+  attachSystems,
   getDefaultTransforms,
   type HydraCompiledPass,
   type HydraOutputAdapter,
@@ -757,17 +758,21 @@ describe('HydraTransformRegistry', () => {
       'hardLight',
       'colorDodge',
       'colorBurn',
-      'flow',
-      'curlModulate',
       'dilate',
       'erode',
       'advect',
       'diffuse',
+      'rdStepSeeded',
+      'fluidStep',
       'histogramProbe',
       'edgeDensityProbe',
       'motionProbe',
+      'particleReset',
       'particleInit',
-      'particleStep'
+      'particleStep',
+      'particleFieldDecay',
+      'particleScatter',
+      'particleFieldRender'
     ]
 
     expected.forEach((name) => {
@@ -775,13 +780,13 @@ describe('HydraTransformRegistry', () => {
     })
   })
 
-  it('compiles looped/fractal generators with blend and flow operators', () => {
+  it('compiles looped/fractal generators with blend and modulate operators', () => {
     const output = new CaptureOutput()
     const registry = new HydraTransformRegistry({ defaultOutput: output })
 
     registry.generators
       .fbm(4.0, 0.15, 4.0, 2.0, 0.5)
-      .flow(registry.generators.noiseLoop(6.0, 0.2, 0.8), 0.12)
+      .modulate(registry.generators.noiseLoop(6.0, 0.2, 0.8), 0.12)
       .screen(registry.generators.ridged(5.0, 0.2, 4.0, 2.0, 0.55), 0.7)
       .softLight(registry.generators.turbulence(3.0, 0.1, 3.0, 2.0, 0.5), 0.45)
       .out()
@@ -794,7 +799,7 @@ describe('HydraTransformRegistry', () => {
     expect(wgsl).toContain('fn fbm')
     expect(wgsl).toContain('fn ridged')
     expect(wgsl).toContain('fn turbulence')
-    expect(wgsl).toContain('fn flow')
+    expect(wgsl).toContain('fn modulate')
     expect(wgsl).toContain('fn screen')
     expect(wgsl).toContain('fn softLight')
   })
@@ -890,6 +895,53 @@ describe('HydraTransformRegistry', () => {
     expect(stepPass.storageBuffers?.[0].stateKey).toBe('particle-state')
     expect(initPass.wgsl).toContain('hydraUvFromLinearIndex')
     expect(stepPass.wgsl).toContain('hydraNoise')
+  })
+
+  it('attaches system generators', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+    const bindings: Record<string, unknown> = {}
+    registry.attachToBindings(bindings)
+    attachSystems(bindings)
+
+    const systems = bindings.systems as Record<string, (...args: unknown[]) => { out: () => void }>
+    expect(typeof systems.particles).toBe('function')
+    expect(typeof systems.feedback).toBe('function')
+    expect(typeof systems.displace).toBe('function')
+    expect(typeof systems.probe).toBe('function')
+    expect(typeof systems.analysis).toBe('function')
+    expect(typeof bindings.analysis).toBe('function')
+
+    const particles = bindings.particles as (() => { out: () => void })
+    particles().out()
+    const particleWgsl = output.passes.map((pass) => pass.wgsl).join('\n')
+    expect(particleWgsl).toContain('fn particleScatter')
+    expect(particleWgsl).toContain('fn particleFieldRender')
+
+    const reactionDiffusion = bindings.reactionDiffusion as (() => { out: () => void })
+    reactionDiffusion().out()
+    const rdWgsl = output.passes.map((pass) => pass.wgsl).join('\n')
+    expect(rdWgsl).toContain('fn rdStepSeeded')
+
+    const fluid = bindings.fluid as (() => { out: () => void })
+    fluid().out()
+    const fluidWgsl = output.passes.map((pass) => pass.wgsl).join('\n')
+    expect(fluidWgsl).toContain('fn fluidStep')
+
+    systems.feedback().out()
+    const feedbackWgsl = output.passes.map((pass) => pass.wgsl).join('\n')
+    expect(feedbackWgsl).toContain('fn prev')
+    expect(feedbackWgsl).toContain('fn blend')
+    expect(feedbackWgsl).toContain('fn modulate')
+
+    systems.displace().out()
+    const displaceWgsl = output.passes.map((pass) => pass.wgsl).join('\n')
+    expect(displaceWgsl).toContain('fn noiseLoop')
+    expect(displaceWgsl).toContain('fn modulate')
+
+    systems.probe({ probes: ['luma', 'motion'] }).out()
+    const probePasses = output.passes.filter((pass) => pass.analysisOut && pass.analysisOut.length > 0)
+    expect(probePasses.length).toBeGreaterThan(0)
   })
 
   it('reports compile errors through registry callback', () => {

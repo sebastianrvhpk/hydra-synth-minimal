@@ -62,11 +62,22 @@ Transform chains are split into sequential compute passes when standalone transf
 Built-in post/fx and compute-native coverage includes:
 
 - classic Hydra transforms (`osc`, `noise`, `shape`, coord/color/combine ops, `prev`, `prevN`)
-- low-level synthesis/operator extensions (`noiseLoop(scale, speed, radius)`, `fbm`, `ridged`, `turbulence`, `screen`, `overlay`, `softLight`, `hardLight`, `colorDodge`, `colorBurn`, `flow`, `curlModulate`)
+- low-level synthesis/operator extensions (`noiseLoop(scale, speed, radius)`, `fbm`, `ridged`, `turbulence`, `screen`, `overlay`, `softLight`, `hardLight`, `colorDodge`, `colorBurn`)
 - multipass/post-processing transforms (for example `blurX`, `blurY`, `blurTiledX`, `blurSubgroupX`, `blurFast`, `edgeDetect`, `edgeLaplacian`, `radialBlur`, `zoomBlur`, `dualKawaseBlur`, `dualKawaseBloom`, `toneMap`, `exposure`)
 - simulation/analysis/data transforms (`rdStep`, `advect`, `diffuse`, `trailScatter`, `lumaProbe`, `histogramProbe`, `edgeDensityProbe`, `motionProbe`, `bufferFill`, `bufferDecay`, `bufferIndexProbe`, `particleInit`, `particleStep`)
 
 For full built-in transform definitions, see `packages/core/src/transforms/default-transforms.ts`.
+
+Macro-level system conventions are documented in `packages/core/SYSTEMS_CONVENTIONS.md`.
+
+## Systems (Macro Layer)
+
+Macro-level systems are graph builders that bundle multi-pass behavior behind a small parameter surface. When `attachSystems` is used by the host runtime, they are available under `systems.*` and remain compatible with the standard DSL chain:
+
+```js
+systems.feedback({ mix: 0.85, modulate: 0.08, scale: 1.01 }).out()
+systems.displace({ amount: 0.12, detailAmount: 0.06 }).out()
+```
 
 ## Optional Livecoding Plugin
 

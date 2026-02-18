@@ -18,6 +18,11 @@ export { validateExecutionPlan, throwOnExecutionPlanErrors } from './compiler/va
 export { PRIMITIVE_DESCRIPTORS, getPrimitiveDescriptorByKind } from './primitives/descriptors.js'
 export { PRIMITIVE_WGSL_MODULES } from './primitives/wgsl/index.js'
 export {
+  attachSystems,
+  SYSTEM_DEFINITIONS
+} from './systems/index.js'
+export { attachHighLevelHelpers } from './helpers/high-level.js'
+export {
   reduceMeanLumaCpu,
   histogramLumaCpu,
   exclusiveScanU32Cpu,
@@ -113,3 +118,17 @@ export type {
   HydraPrimitiveDescriptor,
   HydraPrimitiveCapabilityConstraint
 } from './primitives/types.js'
+export type {
+  AttachSystemsOptions,
+  ParticlesOptions,
+  ReactionDiffusionOptions,
+  FluidOptions,
+  FeedbackOptions,
+  DisplaceOptions,
+  ProbeOptions,
+  ProbeName,
+  HydraSystemDefinition,
+  HydraSystemInputSpec,
+  HydraSystemInputKind
+} from './systems/index.js'
+export type { AttachHighLevelHelpersOptions } from './helpers/high-level.js'

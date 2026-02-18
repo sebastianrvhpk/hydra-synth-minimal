@@ -10,7 +10,8 @@ import {
   type HydraTransformCall,
   type HydraTransformDefinition,
   type ScriptPlugin,
-  type HydraDebugEvent
+  type HydraDebugEvent,
+  attachSystems
 } from 'hydra-synth-core'
 import type { BrowserHost } from './browser-host.js'
 import type { CanvasDisplayOptions } from './browser-host.js'
@@ -223,6 +224,7 @@ export class HydraBrowserRuntime {
     })
     registryRef = this.registry
     this.registry.attachToBindings(this.synth)
+    attachSystems(this.synth, { emitEvent: this.emitEvent.bind(this) })
 
     if (autoLoop) {
       void this.start().catch(() => { })
