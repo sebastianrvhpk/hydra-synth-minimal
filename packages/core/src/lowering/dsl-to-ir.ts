@@ -13,7 +13,6 @@ import {
 import type {
   HydraDependencyEdge,
   HydraKernelGraph,
-  HydraKernelNodeKind,
   HydraKernelNode,
   HydraKernelResourceSpec
 } from '../ir/types.js'
@@ -68,42 +67,9 @@ export const getTextureResourceId = (texture: {
   sourceRef?: unknown
 }): string => `texture:${bindingToken(texture)}`
 
-export const getStorageBufferResourceId = (buffer: {
-  name: string
-  variableName: string
-  sourceRef?: unknown
-  lifetime: string
-  elementType: string
-}): string => `buffer:${bindingToken(buffer)}:${sanitizeResourceToken(buffer.elementType)}:${sanitizeResourceToken(buffer.lifetime)}`
-
-export const getStorageTextureResourceId = (texture: {
-  name: string
-  variableName: string
-  sourceRef?: unknown
-  lifetime: string
-  format: string
-  dimension: string
-}): string =>
-  `storageTexture:${bindingToken(texture)}:${sanitizeResourceToken(texture.format)}:${sanitizeResourceToken(texture.dimension)}:${sanitizeResourceToken(texture.lifetime)}`
-
 const normalizeUpdateRate = (value: HydraPassUpdateRate | undefined): HydraPassUpdateRate => value ?? 'everyFrame'
 
-const inferKernelKind = (transforms: HydraTransformCall[]): HydraKernelNodeKind => {
-  if (transforms.some((transform) => transform.transform.type === 'analysis')) return 'ReductionKernel'
-  if (transforms.some((transform) => transform.transform.type === 'simulation')) return 'DataKernel'
-  if (transforms.some((transform) => transform.transform.type === 'kernel')) return 'DataKernel'
-  return 'ImageKernel'
-}
-
-const inferDispatchDomain = (pass: HydraCompiledPass): HydraKernelNode['schedule']['dispatchDomain'] => {
-  const domain = pass.dispatch?.domain
-  if (domain === 'linear1d') {
-    if (pass.schedule?.sparse) return 'queue1d'
-    return 'linear1d'
-  }
-  if (pass.dispatch?.mode === 'indirect') return 'indirect2d'
-  return 'pixel2d'
-}
+const inferDispatchDomain = (_pass: HydraCompiledPass): HydraKernelNode['schedule']['dispatchDomain'] => 'pixel2d'
 
 const isNodeUniformRef = (node: HydraKernelNode, resource: string): boolean =>
   node.uniforms.some((uniform) => uniform.name === resource)
@@ -114,12 +80,6 @@ const resolveNodeResourceRef = (node: HydraKernelNode, resource: string): string
 
   const texture = node.textures.find((entry) => entry.name === resource)
   if (texture) return getTextureResourceId(texture)
-
-  const buffer = node.storageBuffers.find((entry) => entry.name === resource)
-  if (buffer) return getStorageBufferResourceId(buffer)
-
-  const storageTexture = node.storageTextures.find((entry) => entry.name === resource)
-  if (storageTexture) return getStorageTextureResourceId(storageTexture)
 
   return `virtual:${resource}`
 }
@@ -137,37 +97,8 @@ const collectResourceSpecs = (nodes: HydraKernelNode[]): HydraKernelResourceSpec
       ensure({
         id: getTextureResourceId(texture),
         kind: 'Texture2D',
-        access: 'read',
         lifetime: 'external',
         aliasClass: 'texture-read',
-        externalBinding: texture.variableName
-      })
-    })
-
-    node.storageBuffers.forEach((buffer) => {
-      ensure({
-        id: getStorageBufferResourceId(buffer),
-        kind: 'Buffer',
-        access: buffer.access,
-        elementType: buffer.elementType,
-        lifetime: buffer.lifetime,
-        shape: { minLength: buffer.minLength },
-        aliasClass: `buffer:${buffer.elementType}`,
-        externalBinding: buffer.variableName
-      })
-    })
-
-    node.storageTextures.forEach((texture) => {
-      ensure({
-        id: getStorageTextureResourceId(texture),
-        kind: texture.dimension === '2d_array' ? 'Texture2DArray' : 'Texture2D',
-        access: texture.access,
-        format: texture.format,
-        lifetime: texture.lifetime,
-        shape: {
-          depthOrArrayLayers: texture.depthOrArrayLayers
-        },
-        aliasClass: `storageTexture:${texture.format}:${texture.dimension}`,
         externalBinding: texture.variableName
       })
     })
@@ -175,12 +106,6 @@ const collectResourceSpecs = (nodes: HydraKernelNode[]): HydraKernelResourceSpec
     node.reads.forEach((read) => {
       const key = resolveNodeResourceRef(node, read)
       if (!key || key === 'virtual:outImage' || !key.startsWith('virtual:')) return
-      ensure({
-        id: key,
-        kind: 'Buffer',
-        access: 'read',
-        lifetime: 'transient'
-      })
     })
 
     node.writes.forEach((write) => {
@@ -190,19 +115,11 @@ const collectResourceSpecs = (nodes: HydraKernelNode[]): HydraKernelResourceSpec
         ensure({
           id: 'virtual:outImage',
           kind: 'Texture2D',
-          access: 'write',
           lifetime: 'transient',
           format: passOutputFormat(node)
         })
         return
       }
-      if (!key.startsWith('virtual:')) return
-      ensure({
-        id: key,
-        kind: 'Buffer',
-        access: 'write',
-        lifetime: 'transient'
-      })
     })
   })
 
@@ -225,9 +142,7 @@ const createKernelNode = (
   const reads = pass.ir?.reads ? pass.ir.reads.slice() : []
   const writes = pass.ir?.writes ? pass.ir.writes.slice() : []
   const textureResources = pass.textures.map((texture) => getTextureResourceId(texture))
-  const bufferResources = (pass.storageBuffers ?? []).map((buffer) => getStorageBufferResourceId(buffer))
-  const storageTextureResources = (pass.storageTextures ?? []).map((texture) => getStorageTextureResourceId(texture))
-  const resources = Array.from(new Set(textureResources.concat(bufferResources, storageTextureResources)))
+  const resources = Array.from(new Set(textureResources))
 
   const loweringNotes: string[] = []
   if (transforms.some((transform) => transform.name === 'prev')) loweringNotes.push('contains-prev-transform')
@@ -235,20 +150,17 @@ const createKernelNode = (
 
   return {
     id: `k${index}`,
-    kind: inferKernelKind(transforms),
+    kind: 'ImageKernel',
     signature: pass.signature,
     transforms,
     uniforms: pass.uniforms,
     textures: pass.textures,
-    storageBuffers: pass.storageBuffers ?? [],
-    storageTextures: pass.storageTextures ?? [],
     schedule: {
       resolutionScale: schedule?.resolutionScale ?? 1,
       updateRate: normalizeUpdateRate(schedule?.updateRate),
       sparse: Boolean(schedule?.sparse),
       dispatchDomain,
-      variantPolicy: 'compat',
-      maxIterations: dispatchDomain === 'queue1d' ? 64 : undefined
+      variantPolicy: 'compat'
     },
     resources,
     reads,

@@ -11,7 +11,6 @@ Browser host/runtime package for Hydra v2.
 - output dependency scheduling (topological when possible, stable order fallback on cycles)
 - compute-plan execution route (`compileGraph` + `HydraExecutor`)
 - runtime profiler snapshots (`getProfilerSnapshot`) and autotune profile helpers
-- queue execution utilities and resource residency tracking helpers
 - benchmark utilities (`BENCHMARK_CORPUS`, report build/validation helpers)
 
 Use `createHydraBrowserRuntime()` for default composition, or wire `BrowserHost` + `WebGPURenderer` manually.

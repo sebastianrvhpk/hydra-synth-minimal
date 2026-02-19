@@ -1,12 +1,4 @@
 export type HydraPrimitiveKind =
-  | 'reduction.meanLuma'
-  | 'reduction.histogramLuma'
-  | 'scan.exclusiveU32'
-  | 'compact.predicate'
-  | 'sort.radixKeyValueU32'
-  | 'queue.appendConsumeCount'
-  | 'bridge.scatterToTexture2D'
-  | 'bridge.gatherFromTexture2D'
   | 'pyramid.downsample'
   | 'pyramid.upsample'
 
@@ -23,4 +15,3 @@ export interface HydraPrimitiveDescriptor {
   wgslModuleId: string
   capability: HydraPrimitiveCapabilityConstraint
 }
-

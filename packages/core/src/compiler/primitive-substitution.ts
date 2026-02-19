@@ -19,14 +19,11 @@ const inferPrimitiveKindForNode = (node: HydraKernelNode): HydraExecutionPrimiti
   const names = new Set(node.transforms.map((transform) => transform.name))
   if (names.has('bloomDownsample')) return 'pyramid.downsample'
   if (names.has('bloomUpsample')) return 'pyramid.upsample'
-  if (names.has('lumaProbe')) return 'reduction.meanLuma'
   return null
 }
 
 const canSubstitutePyramidPass = (pass: HydraCompiledPass): boolean => {
   if (!pass.output) return false
-  if ((pass.storageBuffers?.length ?? 0) > 0) return false
-  if ((pass.storageTextures?.length ?? 0) > 0) return false
   if (pass.textures.length !== 1) return false
   return pass.textures[0]?.isPrev === true
 }

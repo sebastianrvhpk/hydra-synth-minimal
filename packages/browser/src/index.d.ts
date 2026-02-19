@@ -1,6 +1,5 @@
 import { HydraEngine } from 'hydra-synth-core'
 import type {
-  HydraAnalysisOutputBinding,
   HydraCompiledPass,
   HydraDispatchConfig,
   HydraEngineBindingHost,
@@ -13,15 +12,9 @@ import type {
   HydraPassIRNode,
   HydraPassSchedule,
   HydraPassUpdateRate,
-  HydraResourceAccess,
-  HydraResourceElementType,
   HydraResourceFormat,
-  HydraResourceLifetime,
-  HydraStorageBufferBinding,
-  HydraStorageTextureBinding,
   HydraTextureProvider,
   HydraTransformDefinition,
-  HydraTransformResource,
   RendererAdapter,
   ScriptPlugin,
   SourceAdapter
@@ -29,7 +22,6 @@ import type {
 
 export { HydraEngine }
 export type {
-  HydraAnalysisOutputBinding,
   HydraCompiledPass,
   HydraDispatchConfig,
   HydraEngineBindingHost,
@@ -42,15 +34,9 @@ export type {
   HydraPassIRNode,
   HydraPassSchedule,
   HydraPassUpdateRate,
-  HydraResourceAccess,
-  HydraResourceElementType,
   HydraResourceFormat,
-  HydraResourceLifetime,
-  HydraStorageBufferBinding,
-  HydraStorageTextureBinding,
   HydraTextureProvider,
   HydraTransformDefinition,
-  HydraTransformResource,
   RendererAdapter,
   ScriptPlugin,
   SourceAdapter

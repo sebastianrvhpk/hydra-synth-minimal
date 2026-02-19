@@ -22,7 +22,6 @@ export interface HydraFrameState {
   bpm: number
   resolution: [number, number]
   deltaMs: number
-  analysis?: Record<string, number | number[]>
 }
 
 export interface RendererAdapter {
@@ -144,9 +143,6 @@ export type HydraTransformType =
   | 'combine'
   | 'combineCoord'
   | 'renderpass'
-  | 'simulation'
-  | 'analysis'
-  | 'kernel'
 
 export type HydraTransformInputType =
   | 'float'
@@ -154,9 +150,6 @@ export type HydraTransformInputType =
   | 'vec3'
   | 'vec4'
   | 'sampler2D'
-  | 'storageBuffer'
-  | 'storageTexture2D'
-  | 'storageTexture2DArray'
 
 export type HydraWgslType =
   | 'f32'
@@ -164,18 +157,7 @@ export type HydraWgslType =
   | 'vec3f'
   | 'vec4f'
   | 'texture_2d<f32>'
-  | 'texture_storage_2d<rgba8unorm, read>'
-  | 'texture_storage_2d<rgba8unorm, write>'
-  | 'texture_storage_2d<rgba8unorm, read_write>'
-  | 'texture_storage_2d_array<rgba8unorm, read>'
-  | 'texture_storage_2d_array<rgba8unorm, write>'
-  | 'texture_storage_2d_array<rgba8unorm, read_write>'
-  | 'ptr<storage, array<vec4f>, read>'
-  | 'ptr<storage, array<vec4f>, read_write>'
-  | 'ptr<storage, array<vec4f>, write>'
 
-export type HydraResourceAccess = 'read' | 'write' | 'read_write'
-export type HydraResourceLifetime = 'frame' | 'persistent'
 export type HydraResourceFormat =
   | 'rgba8unorm'
   | 'rgba16float'
@@ -184,10 +166,7 @@ export type HydraResourceFormat =
   | 'rg32float'
   | 'r32uint'
 
-export type HydraResourceElementType = 'f32' | 'vec2f' | 'vec3f' | 'vec4f' | 'u32' | 'i32'
-
 export type HydraComputeKernelVariant = 'generic' | 'tiled' | 'subgroup'
-export type HydraKernelSemantics = 'uv' | 'index_first'
 
 export interface HydraSeparableBlurKernelDescriptor {
   kind: 'separableBlur'
@@ -221,12 +200,7 @@ export type HydraPassUpdateRate =
   | { everyNFrames: number }
   | { onEvent: string }
 
-export type HydraDispatchDomain = 'pixel2d' | 'linear1d'
-
-export interface HydraAnalysisOutputBinding {
-  uniformName: string
-  type: 'float' | 'vec2' | 'vec3' | 'vec4'
-}
+export type HydraDispatchDomain = 'pixel2d'
 
 export interface HydraTransformInput {
   type: HydraTransformInputType
@@ -239,48 +213,19 @@ export interface HydraTransformInput {
   default: unknown
 }
 
-export interface HydraTransformResource {
-  type: 'storageBuffer' | 'storageTexture2D' | 'storageTexture2DArray'
-  name: string
-  access?: HydraResourceAccess
-  format?: HydraResourceFormat
-  elementType?: HydraResourceElementType
-  minLength?: number
-  widthScale?: number
-  heightScale?: number
-  depthOrArrayLayers?: number
-  lifetime?: HydraResourceLifetime
-  stateKey?: string
-  default?: unknown
-}
-
 export interface HydraTransformDefinition {
   name: string
   type: HydraTransformType
   inputs?: HydraTransformInput[]
-  resources?: HydraTransformResource[]
   wgsl: string
   computeKernel?: HydraComputeKernelDescriptor
   resolutionScale?: 1 | 0.5 | 0.25 | number
   updateRate?: HydraPassUpdateRate
   sparse?: boolean
-  stateKey?: string
-  lifetime?: HydraResourceLifetime
-  analysisOut?: HydraAnalysisOutputBinding[]
-  executionDomain?: HydraDispatchDomain
-  kernelSemantics?: HydraKernelSemantics
-  writesOutput?: boolean
-  dispatchItems?: number
-}
-
-export interface HydraLinearTransformDefinition extends Omit<HydraTransformDefinition, 'executionDomain'> {
-  executionDomain: 'linear1d'
-  dispatchItems: number
 }
 
 export interface ProcessedHydraTransform extends HydraTransformDefinition {
   inputs: HydraTransformInput[]
-  resources: HydraTransformResource[]
   wgsl_return_type: HydraWgslType
   schedule: HydraPassSchedule
 }
@@ -299,25 +244,6 @@ export interface HydraTypedArgument {
   textureSource?: unknown
 }
 
-export interface HydraTypedResource {
-  name: string
-  type: HydraTransformResource['type']
-  access: HydraResourceAccess
-  lifetime: HydraResourceLifetime
-  stateKey?: string
-  format?: HydraResourceFormat
-  elementType: HydraResourceElementType
-  minLength?: number
-  widthScale?: number
-  heightScale?: number
-  depthOrArrayLayers?: number
-  variableName: string
-  value: unknown
-  getTexture: (() => unknown) | null
-  getBuffer: (() => unknown) | null
-  sourceRef?: unknown
-}
-
 export interface HydraUniformBinding {
   name: string
   index: number
@@ -331,35 +257,6 @@ export interface HydraTextureBinding {
   variableName: string
   getTexture: (() => unknown) | null
   isPrev: boolean
-  sourceRef?: unknown
-  binding: number
-}
-
-export interface HydraStorageBufferBinding {
-  name: string
-  variableName: string
-  getBuffer: (() => unknown) | null
-  access: HydraResourceAccess
-  lifetime: HydraResourceLifetime
-  stateKey?: string
-  sourceRef?: unknown
-  elementType: HydraResourceElementType
-  minLength: number
-  binding: number
-}
-
-export interface HydraStorageTextureBinding {
-  name: string
-  variableName: string
-  getTexture: (() => unknown) | null
-  access: HydraResourceAccess
-  format: HydraResourceFormat
-  dimension: '2d' | '2d_array'
-  widthScale?: number
-  heightScale?: number
-  depthOrArrayLayers?: number
-  lifetime: HydraResourceLifetime
-  stateKey?: string
   sourceRef?: unknown
   binding: number
 }
@@ -381,30 +278,24 @@ export interface HydraDispatchConfig {
   mode: 'direct' | 'indirect'
   domain?: HydraDispatchDomain
   workgroupSize: [number, number, number]
-  itemCount?: number
   getIndirectBuffer?: (() => unknown) | null
   indirectOffset?: number
-  getQueueCounterBuffer?: (() => unknown) | null
-  onQueueCounterReadback?: ((activeCount: number, overflowCount: number) => void) | null
   requiredWorkgroupStorageBytes?: number
   requiredFeatures?: string[]
 }
 
 export interface HydraPassIRResourceRef {
   name: string
-  kind: 'uniform' | 'texture' | 'storageBuffer' | 'storageTexture' | 'outputTexture'
+  kind: 'uniform' | 'texture' | 'outputTexture'
   binding: number
-  intent?: 'input' | 'state' | 'analysis' | 'output'
-  access?: HydraResourceAccess
+  intent?: 'input' | 'output'
   format?: HydraResourceFormat
-  lifetime?: HydraResourceLifetime
-  stateKey?: string
 }
 
 export interface HydraPassIRNode {
   id: string
   signature: string
-  kind: 'image' | 'data' | 'reduction'
+  kind: 'image'
   schedule: HydraPassSchedule
   workgroupSize: [number, number, number]
   resources: HydraPassIRResourceRef[]
@@ -417,9 +308,6 @@ export interface HydraCompiledPass {
   wgsl: string
   uniforms: HydraUniformBinding[]
   textures: HydraTextureBinding[]
-  storageBuffers?: HydraStorageBufferBinding[]
-  storageTextures?: HydraStorageTextureBinding[]
-  analysisOut?: HydraAnalysisOutputBinding[]
   output?: HydraOutputTextureBinding
   schedule?: HydraPassSchedule
   dispatch?: HydraDispatchConfig

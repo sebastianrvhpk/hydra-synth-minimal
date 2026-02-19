@@ -7,38 +7,6 @@ import type {
 } from '../ir/types.js'
 import type { HydraPrimitiveKind } from '../primitives/types.js'
 
-export type HydraQueueTerminationMode = 'until_empty' | 'fixed_iterations'
-export type HydraQueueOverflowPolicy = 'ignore' | 'terminate_segment'
-export type HydraQueueConvergenceStrategy =
-  | 'hooks'
-  | 'queue_counter'
-  | 'hook_or_queue_counter'
-  | 'none'
-
-export interface HydraQueueTerminationPolicy {
-  mode: HydraQueueTerminationMode
-  maxIterations: number
-  minIterations: number
-  fixedIterations?: number
-}
-
-export interface HydraQueueOverflowControl {
-  policy: HydraQueueOverflowPolicy
-  maxOverflow: number
-}
-
-export interface HydraQueueConvergencePolicy {
-  strategy: HydraQueueConvergenceStrategy
-  checkInterval: number
-  maxNoProgressChecks: number
-}
-
-export interface HydraQueuePolicy {
-  termination: HydraQueueTerminationPolicy
-  overflow: HydraQueueOverflowControl
-  convergence: HydraQueueConvergencePolicy
-}
-
 export interface HydraExecutionVariantCandidate {
   variant: 'generic' | 'tiled' | 'subgroup'
   signature: string
@@ -70,13 +38,6 @@ export interface HydraExecutionStep {
   variant: 'generic' | 'tiled' | 'subgroup'
   variantCandidates: HydraExecutionVariantCandidate[]
   fallbackDepth: number
-  maxIterations?: number
-  queueControl?: {
-    modeHint: 'cpu' | 'gpu_hybrid'
-    convergenceCheckInterval: number
-    groupId: string
-    policy: HydraQueuePolicy
-  }
   primitive?: HydraExecutionPrimitiveSelection
   compiledPass: HydraCompiledPass
   barriersBefore: HydraExecutionBarrier[]
@@ -108,8 +69,6 @@ export interface HydraExecutionPlanDiagnostics {
   fallbackRiskRate: number
   selectedVariantCounts: Record<'generic' | 'tiled' | 'subgroup', number>
   primitiveSelectionCounts: Record<string, number>
-  queueStepCount: number
-  queueSegmentCount: number
   barrierCount: number
   nodeOrder: string[]
 }
@@ -117,9 +76,7 @@ export interface HydraExecutionPlanDiagnostics {
 export interface HydraExecutionPlan {
   version?: '1.0'
   executionPolicy?: {
-    queueModeDefault: 'cpu' | 'gpu_hybrid'
     deterministic: boolean
-    queuePolicyDefault?: HydraQueuePolicy
   }
   id: string
   sourceGraph: HydraKernelGraph

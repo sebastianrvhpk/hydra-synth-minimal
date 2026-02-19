@@ -1,6 +1,6 @@
 import type { WebGPUCapabilities } from '../webgpu/renderer.js'
 
-export type HydraWorkloadClass = 'image' | 'data' | 'reduction' | 'sparse_queue' | 'mixed'
+export type HydraWorkloadClass = 'image'
 
 export interface HydraCapabilityMatrix {
   subgroups: boolean

@@ -1,6 +1,4 @@
 import type {
-  HydraDispatchDomain,
-  HydraKernelSemantics,
   HydraTransformDefinition,
   HydraTransformInput,
   HydraPassSchedule,
@@ -39,18 +37,6 @@ const typeLookup: Record<HydraTransformType, { returnType: HydraWgslType, args: 
   renderpass: {
     returnType: 'vec4f',
     args: [{ type: 'vec2', name: '_st', default: undefined }]
-  },
-  simulation: {
-    returnType: 'vec4f',
-    args: [{ type: 'vec2', name: '_st', default: undefined }]
-  },
-  analysis: {
-    returnType: 'vec4f',
-    args: [{ type: 'vec2', name: '_st', default: undefined }]
-  },
-  kernel: {
-    returnType: 'vec4f',
-    args: [{ type: 'vec2', name: '_st', default: undefined }]
   }
 }
 
@@ -61,9 +47,6 @@ const typeToWgsl = (type: HydraTransformInput['type']): HydraWgslType => {
     case 'vec3': return 'vec3f'
     case 'vec4': return 'vec4f'
     case 'sampler2D': return 'texture_2d<f32>'
-    case 'storageTexture2D': return 'texture_storage_2d<rgba8unorm, read_write>'
-    case 'storageTexture2DArray': return 'texture_storage_2d_array<rgba8unorm, read_write>'
-    case 'storageBuffer': return 'ptr<storage, array<vec4f>, read_write>'
     default: return 'f32'
   }
 }
@@ -76,22 +59,6 @@ const normalizeSchedule = (definition: HydraTransformDefinition): HydraPassSched
     updateRate: definition.updateRate ?? 'everyFrame',
     sparse: Boolean(definition.sparse)
   }
-}
-
-const normalizeExecutionDomain = (definition: HydraTransformDefinition): HydraDispatchDomain => {
-  if (definition.executionDomain === 'linear1d') return 'linear1d'
-  return 'pixel2d'
-}
-
-const normalizeDispatchItems = (definition: HydraTransformDefinition): number | undefined => {
-  const count = Number(definition.dispatchItems)
-  if (!Number.isFinite(count) || count <= 0) return undefined
-  return Math.max(1, Math.floor(count))
-}
-
-const normalizeKernelSemantics = (definition: HydraTransformDefinition): HydraKernelSemantics => {
-  if (definition.kernelSemantics === 'index_first') return 'index_first'
-  return 'uv'
 }
 
 export const processTransformDefinition = (definition: HydraTransformDefinition): ProcessedHydraTransform => {
@@ -112,22 +79,11 @@ ${definition.wgsl}
 }
 `
 
-  const executionDomain = normalizeExecutionDomain(definition)
-  const writesOutput = typeof definition.writesOutput === 'boolean'
-    ? definition.writesOutput
-    : executionDomain !== 'linear1d'
-  const kernelSemantics = normalizeKernelSemantics(definition)
-
   return {
     ...definition,
-    resources: definition.resources ?? [],
     inputs: inputs.slice(1),
     wgsl: wgslFunction,
     wgsl_return_type: typeConfig.returnType,
-    schedule: normalizeSchedule(definition),
-    executionDomain,
-    kernelSemantics,
-    writesOutput,
-    dispatchItems: normalizeDispatchItems(definition)
+    schedule: normalizeSchedule(definition)
   }
 }

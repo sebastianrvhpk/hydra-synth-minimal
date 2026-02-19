@@ -1,27 +1,20 @@
-import { formatArguments, formatResourceBindings } from './format-arguments.js'
+import { formatArguments } from './format-arguments.js'
 import { buildPassIR, optimizePassIR } from './pass-ir.js'
 import { collectUtilityDeclarations } from './utility-wgsl.js'
 import type {
-  HydraAnalysisOutputBinding,
   HydraCompiledPass,
   HydraDispatchConfig,
   HydraPassSchedule,
-  HydraResourceElementType,
   HydraResourceFormat,
-  HydraStorageBufferBinding,
-  HydraStorageTextureBinding,
   HydraTextureBinding,
   HydraTransformCall,
   HydraTypedArgument,
-  HydraTypedResource,
   HydraUniformBinding
 } from '../types.js'
 
 interface ShaderParams {
   uniforms: HydraUniformBinding[]
   textures: Array<Omit<HydraTextureBinding, 'binding'>>
-  storageBuffers: Array<Omit<HydraStorageBufferBinding, 'binding'>>
-  storageTextures: Array<Omit<HydraStorageTextureBinding, 'binding'>>
   wgslFunctions: HydraTransformCall[]
   fragColor: string
   usesPrev: boolean
@@ -91,53 +84,6 @@ const mergeUpdateRates = (values: HydraPassSchedule['updateRate'][]): HydraPassS
   return selected
 }
 
-interface PassExecutionConfig {
-  domain: 'pixel2d' | 'linear1d'
-  kernelSemantics: 'uv' | 'index_first'
-  writesOutput: boolean
-  dispatchItems?: number
-}
-
-const resolvePassExecutionConfig = (transforms: HydraTransformCall[]): PassExecutionConfig => {
-  const domains = new Set<'pixel2d' | 'linear1d'>()
-  const semantics = new Set<'uv' | 'index_first'>()
-  let writesOutput = false
-  let dispatchItems = 0
-  let largestResourceLength = 0
-
-  transforms.forEach((call) => {
-    const domain = call.transform.executionDomain === 'linear1d' ? 'linear1d' : 'pixel2d'
-    domains.add(domain)
-    semantics.add(call.transform.kernelSemantics === 'index_first' ? 'index_first' : 'uv')
-    writesOutput = writesOutput || Boolean(call.transform.writesOutput)
-    dispatchItems = Math.max(dispatchItems, Math.max(0, Math.floor(Number(call.transform.dispatchItems) || 0)))
-    const resources = call.transform.resources ?? []
-    resources.forEach((resource) => {
-      if (resource.type !== 'storageBuffer') return
-      const minLength = Math.max(0, Math.floor(Number(resource.minLength) || 0))
-      if (minLength > largestResourceLength) largestResourceLength = minLength
-    })
-  })
-
-  if (domains.size > 1) {
-    throw new Error('Mixed execution domains in a single pass are unsupported. Split transforms into separate passes.')
-  }
-
-  const domain = domains.has('linear1d') ? 'linear1d' : 'pixel2d'
-  const outputEnabled = writesOutput || domain === 'pixel2d'
-  const resolvedItems = Math.max(dispatchItems, largestResourceLength)
-  const kernelSemantics = domain === 'linear1d' && semantics.has('index_first')
-    ? 'index_first'
-    : 'uv'
-
-  return {
-    domain,
-    kernelSemantics,
-    writesOutput: outputEnabled,
-    dispatchItems: resolvedItems > 0 ? resolvedItems : undefined
-  }
-}
-
 const mergePassSchedule = (transforms: HydraTransformCall[]): HydraPassSchedule => {
   const schedule: HydraPassSchedule = {
     resolutionScale: 1,
@@ -157,47 +103,6 @@ const mergePassSchedule = (transforms: HydraTransformCall[]): HydraPassSchedule 
   schedule.updateRate = mergeUpdateRates(transforms.map((transform) => transform.transform.schedule?.updateRate ?? 'everyFrame'))
 
   return schedule
-}
-
-const collectAnalysisOutputs = (transforms: HydraTransformCall[]): HydraAnalysisOutputBinding[] => {
-  const outputs: HydraAnalysisOutputBinding[] = []
-  const seen = new Set<string>()
-
-  transforms.forEach((transform) => {
-    const bindings = transform.transform.analysisOut ?? []
-    bindings.forEach((binding) => {
-      if (seen.has(binding.uniformName)) return
-      seen.add(binding.uniformName)
-      outputs.push(binding)
-    })
-  })
-
-  return outputs
-}
-
-const sanitizeStorageVariable = (name: string): string => name.replace(/[^a-zA-Z0-9_]/g, '_')
-
-const toStorageElementType = (value: HydraResourceElementType): string => {
-  if (value === 'f32') return 'f32'
-  if (value === 'vec2f') return 'vec2f'
-  if (value === 'vec3f') return 'vec3f'
-  if (value === 'u32') return 'u32'
-  if (value === 'i32') return 'i32'
-  return 'vec4f'
-}
-
-const toStorageTextureFormat = (value?: HydraResourceFormat): string => {
-  if (!value) return DEFAULT_PASS_OUTPUT_FORMAT
-  return value
-}
-
-const toStorageTextureType = (
-  format: string,
-  access: 'read' | 'write' | 'read_write',
-  dimension: '2d' | '2d_array'
-): string => {
-  if (dimension === '2d_array') return `texture_storage_2d_array<${format}, ${access}>`
-  return `texture_storage_2d<${format}, ${access}>`
 }
 
 const hashString = (value = ''): string => {
@@ -256,7 +161,6 @@ const structureSignatureForArg = (arg: unknown): string => {
   }
   if (typeof arg === 'function') return 'uniform'
   if (arg && typeof arg === 'object' && 'getTexture' in arg && typeof arg.getTexture === 'function') return 'texture'
-  if (arg && typeof arg === 'object' && 'getBuffer' in arg && typeof arg.getBuffer === 'function') return 'buffer'
   if (Array.isArray(arg)) return `vec${arg.length}`
   if (typeof arg === 'number') return 'number'
   if (typeof arg === 'string') return 'string'
@@ -331,45 +235,6 @@ const ensurePrevTexture = (shaderParams: ShaderParams): void => {
   })
 }
 
-const registerStorageBuffer = (shaderParams: ShaderParams, resource: HydraTypedResource): void => {
-  const candidate = sanitizeStorageVariable(resource.variableName)
-  const existing = shaderParams.storageBuffers.find((entry) => entry.variableName === candidate)
-  if (existing) return
-
-  shaderParams.storageBuffers.push({
-    name: resource.name,
-    variableName: candidate,
-    getBuffer: resource.getBuffer,
-    access: resource.access,
-    lifetime: resource.lifetime,
-    stateKey: resource.stateKey,
-    sourceRef: resource.sourceRef,
-    elementType: resource.elementType,
-    minLength: Math.max(1, resource.minLength ?? 1)
-  })
-}
-
-const registerStorageTexture = (shaderParams: ShaderParams, resource: HydraTypedResource): void => {
-  const candidate = sanitizeStorageVariable(resource.variableName)
-  const existing = shaderParams.storageTextures.find((entry) => entry.variableName === candidate)
-  if (existing) return
-
-  shaderParams.storageTextures.push({
-    name: resource.name,
-    variableName: candidate,
-    getTexture: resource.getTexture,
-    access: resource.access,
-    format: resource.format ?? DEFAULT_PASS_OUTPUT_FORMAT,
-    dimension: resource.type === 'storageTexture2DArray' ? '2d_array' : '2d',
-    widthScale: resource.widthScale,
-    heightScale: resource.heightScale,
-    depthOrArrayLayers: resource.depthOrArrayLayers,
-    lifetime: resource.lifetime,
-    stateKey: resource.stateKey,
-    sourceRef: resource.sourceRef
-  })
-}
-
 const generateInputName = (base: string, index: number): string => `${base}_i${index}`
 
 const resolveInputExpression = (
@@ -438,24 +303,17 @@ const generateWgslTransforms = (transforms: HydraTransformCall[], shaderParams: 
 
   transforms.forEach((transform, index) => {
     const namespaceSeed = shaderParams.argumentNamespaceSeed
-    const slotCount = (transform.transform.inputs?.length ?? 0) + (transform.transform.resources?.length ?? 0)
+    const slotCount = transform.transform.inputs?.length ?? 0
     shaderParams.argumentNamespaceSeed += Math.max(1, slotCount)
     const args = formatArguments(transform, namespaceSeed)
-    const resources = formatResourceBindings(transform, namespaceSeed)
     const previous = generator
 
     if (!containsTransform(transform, shaderParams.wgslFunctions)) {
       shaderParams.wgslFunctions.push(transform)
     }
 
-    resources.forEach((resource) => {
-      if (resource.type === 'storageBuffer') registerStorageBuffer(shaderParams, resource)
-      else registerStorageTexture(shaderParams, resource)
-    })
-
     if (
       transform.name === 'prev' ||
-      transform.transform.type === 'renderpass' ||
       /\bprevBuffer\b/.test(transform.transform.wgsl)
     ) {
       shaderParams.usesPrev = true
@@ -463,10 +321,7 @@ const generateWgslTransforms = (transforms: HydraTransformCall[], shaderParams: 
 
     if (
       transform.transform.type === 'src' ||
-      transform.transform.type === 'renderpass' ||
-      transform.transform.type === 'simulation' ||
-      transform.transform.type === 'analysis' ||
-      transform.transform.type === 'kernel'
+      transform.transform.type === 'renderpass'
     ) {
       generator = (cVar, stVar) => {
         const contextVar = `${cVar}${index}`
@@ -504,8 +359,6 @@ const generateWgsl = (transforms: HydraTransformCall[]): ShaderParams => {
   const shaderParams: ShaderParams = {
     uniforms: [],
     textures: [],
-    storageBuffers: [],
-    storageTextures: [],
     wgslFunctions: [],
     fragColor: '',
     usesPrev: false,
@@ -527,13 +380,7 @@ const compileGenericWgslPass = (
   transforms: HydraTransformCall[],
   maxDynamicUniforms = 256
 ): HydraCompiledPass => {
-  const execution = resolvePassExecutionConfig(transforms)
-  if (execution.domain !== 'pixel2d') {
-    throw new Error('Linear compute domains must use compileLinearWgslPass().')
-  }
-
   const shaderInfo = generateWgsl(transforms)
-  const analysisOut = collectAnalysisOutputs(transforms)
   const [workgroupSizeX, workgroupSizeY, workgroupSizeZ] = resolveWorkgroupSize(transforms)
   const dynamicUniformVec4Count = Math.ceil(maxDynamicUniforms / 4)
 
@@ -546,34 +393,10 @@ const compileGenericWgslPass = (
     binding: 3 + index
   }))
 
-  const storageBufferOffset = 3 + textureBindings.length
-  const storageBufferBindings: HydraStorageBufferBinding[] = shaderInfo.storageBuffers.map((buffer, index) => ({
-    ...buffer,
-    binding: storageBufferOffset + index
-  }))
-
-  const storageTextureOffset = storageBufferOffset + storageBufferBindings.length
-  const storageTextureBindings: HydraStorageTextureBinding[] = shaderInfo.storageTextures.map((texture, index) => ({
-    ...texture,
-    binding: storageTextureOffset + index
-  }))
-
   const textureDeclarations = textureBindings.map((texture) =>
     `@group(0) @binding(${texture.binding}) var ${texture.variableName}: texture_2d<f32>;`
   ).join('\n')
-  const storageBufferDeclarations = storageBufferBindings.map((buffer) => {
-    const elementType = toStorageElementType(buffer.elementType)
-    const access = buffer.access === 'write' ? 'read_write' : buffer.access
-    return `@group(0) @binding(${buffer.binding}) var<storage, ${access}> ${buffer.variableName}: array<${elementType}>;`
-  }).join('\n')
-
-  const storageTextureDeclarations = storageTextureBindings.map((texture) => {
-    const format = toStorageTextureFormat(texture.format)
-    const textureType = toStorageTextureType(format, texture.access, texture.dimension)
-    return `@group(0) @binding(${texture.binding}) var ${texture.variableName}: ${textureType};`
-  }).join('\n')
-
-  const outputTextureBinding = storageTextureOffset + storageTextureBindings.length
+  const outputTextureBinding = 3 + textureBindings.length
 
   const functionDeclarations = shaderInfo.wgslFunctions.map((transform) => transform.transform.wgsl).join('\n')
   const utilityDeclarations = collectUtilityDeclarations(shaderInfo.wgslFunctions)
@@ -583,7 +406,7 @@ const compileGenericWgslPass = (
 
   const signatureBase =
     `${shaderInfo.structureSignature}|u${shaderInfo.uniforms.length}|us${shaderInfo.uniformScalarCount}` +
-    `|t${textureBindings.length}|sb${storageBufferBindings.length}|st${storageTextureBindings.length}` +
+    `|t${textureBindings.length}` +
     `|rs${shaderInfo.schedule.resolutionScale}|sp${shaderInfo.schedule.sparse ? 1 : 0}|f${functionSignature}`
 
   const wgsl = `
@@ -602,8 +425,6 @@ struct DynamicUniforms {
 @group(0) @binding(1) var<uniform> dynamicUniforms: DynamicUniforms;
 @group(0) @binding(2) var hydraSampler: sampler;
 ${textureDeclarations}
-${storageBufferDeclarations}
-${storageTextureDeclarations}
 @group(0) @binding(${outputTextureBinding}) var outImage: texture_storage_2d<${DEFAULT_PASS_OUTPUT_FORMAT}, write>;
 
 fn hydraDynamicUniform(index: u32) -> f32 {
@@ -671,8 +492,6 @@ fn csMain(@builtin(global_invocation_id) invocationId: vec3u) {
     wgsl,
     uniforms: shaderInfo.uniforms,
     textures: textureBindings,
-    storageBuffers: storageBufferBindings,
-    storageTextures: storageTextureBindings,
     output: {
       name: 'outImage',
       variableName: 'outImage',
@@ -687,9 +506,6 @@ fn csMain(@builtin(global_invocation_id) invocationId: vec3u) {
       dispatch,
       uniforms: shaderInfo.uniforms,
       textures: textureBindings,
-      storageBuffers: storageBufferBindings,
-      storageTextures: storageTextureBindings,
-      analysisOut,
       output: {
         name: 'outImage',
         variableName: 'outImage',
@@ -698,234 +514,6 @@ fn csMain(@builtin(global_invocation_id) invocationId: vec3u) {
       }
     })
   }
-  if (analysisOut.length > 0) compiled.analysisOut = analysisOut
-
-  return optimizePassIR(compiled)
-}
-
-const resolveLinearWorkgroupSize = (_transforms: HydraTransformCall[]): [number, number, number] => [64, 1, 1]
-
-const compileLinearWgslPass = (
-  transforms: HydraTransformCall[],
-  maxDynamicUniforms = 256
-): HydraCompiledPass => {
-  const execution = resolvePassExecutionConfig(transforms)
-  if (execution.domain !== 'linear1d') {
-    throw new Error('compileLinearWgslPass() requires transforms in the linear1d execution domain.')
-  }
-
-  const itemCount = execution.dispatchItems
-  if (!itemCount || itemCount <= 0) {
-    throw new Error('Linear compute pass requires dispatchItems or a storageBuffer resource minLength > 0.')
-  }
-
-  const shaderInfo = generateWgsl(transforms)
-  const analysisOut = collectAnalysisOutputs(transforms)
-  const dynamicUniformVec4Count = Math.ceil(maxDynamicUniforms / 4)
-  const [workgroupSizeX, workgroupSizeY, workgroupSizeZ] = resolveLinearWorkgroupSize(transforms)
-
-  if (shaderInfo.uniformScalarCount > maxDynamicUniforms) {
-    throw new Error(`Shader uses ${shaderInfo.uniformScalarCount} dynamic uniform scalars, but max is ${maxDynamicUniforms}.`)
-  }
-
-  const textureBindings: HydraTextureBinding[] = shaderInfo.textures.map((texture, index) => ({
-    ...texture,
-    binding: 3 + index
-  }))
-
-  const storageBufferOffset = 3 + textureBindings.length
-  const storageBufferBindings: HydraStorageBufferBinding[] = shaderInfo.storageBuffers.map((buffer, index) => ({
-    ...buffer,
-    binding: storageBufferOffset + index
-  }))
-
-  const storageTextureOffset = storageBufferOffset + storageBufferBindings.length
-  const storageTextureBindings: HydraStorageTextureBinding[] = shaderInfo.storageTextures.map((texture, index) => ({
-    ...texture,
-    binding: storageTextureOffset + index
-  }))
-
-  const outputTextureBinding = storageTextureOffset + storageTextureBindings.length
-
-  const textureDeclarations = textureBindings.map((texture) =>
-    `@group(0) @binding(${texture.binding}) var ${texture.variableName}: texture_2d<f32>;`
-  ).join('\n')
-  const storageBufferDeclarations = storageBufferBindings.map((buffer) => {
-    const elementType = toStorageElementType(buffer.elementType)
-    const access = buffer.access === 'write' ? 'read_write' : buffer.access
-    return `@group(0) @binding(${buffer.binding}) var<storage, ${access}> ${buffer.variableName}: array<${elementType}>;`
-  }).join('\n')
-  const storageTextureDeclarations = storageTextureBindings.map((texture) => {
-    const format = toStorageTextureFormat(texture.format)
-    const textureType = toStorageTextureType(format, texture.access, texture.dimension)
-    return `@group(0) @binding(${texture.binding}) var ${texture.variableName}: ${textureType};`
-  }).join('\n')
-  const outputDeclaration = execution.writesOutput
-    ? `@group(0) @binding(${outputTextureBinding}) var outImage: texture_storage_2d<${DEFAULT_PASS_OUTPUT_FORMAT}, write>;`
-    : ''
-
-  const functionDeclarations = shaderInfo.wgslFunctions.map((transform) => transform.transform.wgsl).join('\n')
-  const utilityDeclarations = collectUtilityDeclarations(shaderInfo.wgslFunctions)
-  const functionSignature = shaderInfo.wgslFunctions
-    .map((transform) => `${transform.name}:${transform.transform.wgsl.length}`)
-    .join(',')
-
-  const signatureBase =
-    `${shaderInfo.structureSignature}|u${shaderInfo.uniforms.length}|us${shaderInfo.uniformScalarCount}` +
-    `|t${textureBindings.length}|sb${storageBufferBindings.length}|st${storageTextureBindings.length}` +
-    `|rs${shaderInfo.schedule.resolutionScale}|sp${shaderInfo.schedule.sparse ? 1 : 0}|f${functionSignature}` +
-    `|dlinear|ks${execution.kernelSemantics}|n${itemCount}|o${execution.writesOutput ? 1 : 0}`
-
-  const stAssignment = execution.kernelSemantics === 'index_first'
-    ? 'var st = hydraLinearUv();'
-    : `var st = vec2f((f32(linearIndex) + 0.5) / max(f32(${itemCount}), 1.0), 0.5);`
-
-  const outputStoreSnippet = execution.writesOutput
-    ? `
-  let width = max(1u, u32(globals.width));
-  let height = max(1u, u32(globals.height));
-  let pixelCount = width * height;
-  if (linearIndex < pixelCount) {
-    let x = linearIndex % width;
-    let y = linearIndex / width;
-    textureStore(outImage, vec2i(i32(x), i32(y)), c);
-  }
-`
-    : ''
-
-  const wgsl = `
-struct GlobalUniforms {
-  time: f32,
-  bpm: f32,
-  width: f32,
-  height: f32,
-};
-
-struct DynamicUniforms {
-  values: array<vec4f, ${dynamicUniformVec4Count}>,
-};
-
-@group(0) @binding(0) var<uniform> globals: GlobalUniforms;
-@group(0) @binding(1) var<uniform> dynamicUniforms: DynamicUniforms;
-@group(0) @binding(2) var hydraSampler: sampler;
-${textureDeclarations}
-${storageBufferDeclarations}
-${storageTextureDeclarations}
-${outputDeclaration}
-
-var<private> hydraLinearIndexValue: u32;
-
-fn hydraLinearIndex() -> u32 {
-  return hydraLinearIndexValue;
-}
-
-fn hydraLinearCoord() -> vec2u {
-  let width = max(1u, u32(globals.width));
-  let x = hydraLinearIndexValue % width;
-  let y = hydraLinearIndexValue / width;
-  return vec2u(x, y);
-}
-
-fn hydraLinearUv() -> vec2f {
-  let coord = hydraLinearCoord();
-  let width = max(1.0, globals.width);
-  let height = max(1.0, globals.height);
-  return (vec2f(f32(coord.x), f32(coord.y)) + vec2f(0.5, 0.5)) / vec2f(width, height);
-}
-
-fn hydraDynamicUniform(index: u32) -> f32 {
-  let vecIndex = index / 4u;
-  let lane = index % 4u;
-  let packed = dynamicUniforms.values[vecIndex];
-  if (lane == 0u) { return packed.x; }
-  if (lane == 1u) { return packed.y; }
-  if (lane == 2u) { return packed.z; }
-  return packed.w;
-}
-
-fn hydraDynamicUniformVec2(index: u32) -> vec2f {
-  return vec2f(
-    hydraDynamicUniform(index),
-    hydraDynamicUniform(index + 1u)
-  );
-}
-
-fn hydraDynamicUniformVec3(index: u32) -> vec3f {
-  return vec3f(
-    hydraDynamicUniform(index),
-    hydraDynamicUniform(index + 1u),
-    hydraDynamicUniform(index + 2u)
-  );
-}
-
-fn hydraDynamicUniformVec4(index: u32) -> vec4f {
-  return vec4f(
-    hydraDynamicUniform(index),
-    hydraDynamicUniform(index + 1u),
-    hydraDynamicUniform(index + 2u),
-    hydraDynamicUniform(index + 3u)
-  );
-}
-
-${utilityDeclarations}
-${functionDeclarations}
-
-@compute @workgroup_size(${workgroupSizeX}, ${workgroupSizeY}, ${workgroupSizeZ})
-fn csMain(@builtin(global_invocation_id) invocationId: vec3u) {
-  let linearIndex = invocationId.x;
-  if (linearIndex >= ${itemCount}u) {
-    return;
-  }
-
-  hydraLinearIndexValue = linearIndex;
-  ${stAssignment}
-  var c = vec4f(0.0);
-  ${shaderInfo.fragColor}
-${outputStoreSnippet}
-}
-`
-
-  const pipelineSignature = `${signatureBase}|cs${workgroupSizeX}x${workgroupSizeY}x${workgroupSizeZ}|h${hashString(wgsl)}`
-
-  const dispatch: HydraDispatchConfig = {
-    mode: 'direct',
-    domain: 'linear1d',
-    workgroupSize: [workgroupSizeX, workgroupSizeY, workgroupSizeZ],
-    itemCount
-  }
-
-  const output = execution.writesOutput
-    ? {
-      name: 'outImage',
-      variableName: 'outImage',
-      format: DEFAULT_PASS_OUTPUT_FORMAT,
-      binding: outputTextureBinding
-    }
-    : undefined
-
-  const compiled: HydraCompiledPass = {
-    signature: pipelineSignature,
-    wgsl,
-    uniforms: shaderInfo.uniforms,
-    textures: textureBindings,
-    storageBuffers: storageBufferBindings,
-    storageTextures: storageTextureBindings,
-    schedule: shaderInfo.schedule,
-    dispatch,
-    ir: buildPassIR({
-      signature: pipelineSignature,
-      schedule: shaderInfo.schedule,
-      dispatch,
-      uniforms: shaderInfo.uniforms,
-      textures: textureBindings,
-      storageBuffers: storageBufferBindings,
-      storageTextures: storageTextureBindings,
-      analysisOut,
-      ...(output ? { output } : {})
-    })
-  }
-  if (output) compiled.output = output
-  if (analysisOut.length > 0) compiled.analysisOut = analysisOut
 
   return optimizePassIR(compiled)
 }
@@ -1102,7 +690,6 @@ const compileSeparableBlurVariantPass = (
   const subgroupNoopExpression = isSubgroupVariant ? 'subgroupNorm * 0.0' : '0.0'
   const tiledBody = buildTiledBlurBody(axis, amountExpression, tileConfig, subgroupNoopExpression)
   const structureSignature = buildStructureSignature(transforms)
-  const analysisOut = collectAnalysisOutputs(transforms)
   const textureBindings: HydraTextureBinding[] = [{
     name: 'prevBuffer',
     variableName: 'prevBuffer',
@@ -1182,7 +769,7 @@ ${subgroupPrelude}${tiledBody}
 
   const signatureBase =
     `${structureSignature}|separableBlur${axis}|variant${variant}|tile${tileConfig.workgroupSize}` +
-    `|u${uniforms.length}|us${uniformScalarCount}|t1|sb0|st0|rs${schedule.resolutionScale}|sp${schedule.sparse ? 1 : 0}`
+    `|u${uniforms.length}|us${uniformScalarCount}|t1|rs${schedule.resolutionScale}|sp${schedule.sparse ? 1 : 0}`
   const pipelineSignature = `${signatureBase}|cs${workgroupSizeX}x${workgroupSizeY}x${workgroupSizeZ}|h${hashString(wgsl)}`
   const dispatch: HydraDispatchConfig = {
     mode: 'indirect',
@@ -1202,8 +789,6 @@ ${subgroupPrelude}${tiledBody}
     wgsl,
     uniforms,
     textures: textureBindings,
-    storageBuffers: [],
-    storageTextures: [],
     output,
     schedule,
     dispatch,
@@ -1213,14 +798,10 @@ ${subgroupPrelude}${tiledBody}
       dispatch,
       uniforms,
       textures: textureBindings,
-      storageBuffers: [],
-      storageTextures: [],
-      analysisOut,
       output
     }),
     fallbackPass
   }
-  if (analysisOut.length > 0) compiled.analysisOut = analysisOut
 
   return optimizePassIR(compiled)
 }
@@ -1521,7 +1102,6 @@ const compileStencil3x3VariantPass = (
     subgroupNoopExpression
   )
   const structureSignature = buildStructureSignature(transforms)
-  const analysisOut = collectAnalysisOutputs(transforms)
   const textureBindings: HydraTextureBinding[] = [{
     name: 'prevBuffer',
     variableName: 'prevBuffer',
@@ -1609,7 +1189,7 @@ ${subgroupPrelude}${tiledBody}
 
   const signatureBase =
     `${structureSignature}|stencil3x3${config.operator}|variant${variant}|tile${workgroupSizeX}x${workgroupSizeY}` +
-    `|u${uniforms.length}|us${uniformScalarCount}|t1|sb0|st0|rs${schedule.resolutionScale}|sp${schedule.sparse ? 1 : 0}`
+    `|u${uniforms.length}|us${uniformScalarCount}|t1|rs${schedule.resolutionScale}|sp${schedule.sparse ? 1 : 0}`
   const pipelineSignature = `${signatureBase}|cs${workgroupSizeX}x${workgroupSizeY}x${workgroupSizeZ}|h${hashString(wgsl)}`
   const dispatch: HydraDispatchConfig = {
     mode: 'indirect',
@@ -1629,8 +1209,6 @@ ${subgroupPrelude}${tiledBody}
     wgsl,
     uniforms,
     textures: textureBindings,
-    storageBuffers: [],
-    storageTextures: [],
     output,
     schedule,
     dispatch,
@@ -1640,14 +1218,10 @@ ${subgroupPrelude}${tiledBody}
       dispatch,
       uniforms,
       textures: textureBindings,
-      storageBuffers: [],
-      storageTextures: [],
-      analysisOut,
       output
     }),
     fallbackPass
   }
-  if (analysisOut.length > 0) compiled.analysisOut = analysisOut
 
   return optimizePassIR(compiled)
 }
@@ -1796,7 +1370,6 @@ const compileConvolution3x3VariantPass = (
   const subgroupNoopExpression = isSubgroupVariant ? 'subgroupNorm * 0.0' : '0.0'
   const tiledBody = buildConvolution3x3Body(config.weights, radiusExpression, tileConfig, subgroupNoopExpression)
   const structureSignature = buildStructureSignature(transforms)
-  const analysisOut = collectAnalysisOutputs(transforms)
   const textureBindings: HydraTextureBinding[] = [{
     name: 'prevBuffer',
     variableName: 'prevBuffer',
@@ -1881,7 +1454,7 @@ ${subgroupPrelude}${tiledBody}
   const signatureBase =
     `${structureSignature}|convolution3x3${weightSignature}|variant${variant}` +
     `|tile${workgroupSizeX}x${workgroupSizeY}|u${uniforms.length}|us${uniformScalarCount}` +
-    `|t1|sb0|st0|rs${schedule.resolutionScale}|sp${schedule.sparse ? 1 : 0}`
+    `|t1|rs${schedule.resolutionScale}|sp${schedule.sparse ? 1 : 0}`
   const pipelineSignature = `${signatureBase}|cs${workgroupSizeX}x${workgroupSizeY}x${workgroupSizeZ}|h${hashString(wgsl)}`
   const dispatch: HydraDispatchConfig = {
     mode: 'indirect',
@@ -1901,8 +1474,6 @@ ${subgroupPrelude}${tiledBody}
     wgsl,
     uniforms,
     textures: textureBindings,
-    storageBuffers: [],
-    storageTextures: [],
     output,
     schedule,
     dispatch,
@@ -1912,14 +1483,10 @@ ${subgroupPrelude}${tiledBody}
       dispatch,
       uniforms,
       textures: textureBindings,
-      storageBuffers: [],
-      storageTextures: [],
-      analysisOut,
       output
     }),
     fallbackPass
   }
-  if (analysisOut.length > 0) compiled.analysisOut = analysisOut
 
   return optimizePassIR(compiled)
 }
@@ -1964,11 +1531,6 @@ export const compileWgslPass = (
   transforms: HydraTransformCall[],
   maxDynamicUniforms = 256
 ): HydraCompiledPass => {
-  const execution = resolvePassExecutionConfig(transforms)
-  if (execution.domain === 'linear1d') {
-    return compileLinearWgslPass(transforms, maxDynamicUniforms)
-  }
-
   const separable = compileSeparableBlurPass(transforms, maxDynamicUniforms)
   if (separable) return separable
   const stencil = compileStencil3x3Pass(transforms, maxDynamicUniforms)

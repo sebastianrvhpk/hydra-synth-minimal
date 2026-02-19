@@ -1,7 +1,5 @@
-import type { HydraResourceResidencySnapshot } from './resource-manager.js'
 import type { WebGPUOutputNode } from './output-node.js'
 import type { WebGPUCapabilities } from '../webgpu/renderer.js'
-import type { HydraQueueTerminationReason } from './queue.js'
 
 export interface HydraProfilerSnapshot {
   frameWindow: {
@@ -19,22 +17,15 @@ export interface HydraProfilerSnapshot {
     gpuMsAvg: number | null
     gpuTimingSource: 'timestamp_query' | 'cpu_encode_fallback' | 'history_fallback' | 'unavailable'
     variant: 'generic' | 'tiled' | 'subgroup'
-    dispatchDomain: 'pixel2d' | 'linear1d'
+    dispatchDomain: 'pixel2d'
     lastWorkgroups: [number, number, number]
   }>
   resources: {
     residentBytesEstimate: number
-    residency?: HydraResourceResidencySnapshot | null
+    residency?: null
   }
   scheduler: {
     fallbackRate: number
-    queueIterations: number
-    queueOverflowCount: number
-    queueOverflowEvents: number
-    queueIndirectDispatches: number
-    queueConvergenceChecks: number
-    queueTerminationReason: HydraQueueTerminationReason | 'none' | 'mixed'
-    queueChecksPerSegment: number[]
     routingConfiguredMode: 'compute' | 'auto'
     routingActiveMode: 'compute'
     routingCompileFailures: number
@@ -54,40 +45,17 @@ const percentile = (values: number[], ratio: number): number => {
   return sorted[index] ?? 0
 }
 
-const summarizeQueueTermination = (
-  reasons: HydraQueueTerminationReason[] | null | undefined
-): HydraProfilerSnapshot['scheduler']['queueTerminationReason'] => {
-  if (!Array.isArray(reasons) || reasons.length <= 0) return 'none'
-  const normalized = reasons.filter((value): value is HydraQueueTerminationReason => typeof value === 'string')
-  if (normalized.length <= 0) return 'none'
-  const unique = Array.from(new Set(normalized))
-  if (unique.length === 1) return unique[0] as HydraQueueTerminationReason
-  return 'mixed'
-}
-
 export const buildProfilerSnapshot = ({
   frameTimesMs,
   outputs,
   capabilities,
   residentBytesEstimate = 0,
-  residency = null,
-  queueMetrics = null,
   routingMetrics = null
 }: {
   frameTimesMs: number[]
   outputs: WebGPUOutputNode[]
   capabilities: WebGPUCapabilities | null
   residentBytesEstimate?: number
-  residency?: HydraResourceResidencySnapshot | null
-  queueMetrics?: {
-    iterations: number
-    overflowCount: number
-    overflowEvents: number
-    indirectDispatches: number
-    convergenceChecks: number
-    terminationReasons: HydraQueueTerminationReason[]
-    checksPerSegment: number[]
-  } | null
   routingMetrics?: {
     configuredMode: 'compute' | 'auto'
     activeMode: 'compute'
@@ -102,9 +70,6 @@ export const buildProfilerSnapshot = ({
   const passes: HydraProfilerSnapshot['passes'] = {}
   let totalDispatchCount = 0
   let totalFallbackCount = 0
-  const queueChecksPerSegment = Array.isArray(queueMetrics?.checksPerSegment)
-    ? queueMetrics.checksPerSegment
-    : []
   outputs.forEach((output, index) => {
     const stats = output.getPassStats()
     Object.entries(stats).forEach(([signature, value]) => {
@@ -124,7 +89,7 @@ export const buildProfilerSnapshot = ({
         gpuMsAvg: value.avgGpuMs ?? null,
         gpuTimingSource,
         variant,
-        dispatchDomain: value.dispatchDomain ?? 'pixel2d',
+        dispatchDomain: 'pixel2d',
         lastWorkgroups: value.lastWorkgroups ?? [0, 0, 0]
       }
     })
@@ -140,17 +105,10 @@ export const buildProfilerSnapshot = ({
     passes,
     resources: {
       residentBytesEstimate: Math.max(0, Math.floor(residentBytesEstimate)),
-      residency
+      residency: null
     },
     scheduler: {
       fallbackRate: totalDispatchCount > 0 ? totalFallbackCount / totalDispatchCount : 0,
-      queueIterations: Math.max(0, Math.floor(queueMetrics?.iterations ?? 0)),
-      queueOverflowCount: Math.max(0, Math.floor(queueMetrics?.overflowCount ?? 0)),
-      queueOverflowEvents: Math.max(0, Math.floor(queueMetrics?.overflowEvents ?? 0)),
-      queueIndirectDispatches: Math.max(0, Math.floor(queueMetrics?.indirectDispatches ?? 0)),
-      queueConvergenceChecks: Math.max(0, Math.floor(queueMetrics?.convergenceChecks ?? 0)),
-      queueTerminationReason: summarizeQueueTermination(queueMetrics?.terminationReasons ?? null),
-      queueChecksPerSegment: queueChecksPerSegment.map((value) => Math.max(0, Math.floor(Number(value) || 0))),
       routingConfiguredMode: routingMetrics?.configuredMode ?? 'compute',
       routingActiveMode: routingMetrics?.activeMode ?? 'compute',
       routingCompileFailures: Math.max(0, Math.floor(routingMetrics?.compileFailures ?? 0)),

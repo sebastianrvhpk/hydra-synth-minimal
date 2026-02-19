@@ -1,6 +1,6 @@
 import type { HydraTransformCall } from '../types.js'
 
-const STANDALONE_PASS_TYPES = new Set(['renderpass', 'simulation', 'analysis', 'kernel'])
+const STANDALONE_PASS_TYPES = new Set(['renderpass'])
 
 const createPrevTransform = (anchor: HydraTransformCall): HydraTransformCall | null => {
   const prevGenerator = anchor.synth.generators.prev

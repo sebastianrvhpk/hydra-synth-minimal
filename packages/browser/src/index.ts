@@ -1,5 +1,4 @@
 import {
-  type HydraAnalysisOutputBinding,
   type HydraDispatchDomain,
   type HydraDispatchConfig,
   HydraEngine,
@@ -9,24 +8,11 @@ import {
   type HydraEngineOptions,
   type HydraErrorPolicy,
   type HydraFrameState,
-  type HydraQueuePolicy,
-  type HydraQueueTerminationPolicy,
-  type HydraQueueOverflowControl,
-  type HydraQueueConvergencePolicy,
-  type HydraQueueTerminationMode,
-  type HydraQueueOverflowPolicy,
-  type HydraQueueConvergenceStrategy,
   type HydraPassIRNode,
   type HydraPassSchedule,
   type HydraPassUpdateRate,
   type RendererAdapter,
-  type HydraResourceAccess,
-  type HydraResourceElementType,
   type HydraResourceFormat,
-  type HydraResourceLifetime,
-  type HydraStorageBufferBinding,
-  type HydraStorageTextureBinding,
-  type HydraTransformResource,
   type ScriptPlugin,
   type SourceAdapter
 } from 'hydra-synth-core'
@@ -63,22 +49,9 @@ import {
   type HydraAutotuneProfilerInput,
   type HydraTuningPolicy
 } from './runtime/autotune.js'
-import { HydraExecutor, type ExecutePlanResult, type HydraExecutePlanOptions, type HydraExecutorQueueHooks } from './runtime/executor.js'
+import { HydraExecutor, type ExecutePlanResult, type HydraExecutePlanOptions } from './runtime/executor.js'
 import { WebGPUOutputNode } from './runtime/output-node.js'
 import { buildProfilerSnapshot, type HydraProfilerSnapshot } from './runtime/profiler.js'
-import {
-  createDefaultQueuePolicy,
-  decideQueueDispatch,
-  evaluateQueueTerminationReason,
-  normalizeQueuePolicy,
-  shouldTerminateQueueLoop,
-  toQueueIndirectArgs,
-  type HydraQueueDispatchDecision,
-  type HydraQueueDispatchState,
-  type HydraQueueIndirectArgs,
-  type HydraQueueTerminationReason
-} from './runtime/queue.js'
-import { HydraResourceManager, type HydraResourceResidencySnapshot } from './runtime/resource-manager.js'
 import { HydraSourceNode, type PatchBayAdapter } from './runtime/source-node.js'
 import {
   WEBGPU_UNAVAILABLE_MESSAGE,
@@ -111,7 +84,6 @@ import type {
 
 export { HydraEngine }
 export type {
-  HydraAnalysisOutputBinding,
   HydraDispatchDomain,
   HydraDispatchConfig,
   HydraEngineBindingHost,
@@ -123,13 +95,7 @@ export type {
   HydraPassIRNode,
   HydraPassSchedule,
   HydraPassUpdateRate,
-  HydraResourceAccess,
-  HydraResourceElementType,
   HydraResourceFormat,
-  HydraResourceLifetime,
-  HydraStorageBufferBinding,
-  HydraStorageTextureBinding,
-  HydraTransformResource,
   RendererAdapter,
   ScriptPlugin,
   SourceAdapter,
@@ -155,19 +121,6 @@ export type {
   HydraAutotuneProfilerInput,
   ExecutePlanResult,
   HydraExecutePlanOptions,
-  HydraExecutorQueueHooks,
-  HydraResourceResidencySnapshot,
-  HydraQueueDispatchState,
-  HydraQueueDispatchDecision,
-  HydraQueueIndirectArgs,
-  HydraQueueTerminationReason,
-  HydraQueuePolicy,
-  HydraQueueTerminationPolicy,
-  HydraQueueOverflowControl,
-  HydraQueueConvergencePolicy,
-  HydraQueueTerminationMode,
-  HydraQueueOverflowPolicy,
-  HydraQueueConvergenceStrategy,
   HydraBenchmarkAcceptanceGate,
   HydraBenchmarkDelta,
   HydraBenchmarkReport,
@@ -188,17 +141,10 @@ export {
   HydraSourceNode,
   WebGPUOutputNode,
   HydraExecutor,
-  HydraResourceManager,
   HydraAutotuner,
   buildWorkgroupCandidateSignature,
   buildProfilerSnapshot,
   normalizeRuntimeExecutionMode,
-  createDefaultQueuePolicy,
-  decideQueueDispatch,
-  normalizeQueuePolicy,
-  evaluateQueueTerminationReason,
-  toQueueIndirectArgs,
-  shouldTerminateQueueLoop,
   BENCHMARK_CORPUS,
   getBenchmarkSceneDefinition,
   buildBenchmarkReport,

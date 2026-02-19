@@ -1,13 +1,10 @@
 import type {
-  HydraAnalysisOutputBinding,
   HydraCompiledPass,
   HydraDispatchConfig,
   HydraOutputTextureBinding,
   HydraPassIRNode,
   HydraPassIRResourceRef,
   HydraPassSchedule,
-  HydraStorageBufferBinding,
-  HydraStorageTextureBinding,
   HydraTextureBinding,
   HydraUniformBinding
 } from '../types.js'
@@ -18,16 +15,12 @@ interface BuildPassIROptions {
   dispatch: HydraDispatchConfig
   uniforms: HydraUniformBinding[]
   textures: HydraTextureBinding[]
-  storageBuffers: HydraStorageBufferBinding[]
-  storageTextures: HydraStorageTextureBinding[]
   output?: HydraOutputTextureBinding
-  analysisOut?: HydraAnalysisOutputBinding[]
 }
 
 const readSetFrom = (values: HydraPassIRResourceRef[]): string[] => {
   const reads = new Set<string>()
   values.forEach((entry) => {
-    if (entry.access === 'write') return
     if (entry.kind === 'outputTexture') return
     reads.add(entry.name)
   })
@@ -37,24 +30,15 @@ const readSetFrom = (values: HydraPassIRResourceRef[]): string[] => {
 const writeSetFrom = (values: HydraPassIRResourceRef[]): string[] => {
   const writes = new Set<string>()
   values.forEach((entry) => {
-    if (entry.kind === 'outputTexture') {
-      writes.add(entry.name)
-      return
-    }
-    if (entry.access === 'write' || entry.access === 'read_write') writes.add(entry.name)
+    if (entry.kind === 'outputTexture') writes.add(entry.name)
   })
   return Array.from(writes)
 }
 
 const normalizeSet = (values: string[]): string[] => Array.from(new Set(values)).sort()
 
-const resourceKey = (resource: HydraPassIRResourceRef): string => {
-  const access = resource.access ?? ''
-  const format = resource.format ?? ''
-  const lifetime = resource.lifetime ?? ''
-  const stateKey = resource.stateKey ?? ''
-  return `${resource.kind}|${resource.name}|${resource.binding}|${access}|${format}|${lifetime}|${stateKey}`
-}
+const resourceKey = (resource: HydraPassIRResourceRef): string =>
+  `${resource.kind}|${resource.name}|${resource.binding}|${resource.intent ?? ''}|${resource.format ?? ''}`
 
 const normalizeResources = (resources: HydraPassIRResourceRef[]): HydraPassIRResourceRef[] => {
   const deduped = new Map<string, HydraPassIRResourceRef>()
@@ -74,10 +58,7 @@ export const buildPassIR = ({
   dispatch,
   uniforms,
   textures,
-  storageBuffers,
-  storageTextures,
-  output,
-  analysisOut
+  output
 }: BuildPassIROptions): HydraPassIRNode => {
   const resources: HydraPassIRResourceRef[] = []
 
@@ -95,33 +76,7 @@ export const buildPassIR = ({
       name: texture.name,
       kind: 'texture',
       binding: texture.binding,
-      intent: 'input',
-      access: 'read'
-    })
-  })
-
-  storageBuffers.forEach((buffer) => {
-    resources.push({
-      name: buffer.name,
-      kind: 'storageBuffer',
-      binding: buffer.binding,
-      intent: buffer.lifetime === 'persistent' ? 'state' : 'input',
-      access: buffer.access,
-      lifetime: buffer.lifetime,
-      stateKey: buffer.stateKey
-    })
-  })
-
-  storageTextures.forEach((texture) => {
-    resources.push({
-      name: texture.name,
-      kind: 'storageTexture',
-      binding: texture.binding,
-      intent: texture.lifetime === 'persistent' ? 'state' : 'input',
-      access: texture.access,
-      format: texture.format,
-      lifetime: texture.lifetime,
-      stateKey: texture.stateKey
+      intent: 'input'
     })
   })
 
@@ -131,20 +86,14 @@ export const buildPassIR = ({
       kind: 'outputTexture',
       binding: output.binding,
       intent: 'output',
-      access: 'write',
-      format: output.format,
-      lifetime: 'frame'
+      format: output.format
     })
   }
-
-  const passKind: HydraPassIRNode['kind'] = analysisOut && analysisOut.length > 0
-    ? 'reduction'
-    : (dispatch.domain === 'linear1d' || !output ? 'data' : 'image')
 
   return {
     id: signature,
     signature,
-    kind: passKind,
+    kind: 'image',
     schedule,
     workgroupSize: dispatch.workgroupSize,
     resources,

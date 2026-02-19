@@ -9,7 +9,7 @@ import {
   scoreExecutionPlan,
   type HydraPlannerCapabilityProfile
 } from './passes.js'
-import type { HydraDebugEvent, HydraExecutionPlan, HydraQueuePolicy } from './types.js'
+import type { HydraDebugEvent, HydraExecutionPlan } from './types.js'
 import { applyPrimitiveSubstitutions } from './primitive-substitution.js'
 import { throwOnExecutionPlanErrors, validateExecutionPlan } from './validate-plan.js'
 
@@ -45,23 +45,6 @@ const serializePlanShape = (input: {
     policy: input.policy
   }
   return JSON.stringify(data)
-}
-
-const DEFAULT_QUEUE_POLICY: HydraQueuePolicy = {
-  termination: {
-    mode: 'until_empty',
-    maxIterations: 64,
-    minIterations: 1
-  },
-  overflow: {
-    policy: 'ignore',
-    maxOverflow: 2_147_483_647
-  },
-  convergence: {
-    strategy: 'hook_or_queue_counter',
-    checkInterval: 4,
-    maxNoProgressChecks: 2
-  }
 }
 
 export const compileGraph = (
@@ -141,14 +124,11 @@ export const compileGraph = (
     policy: selectedVariantPolicy
   })
   const cacheKey = `plan|${hashString(serializedShape)}`
-  const queuePolicyDefault = steps.find((step) => step.dispatchDomain === 'queue1d')?.queueControl?.policy ?? DEFAULT_QUEUE_POLICY
 
   const plan: HydraExecutionPlan = {
     version: '1.0',
     executionPolicy: {
-      queueModeDefault: 'gpu_hybrid',
-      deterministic: true,
-      queuePolicyDefault
+      deterministic: true
     },
     id: `plan-${hashString(`${graph.id}:${cacheKey}`)}`,
     sourceGraph: graph,
@@ -176,7 +156,6 @@ export const createExecutionPlanDebugReport = (plan: HydraExecutionPlan): string
       dispatchDomain: step.dispatchDomain,
       variant: step.variant,
       fallbackDepth: step.fallbackDepth,
-      queueControl: step.queueControl,
       primitive: step.primitive,
       variantCandidates: step.variantCandidates,
       barriersBefore: step.barriersBefore.length

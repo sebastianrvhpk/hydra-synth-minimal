@@ -153,21 +153,6 @@ describe('DSL compatibility matrix', () => {
     expect(output.passes[0].wgsl).toContain('fn customBias')
   })
 
-  it('supports mixed simulation/analysis/kernel chains unchanged', () => {
-    const { registry, output } = createRegistry()
-    registry.generators
-      .solid(0.2, 0.1, 0.4, 1)
-      .rdStep()
-      .trailScatter(0.08, 0.97)
-      .lumaProbe(1.0)
-      .out()
-
-    expect(output.passes.length).toBe(4)
-    expect(output.passes[1].wgsl).toContain('fn rdStep')
-    expect(output.passes[2].wgsl).toContain('fn trailScatter')
-    expect(output.passes[3].analysisOut?.length).toBeGreaterThan(0)
-  })
-
   it('keeps multi-output source references for downstream scheduling', () => {
     const { registry, output } = createRegistry()
     const upstreamOutput = { id: 2, getTexture: () => null }
@@ -191,17 +176,6 @@ describe('DSL compatibility matrix', () => {
     expect(planA.cacheKey).toBe(planB.cacheKey)
     expect(planA.sourceGraph.compatibilityMode).toBe('dsl-v2')
     expect(planA.steps.length).toBe(planB.steps.length)
-  })
-
-  it('keeps linear kernel UV compatibility paths unchanged', () => {
-    const { registry, output } = createRegistry()
-    registry.generators.solid(0, 0, 0, 1).bufferFill([0, 0, 0, 0]).out()
-
-    expect(output.passes.length).toBe(2)
-    const linearPass = output.passes[1]
-    if (!linearPass) throw new Error('Expected linear compatibility pass missing.')
-    expect(linearPass.dispatch?.domain).toBe('linear1d')
-    expect(linearPass.wgsl).toContain('var st = vec2f((f32(linearIndex) + 0.5) / max(f32(4096), 1.0), 0.5);')
   })
 
   it('uses graph-aware output hooks without breaking direct render adapters', () => {

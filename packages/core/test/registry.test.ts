@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   HydraTransformRegistry,
-  attachSystems,
   getDefaultTransforms,
   type HydraCompiledPass,
   type HydraOutputAdapter,
@@ -122,6 +121,50 @@ describe('HydraTransformRegistry', () => {
     expectedTransforms.forEach((name) => {
       expect(registered.has(name)).toBe(true)
     })
+  })
+
+  it('registers noiseLoop/fbm/ridged/turbulence and extended blend modes', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+    const registered = new Set(registry.listTransforms())
+    const expected = [
+      'noiseLoop',
+      'fbm',
+      'ridged',
+      'turbulence',
+      'screen',
+      'overlay',
+      'softLight',
+      'hardLight',
+      'colorDodge',
+      'colorBurn'
+    ]
+
+    expected.forEach((name) => {
+      expect(registered.has(name)).toBe(true)
+    })
+  })
+
+  it('compiles noiseLoop/fbm chains with blend modes', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators
+      .fbm(4.0, 0.15, 4.0, 2.0, 0.5)
+      .screen(registry.generators.ridged(5.0, 0.2, 4.0, 2.0, 0.55), 0.7)
+      .softLight(registry.generators.turbulence(3.0, 0.1, 3.0, 2.0, 0.5), 0.45)
+      .overlay(registry.generators.noiseLoop(6.0, 0.2, 0.8), 0.6)
+      .out()
+
+    expect(output.passes.length).toBe(1)
+    const wgsl = output.passes[0].wgsl
+    expect(wgsl).toContain('fn noiseLoop')
+    expect(wgsl).toContain('fn fbm')
+    expect(wgsl).toContain('fn ridged')
+    expect(wgsl).toContain('fn turbulence')
+    expect(wgsl).toContain('fn screen')
+    expect(wgsl).toContain('fn softLight')
+    expect(wgsl).toContain('fn overlay')
   })
 
   it('compiles a full chain with all new post-processing transforms', () => {
@@ -425,191 +468,6 @@ describe('HydraTransformRegistry', () => {
     expect(pass.ir?.writes).toContain('outImage')
   })
 
-  it('supports storage resources on kernel transforms and exposes bound resource metadata', () => {
-    const output = new CaptureOutput()
-    const registry = new HydraTransformRegistry({ defaultOutput: output })
-
-    registry.registerTransform({
-      name: 'writeTrail',
-      type: 'kernel',
-      inputs: [{ type: 'float', name: 'amount', default: 0.25 }],
-      resources: [
-        {
-          type: 'storageTexture2D',
-          name: 'trailBuffer',
-          access: 'read_write',
-          format: 'rgba8unorm',
-          lifetime: 'persistent',
-          stateKey: 'trail-buffer'
-        }
-      ],
-      wgsl: `
-  let dims = vec2f(max(globals.width, 1.0), max(globals.height, 1.0));
-  let pix = vec2i(
-    i32(clamp(floor(_st.x * dims.x), 0.0, dims.x - 1.0)),
-    i32(clamp(floor(_st.y * dims.y), 0.0, dims.y - 1.0))
-  );
-  let oldColor = textureLoad(trailBuffer, pix);
-  let nextColor = clamp(oldColor + vec4f(amount, 0.0, 0.0, 0.0), vec4f(0.0), vec4f(1.0));
-  textureStore(trailBuffer, pix, nextColor);
-  return vec4f(nextColor.xyz, 1.0);
-`
-    })
-
-    registry.generators.solid(0, 0, 0, 1).writeTrail(0.5).out()
-
-    expect(output.passes.length).toBe(2)
-    const pass = output.passes[1]
-    expect(pass.storageTextures?.length).toBe(1)
-    expect(pass.storageTextures?.[0].name).toBe('trailBuffer')
-    expect(pass.storageTextures?.[0].stateKey).toBe('trail-buffer')
-    expect(pass.storageTextures?.[0].lifetime).toBe('persistent')
-    expect(pass.wgsl).toContain('var trailBuffer: texture_storage_2d<rgba8unorm, read_write>;')
-  })
-
-  it('registers built-in compute-native transforms', () => {
-    const output = new CaptureOutput()
-    const registry = new HydraTransformRegistry({ defaultOutput: output })
-    const registered = new Set(registry.listTransforms())
-
-    expect(registered.has('rdStep')).toBe(true)
-    expect(registered.has('lumaProbe')).toBe(true)
-    expect(registered.has('trailScatter')).toBe(true)
-    expect(registered.has('bufferFill')).toBe(true)
-    expect(registered.has('bufferDecay')).toBe(true)
-  })
-
-  it('schedules simulation and analysis transforms as standalone compute passes', () => {
-    const output = new CaptureOutput()
-    const registry = new HydraTransformRegistry({ defaultOutput: output })
-
-    registry.generators.solid(1, 0, 0, 1).rdStep().lumaProbe().out()
-
-    expect(output.passes.length).toBe(3)
-    expect(output.passes[1].wgsl).toContain('fn rdStep')
-    expect(output.passes[2].wgsl).toContain('fn lumaProbe')
-    expect(output.passes[2].schedule?.resolutionScale).toBe(0.5)
-  })
-
-  it('propagates analysis output metadata onto compiled analysis passes', () => {
-    const output = new CaptureOutput()
-    const registry = new HydraTransformRegistry({ defaultOutput: output })
-
-    registry.generators.solid(1, 0, 0, 1).lumaProbe(1.0).out()
-
-    expect(output.passes.length).toBe(2)
-    const analysisPass = output.passes[1]
-    expect(analysisPass.analysisOut).toEqual([{ uniformName: 'analysis_luma', type: 'float' }])
-  })
-
-  it('compiles storageTexture2DArray resources with correct dimension metadata', () => {
-    const output = new CaptureOutput()
-    const registry = new HydraTransformRegistry({ defaultOutput: output })
-
-    registry.registerTransform({
-      name: 'arrayTrail',
-      type: 'kernel',
-      resources: [
-        {
-          type: 'storageTexture2DArray',
-          name: 'trailArray',
-          access: 'read_write',
-          format: 'rgba8unorm',
-          lifetime: 'persistent',
-          stateKey: 'trail-array'
-        }
-      ],
-      wgsl: `
-  let dims = vec2f(max(globals.width, 1.0), max(globals.height, 1.0));
-  let pix = vec2i(
-    i32(clamp(floor(_st.x * dims.x), 0.0, dims.x - 1.0)),
-    i32(clamp(floor(_st.y * dims.y), 0.0, dims.y - 1.0))
-  );
-  let current = textureLoad(trailArray, pix, 0);
-  textureStore(trailArray, pix, 0, current);
-  return current;
-`
-    })
-
-    registry.generators.solid(0.2, 0.3, 0.4, 1).arrayTrail().out()
-
-    expect(output.passes.length).toBe(2)
-    const pass = output.passes[1]
-    expect(pass.storageTextures?.length).toBe(1)
-    expect(pass.storageTextures?.[0].dimension).toBe('2d_array')
-    expect(pass.wgsl).toContain('texture_storage_2d_array<rgba8unorm, read_write>')
-  })
-
-  it('propagates storage buffer minLength metadata', () => {
-    const output = new CaptureOutput()
-    const registry = new HydraTransformRegistry({ defaultOutput: output })
-
-    registry.registerTransform({
-      name: 'bufferTrail',
-      type: 'kernel',
-      resources: [
-        {
-          type: 'storageBuffer',
-          name: 'trailData',
-          access: 'read_write',
-          elementType: 'vec4f',
-          minLength: 1024,
-          lifetime: 'persistent',
-          stateKey: 'trail-buffer'
-        }
-      ],
-      wgsl: `
-  trailData[0] = vec4f(0.0);
-  return vec4f(0.0);
-`
-    })
-
-    registry.generators.solid(0.2, 0.3, 0.4, 1).bufferTrail().out()
-
-    expect(output.passes.length).toBe(2)
-    const pass = output.passes[1]
-    expect(pass.storageBuffers?.[0].minLength).toBe(1024)
-  })
-
-  it('compiles persistent storage resources for built-in trailScatter()', () => {
-    const output = new CaptureOutput()
-    const registry = new HydraTransformRegistry({ defaultOutput: output })
-
-    registry.generators.solid(0.3, 0.2, 0.1, 1).trailScatter(0.1, 0.98).out()
-
-    expect(output.passes.length).toBe(2)
-    const pass = output.passes[1]
-    expect(pass.storageTextures?.length).toBe(1)
-    expect(pass.storageTextures?.[0].stateKey).toBe('trail-buffer')
-    expect(pass.textures.some((texture) => texture.name === 'prevBuffer')).toBe(true)
-  })
-
-  it('compiles linear-domain kernels as data-only compute passes', () => {
-    const output = new CaptureOutput()
-    const registry = new HydraTransformRegistry({ defaultOutput: output })
-
-    registry.generators
-      .solid(0.2, 0.3, 0.4, 1)
-      .bufferFill([1, 0, 0, 1])
-      .bufferDecay(0.95)
-      .out()
-
-    expect(output.passes.length).toBe(3)
-    const fillPass = output.passes[1]
-    const decayPass = output.passes[2]
-
-    expect(fillPass.dispatch?.domain).toBe('linear1d')
-    expect(fillPass.dispatch?.itemCount).toBe(4096)
-    expect(fillPass.output).toBeUndefined()
-    expect(fillPass.wgsl).toContain('fn hydraLinearIndex')
-    expect(fillPass.ir?.kind).toBe('data')
-    expect(fillPass.ir?.writes).toContain('computeBuffer')
-
-    expect(decayPass.dispatch?.domain).toBe('linear1d')
-    expect(decayPass.output).toBeUndefined()
-    expect(decayPass.wgsl).toContain('computeBuffer[index]')
-  })
-
   it('merges everyNFrames update rates deterministically across transform order', () => {
     const output = new CaptureOutput()
     const registry = new HydraTransformRegistry({ defaultOutput: output })
@@ -639,47 +497,6 @@ describe('HydraTransformRegistry', () => {
 
     expect(forwardRate).toEqual({ everyNFrames: 5 })
     expect(reverseRate).toEqual({ everyNFrames: 5 })
-  })
-
-  it('propagates storage texture allocation metadata into compiled bindings', () => {
-    const output = new CaptureOutput()
-    const registry = new HydraTransformRegistry({ defaultOutput: output })
-
-    registry.registerTransform({
-      name: 'scaledState',
-      type: 'kernel',
-      resources: [
-        {
-          type: 'storageTexture2DArray',
-          name: 'scaledTrail',
-          access: 'read_write',
-          format: 'rgba8unorm',
-          lifetime: 'persistent',
-          stateKey: 'scaled-trail',
-          widthScale: 0.5,
-          heightScale: 0.25,
-          depthOrArrayLayers: 2
-        }
-      ],
-      wgsl: `
-  let dims = vec2f(max(globals.width, 1.0), max(globals.height, 1.0));
-  let pix = vec2i(
-    i32(clamp(floor(_st.x * dims.x), 0.0, dims.x - 1.0)),
-    i32(clamp(floor(_st.y * dims.y), 0.0, dims.y - 1.0))
-  );
-  let current = textureLoad(scaledTrail, pix, 0);
-  textureStore(scaledTrail, pix, 0, current);
-  return current;
-`
-    })
-
-    registry.generators.solid(0, 0, 0, 1).scaledState().out()
-
-    expect(output.passes.length).toBe(2)
-    const pass = output.passes[1]
-    expect(pass.storageTextures?.[0].widthScale).toBe(0.5)
-    expect(pass.storageTextures?.[0].heightScale).toBe(0.25)
-    expect(pass.storageTextures?.[0].depthOrArrayLayers).toBe(2)
   })
 
   it('supports vector dynamic uniforms and packs scalar lanes deterministically', () => {
@@ -743,86 +560,6 @@ describe('HydraTransformRegistry', () => {
     expect(output.passes[0].wgsl).toContain('fn myTint')
   })
 
-  it('registers low-level generator/operator additions for synthesis expansion', () => {
-    const output = new CaptureOutput()
-    const registry = new HydraTransformRegistry({ defaultOutput: output })
-    const registered = new Set(registry.listTransforms())
-    const expected = [
-      'noiseLoop',
-      'fbm',
-      'ridged',
-      'turbulence',
-      'screen',
-      'overlay',
-      'softLight',
-      'hardLight',
-      'colorDodge',
-      'colorBurn',
-      'dilate',
-      'erode',
-      'advect',
-      'diffuse',
-      'rdStepSeeded',
-      'fluidStep',
-      'histogramProbe',
-      'edgeDensityProbe',
-      'motionProbe',
-      'particleReset',
-      'particleInit',
-      'particleStep',
-      'particleFieldDecay',
-      'particleScatter',
-      'particleFieldRender'
-    ]
-
-    expected.forEach((name) => {
-      expect(registered.has(name)).toBe(true)
-    })
-  })
-
-  it('compiles looped/fractal generators with blend and modulate operators', () => {
-    const output = new CaptureOutput()
-    const registry = new HydraTransformRegistry({ defaultOutput: output })
-
-    registry.generators
-      .fbm(4.0, 0.15, 4.0, 2.0, 0.5)
-      .modulate(registry.generators.noiseLoop(6.0, 0.2, 0.8), 0.12)
-      .screen(registry.generators.ridged(5.0, 0.2, 4.0, 2.0, 0.55), 0.7)
-      .softLight(registry.generators.turbulence(3.0, 0.1, 3.0, 2.0, 0.5), 0.45)
-      .out()
-
-    expect(output.passes.length).toBe(1)
-    const wgsl = output.passes[0].wgsl
-    expect(wgsl).toContain('fn noiseLoop')
-    expect(wgsl).toContain('loopRadius')
-    expect(wgsl).toContain('fn hydraNoise4')
-    expect(wgsl).toContain('fn fbm')
-    expect(wgsl).toContain('fn ridged')
-    expect(wgsl).toContain('fn turbulence')
-    expect(wgsl).toContain('fn modulate')
-    expect(wgsl).toContain('fn screen')
-    expect(wgsl).toContain('fn softLight')
-  })
-
-  it('keeps legacy noise semantics and isolates loop behavior in noiseLoop()', () => {
-    const output = new CaptureOutput()
-    const registry = new HydraTransformRegistry({ defaultOutput: output })
-
-    registry.generators.noise(6.0, 0.2).out()
-    const legacyWgsl = output.passes[0].wgsl
-    expect(legacyWgsl).toContain('fn noise')
-    expect(legacyWgsl).toContain('offset * globals.time')
-    expect(legacyWgsl).not.toContain('fn noiseLoop')
-
-    registry.generators.noiseLoop(6.0, 0.2, 0.8).out()
-    const loopWgsl = output.passes[0].wgsl
-    expect(loopWgsl).toContain('fn noiseLoop')
-    expect(loopWgsl).toContain('let loopRadius = max(radius, 0.0001);')
-    expect(loopWgsl).toContain('speed * 6.28318530718')
-    expect(loopWgsl).toContain('hydraNoise4')
-    expect(loopWgsl).toContain('let rankInput = x0 + vec4f(1.0e-7, 2.0e-7, 3.0e-7, 4.0e-7);')
-  })
-
   it('applies declared offset parameters in modulateRepeat variants', () => {
     const definitions = new Map(getDefaultTransforms().map((definition) => [definition.name, definition]))
     const modulateRepeat = definitions.get('modulateRepeat')?.wgsl ?? ''
@@ -833,115 +570,6 @@ describe('HydraTransformRegistry', () => {
     expect(modulateRepeat).toContain('step(1.0, hydraMod(st.x, 2.0)) * offsetY + _c0.y * offsetY')
     expect(modulateRepeatX).toContain('step(1.0, hydraMod(st.x, 2.0)) * offset + _c0.x * offset')
     expect(modulateRepeatY).toContain('step(1.0, hydraMod(st.y, 2.0)) * offset + _c0.x * offset')
-  })
-
-  it('compiles new morphology and simulation operators as standalone multipass stages', () => {
-    const output = new CaptureOutput()
-    const registry = new HydraTransformRegistry({ defaultOutput: output })
-
-    registry.generators
-      .osc(8, 0.1, 0)
-      .dilate(1.0)
-      .erode(1.0)
-      .advect(1.0)
-      .diffuse(0.2)
-      .out()
-
-    expect(output.passes.length).toBe(5)
-    expect(output.passes[1].wgsl).toContain('fn dilate')
-    expect(output.passes[2].wgsl).toContain('fn erode')
-    expect(output.passes[3].wgsl).toContain('fn advect')
-    expect(output.passes[4].wgsl).toContain('fn diffuse')
-  })
-
-  it('propagates new analysis probes and motion state resources', () => {
-    const output = new CaptureOutput()
-    const registry = new HydraTransformRegistry({ defaultOutput: output })
-
-    registry.generators
-      .solid(0.2, 0.4, 0.6, 1.0)
-      .histogramProbe()
-      .edgeDensityProbe(1.2)
-      .motionProbe(1.0)
-      .out()
-
-    expect(output.passes.length).toBe(4)
-    expect(output.passes[1].analysisOut).toEqual([{ uniformName: 'analysis_hist4', type: 'vec4' }])
-    expect(output.passes[2].analysisOut).toEqual([{ uniformName: 'analysis_edge_density', type: 'float' }])
-    expect(output.passes[3].analysisOut).toEqual([{ uniformName: 'analysis_motion', type: 'float' }])
-    expect(output.passes[3].storageTextures?.[0].name).toBe('motionState')
-    expect(output.passes[3].storageTextures?.[0].stateKey).toBe('motion-probe-state')
-  })
-
-  it('compiles particle initialization/update kernels as linear data passes', () => {
-    const output = new CaptureOutput()
-    const registry = new HydraTransformRegistry({ defaultOutput: output })
-
-    registry.generators
-      .solid(0, 0, 0, 1)
-      .particleInit(0.5)
-      .particleStep(0.35, 0.2)
-      .out()
-
-    expect(output.passes.length).toBe(3)
-    const initPass = output.passes[1]
-    const stepPass = output.passes[2]
-
-    expect(initPass.dispatch?.domain).toBe('linear1d')
-    expect(stepPass.dispatch?.domain).toBe('linear1d')
-    expect(initPass.output).toBeUndefined()
-    expect(stepPass.output).toBeUndefined()
-    expect(initPass.storageBuffers?.[0].stateKey).toBe('particle-state')
-    expect(stepPass.storageBuffers?.[0].stateKey).toBe('particle-state')
-    expect(initPass.wgsl).toContain('hydraUvFromLinearIndex')
-    expect(stepPass.wgsl).toContain('hydraNoise')
-  })
-
-  it('attaches system generators', () => {
-    const output = new CaptureOutput()
-    const registry = new HydraTransformRegistry({ defaultOutput: output })
-    const bindings: Record<string, unknown> = {}
-    registry.attachToBindings(bindings)
-    attachSystems(bindings)
-
-    const systems = bindings.systems as Record<string, (...args: unknown[]) => { out: () => void }>
-    expect(typeof systems.particles).toBe('function')
-    expect(typeof systems.feedback).toBe('function')
-    expect(typeof systems.displace).toBe('function')
-    expect(typeof systems.probe).toBe('function')
-    expect(typeof systems.analysis).toBe('function')
-    expect(typeof bindings.analysis).toBe('function')
-
-    const particles = bindings.particles as (() => { out: () => void })
-    particles().out()
-    const particleWgsl = output.passes.map((pass) => pass.wgsl).join('\n')
-    expect(particleWgsl).toContain('fn particleScatter')
-    expect(particleWgsl).toContain('fn particleFieldRender')
-
-    const reactionDiffusion = bindings.reactionDiffusion as (() => { out: () => void })
-    reactionDiffusion().out()
-    const rdWgsl = output.passes.map((pass) => pass.wgsl).join('\n')
-    expect(rdWgsl).toContain('fn rdStepSeeded')
-
-    const fluid = bindings.fluid as (() => { out: () => void })
-    fluid().out()
-    const fluidWgsl = output.passes.map((pass) => pass.wgsl).join('\n')
-    expect(fluidWgsl).toContain('fn fluidStep')
-
-    systems.feedback().out()
-    const feedbackWgsl = output.passes.map((pass) => pass.wgsl).join('\n')
-    expect(feedbackWgsl).toContain('fn prev')
-    expect(feedbackWgsl).toContain('fn blend')
-    expect(feedbackWgsl).toContain('fn modulate')
-
-    systems.displace().out()
-    const displaceWgsl = output.passes.map((pass) => pass.wgsl).join('\n')
-    expect(displaceWgsl).toContain('fn noiseLoop')
-    expect(displaceWgsl).toContain('fn modulate')
-
-    systems.probe({ probes: ['luma', 'motion'] }).out()
-    const probePasses = output.passes.filter((pass) => pass.analysisOut && pass.analysisOut.length > 0)
-    expect(probePasses.length).toBeGreaterThan(0)
   })
 
   it('reports compile errors through registry callback', () => {

@@ -3,7 +3,6 @@ import type { HydraDependencyEdge, HydraKernelGraph, HydraKernelNode } from '../
 import type {
   HydraExecutionBarrier,
   HydraExecutionPlanDiagnostics,
-  HydraQueuePolicy,
   HydraExecutionPrimitiveSelection,
   HydraExecutionStep,
   HydraExecutionVariantCandidate,
@@ -26,10 +25,6 @@ interface PlannerSlotState {
   bytes: number
 }
 
-const DEFAULT_QUEUE_CONVERGENCE_INTERVAL = 4
-const DEFAULT_QUEUE_MAX_ITERATIONS = 64
-const DEFAULT_QUEUE_MAX_OVERFLOW = 2_147_483_647
-
 export interface HydraPlannerCapabilityProfile {
   supportedFeatures: string[]
   hasSubgroups: boolean
@@ -46,13 +41,6 @@ const resourceByteEstimate = (resource: HydraKernelGraph['resources'][number]): 
   const width = Math.max(1, Math.floor(resource.shape?.width ?? 1))
   const height = Math.max(1, Math.floor(resource.shape?.height ?? 1))
   const depth = Math.max(1, Math.floor(resource.shape?.depthOrArrayLayers ?? 1))
-  const length = Math.max(1, Math.floor(resource.shape?.minLength ?? 1))
-
-  if (resource.kind === 'Buffer') {
-    if (resource.elementType === 'f32' || resource.elementType === 'u32' || resource.elementType === 'i32') return length * 4
-    if (resource.elementType === 'vec2f') return length * 8
-    return length * 16
-  }
 
   if (resource.format === 'rgba16float') return width * height * depth * 8
   if (resource.format === 'rgba32float') return width * height * depth * 16
@@ -171,36 +159,7 @@ const selectVariantCandidate = (
 }
 
 const aliasKeyForResource = (resource: HydraKernelGraph['resources'][number]): string =>
-  resource.aliasClass ?? `${resource.kind}:${resource.format ?? resource.elementType ?? 'default'}`
-
-const createQueuePolicy = ({
-  modeHint,
-  maxIterations,
-  convergenceCheckInterval = DEFAULT_QUEUE_CONVERGENCE_INTERVAL
-}: {
-  modeHint: 'cpu' | 'gpu_hybrid'
-  maxIterations: number
-  convergenceCheckInterval?: number
-}): HydraQueuePolicy => {
-  const safeMaxIterations = Math.max(1, Math.floor(maxIterations || DEFAULT_QUEUE_MAX_ITERATIONS))
-  const safeCheckInterval = Math.max(1, Math.floor(convergenceCheckInterval || DEFAULT_QUEUE_CONVERGENCE_INTERVAL))
-  return {
-    termination: {
-      mode: 'until_empty',
-      maxIterations: safeMaxIterations,
-      minIterations: 1
-    },
-    overflow: {
-      policy: 'ignore',
-      maxOverflow: DEFAULT_QUEUE_MAX_OVERFLOW
-    },
-    convergence: {
-      strategy: modeHint === 'gpu_hybrid' ? 'hook_or_queue_counter' : 'hooks',
-      checkInterval: safeCheckInterval,
-      maxNoProgressChecks: 2
-    }
-  }
-}
+  resource.aliasClass ?? `${resource.kind}:${resource.format ?? 'default'}`
 
 const computeResourceIntervals = (
   graph: HydraKernelGraph,
@@ -412,8 +371,6 @@ export const buildExecutionSteps = (
   })
 
   const steps: HydraExecutionStep[] = []
-  let queueSegmentIndex = -1
-  let previousWasQueue = false
 
   orderedNodes.forEach((node, index) => {
     const compiledPass = compiledPassByNodeId.get(node.id)
@@ -423,23 +380,6 @@ export const buildExecutionSteps = (
 
     const candidates = collectVariantCandidates(compiledPass, capabilityProfile)
     const selected = selectVariantCandidate(candidates, selectedVariantPolicy)
-
-    const isQueue = node.schedule.dispatchDomain === 'queue1d'
-    if (isQueue && !previousWasQueue) queueSegmentIndex += 1
-    const queueMaxIterations = Math.max(1, Math.floor(node.schedule.maxIterations ?? DEFAULT_QUEUE_MAX_ITERATIONS))
-    const queueControl = isQueue
-      ? {
-        modeHint: 'gpu_hybrid' as const,
-        convergenceCheckInterval: DEFAULT_QUEUE_CONVERGENCE_INTERVAL,
-        groupId: `queue-segment-${Math.max(0, queueSegmentIndex)}`,
-        policy: createQueuePolicy({
-          modeHint: 'gpu_hybrid',
-          maxIterations: queueMaxIterations,
-          convergenceCheckInterval: DEFAULT_QUEUE_CONVERGENCE_INTERVAL
-        })
-      }
-      : undefined
-    previousWasQueue = isQueue
 
     steps.push({
       id: `step${index}`,
@@ -454,8 +394,6 @@ export const buildExecutionSteps = (
         reason: candidate.reason
       })),
       fallbackDepth: countFallbackDepth(selected.pass),
-      maxIterations: isQueue ? queueMaxIterations : node.schedule.maxIterations,
-      queueControl,
       primitive: primitiveByNodeId.get(node.id),
       compiledPass: selected.pass,
       barriersBefore: barriersByNode.get(node.id) ?? []
@@ -473,7 +411,7 @@ export const scoreExecutionPlan = (
   totalPlannedBytes: number,
   barrierCount: number
 ): HydraExecutionPlanDiagnostics => {
-  const dispatchCost = steps.reduce((sum, step) => sum + (step.dispatchDomain.includes('indirect') ? 1.25 : 1), 0)
+  const dispatchCost = steps.reduce((sum, step) => sum + (step.compiledPass.dispatch?.mode === 'indirect' ? 1.25 : 1), 0)
   const memoryCost = totalPlannedBytes / 1_000_000
   const fallbackRiskCost = steps.reduce((sum, step) => {
     if (step.variant === 'subgroup') return sum + 0.6
@@ -487,18 +425,11 @@ export const scoreExecutionPlan = (
     subgroup: 0
   }
   const primitiveSelectionCounts: Record<string, number> = {}
-  const queueGroups = new Set<string>()
-  let queueStepCount = 0
   steps.forEach((step) => {
     selectedVariantCounts[step.variant] += 1
     const key = step.primitive?.kind
     if (!key) return
     primitiveSelectionCounts[key] = (primitiveSelectionCounts[key] ?? 0) + 1
-  })
-  steps.forEach((step) => {
-    if (step.dispatchDomain !== 'queue1d') return
-    queueStepCount += 1
-    if (step.queueControl?.groupId) queueGroups.add(step.queueControl.groupId)
   })
 
   const score =
@@ -520,8 +451,6 @@ export const scoreExecutionPlan = (
     fallbackRiskRate,
     selectedVariantCounts,
     primitiveSelectionCounts,
-    queueStepCount,
-    queueSegmentCount: queueGroups.size,
     barrierCount,
     nodeOrder: steps.map((step) => step.nodeId)
   }

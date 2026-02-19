@@ -10,8 +10,7 @@ import {
   type HydraTransformCall,
   type HydraTransformDefinition,
   type ScriptPlugin,
-  type HydraDebugEvent,
-  attachSystems
+  type HydraDebugEvent
 } from 'hydra-synth-core'
 import type { BrowserHost } from './browser-host.js'
 import type { CanvasDisplayOptions } from './browser-host.js'
@@ -26,7 +25,6 @@ import {
 } from './autotune.js'
 import { buildProfilerSnapshot, type HydraProfilerSnapshot } from './profiler.js'
 import { HydraExecutor, type HydraExecutePlanOptions, type ExecutePlanResult } from './executor.js'
-import { HydraResourceManager } from './resource-manager.js'
 import type { WebGPUCapabilities, WebGPURenderer } from '../webgpu/renderer.js'
 
 const mapTuningPolicyToVariantPolicy = (
@@ -224,7 +222,6 @@ export class HydraBrowserRuntime {
     })
     registryRef = this.registry
     this.registry.attachToBindings(this.synth)
-    attachSystems(this.synth, { emitEvent: this.emitEvent.bind(this) })
 
     if (autoLoop) {
       void this.start().catch(() => { })
@@ -242,9 +239,7 @@ export class HydraBrowserRuntime {
       this.capabilities = this.renderer.getCapabilities()
       this.synth.capabilities = this.capabilities
       if (!this.executor) {
-        this.executor = new HydraExecutor({
-          resourceManager: new HydraResourceManager(this.renderer)
-        })
+        this.executor = new HydraExecutor()
       }
     })
     return this.initPromise
@@ -343,9 +338,7 @@ export class HydraBrowserRuntime {
 
   private ensureExecutor(): HydraExecutor {
     if (!this.executor) {
-      this.executor = new HydraExecutor({
-        resourceManager: new HydraResourceManager(this.renderer)
-      })
+      this.executor = new HydraExecutor()
     }
     return this.executor
   }
@@ -395,10 +388,7 @@ export class HydraBrowserRuntime {
         output,
         plan,
         this.getCurrentFrameState(),
-        {
-          queueMode: plan.executionPolicy?.queueModeDefault,
-          queuePolicy: plan.executionPolicy?.queuePolicyDefault
-        }
+        {}
       )
       this.lastPlan = plan
       this.routingDiagnostics.activeMode = 'compute'
@@ -432,11 +422,7 @@ export class HydraBrowserRuntime {
     const plan = this.compilePlan(graphNode)
     if (!plan) return null
     this.lastExecuteResult = this.ensureExecutor().executePlan(output, plan, this.getCurrentFrameState(), {
-      queueMode: options.queueMode ?? plan.executionPolicy?.queueModeDefault,
-      queueConvergenceCheckInterval: options.queueConvergenceCheckInterval,
-      queueHooks: options.queueHooks,
-      forceQueueIndirect: options.forceQueueIndirect,
-      queuePolicy: options.queuePolicy ?? plan.executionPolicy?.queuePolicyDefault
+      ...options
     })
     this.routingDiagnostics.activeMode = 'compute'
     this.lastPlan = plan
@@ -456,18 +442,6 @@ export class HydraBrowserRuntime {
       outputs: this.outputs,
       capabilities: this.capabilities,
       residentBytesEstimate,
-      residency: this.executor?.getResidencySnapshot() ?? null,
-      queueMetrics: this.lastExecuteResult
-        ? {
-          iterations: this.lastExecuteResult.queueIterations,
-          overflowCount: this.lastExecuteResult.queueOverflowCount,
-          overflowEvents: this.lastExecuteResult.queueOverflowEvents,
-          indirectDispatches: this.lastExecuteResult.queueIndirectDispatches,
-          convergenceChecks: this.lastExecuteResult.queueConvergenceChecks,
-          terminationReasons: this.lastExecuteResult.queueTerminationReasons,
-          checksPerSegment: this.lastExecuteResult.queueChecksPerSegment
-        }
-        : null,
       routingMetrics: {
         configuredMode: this.routingDiagnostics.configuredMode,
         activeMode: this.routingDiagnostics.activeMode,

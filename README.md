@@ -5,7 +5,7 @@ Hydra v2 is a workspace-split rewrite with strict package boundaries and ESM-onl
 ## Packages
 
 - `hydra-synth-core`: engine lifecycle, transform registry, WGSL pass compilation, DSL-to-IR lowering, execution-plan compilation/validation, primitive descriptors and CPU references.
-- `hydra-synth`: browser host, WebGPU renderer, compute-plan runtime execution, capture helpers, queue execution utilities, profiler/autotune helpers, benchmark corpus/report utilities.
+- `hydra-synth`: browser host, WebGPU renderer, compute-plan runtime execution, capture helpers, profiler/autotune helpers, benchmark corpus/report utilities.
 - `hydra-synth-livecoding`: optional plugin for explicit livecoding attach/run/dispose behavior and controlled global binding injection.
 
 ## Architecture
@@ -55,29 +55,17 @@ const renderer = new WebGPURenderer({ canvas: host.canvas })
 const runtime = new HydraBrowserRuntime({ host, renderer, autoLoop: true })
 ```
 
-## Multipass And Compute Features
+## Multipass And Renderpass Features
 
-Transform chains are split into sequential compute passes when standalone transform types are present (`renderpass`, `simulation`, `analysis`, `kernel`), with `prevBuffer` handoff where needed.
+Transform chains are split into sequential compute passes when standalone renderpass transforms are present, with `prevBuffer` handoff where needed.
 
-Built-in post/fx and compute-native coverage includes:
+Built-in coverage includes:
 
 - classic Hydra transforms (`osc`, `noise`, `shape`, coord/color/combine ops, `prev`, `prevN`)
 - low-level synthesis/operator extensions (`noiseLoop(scale, speed, radius)`, `fbm`, `ridged`, `turbulence`, `screen`, `overlay`, `softLight`, `hardLight`, `colorDodge`, `colorBurn`)
 - multipass/post-processing transforms (for example `blurX`, `blurY`, `blurTiledX`, `blurSubgroupX`, `blurFast`, `edgeDetect`, `edgeLaplacian`, `radialBlur`, `zoomBlur`, `dualKawaseBlur`, `dualKawaseBloom`, `toneMap`, `exposure`)
-- simulation/analysis/data transforms (`rdStep`, `advect`, `diffuse`, `trailScatter`, `lumaProbe`, `histogramProbe`, `edgeDensityProbe`, `motionProbe`, `bufferFill`, `bufferDecay`, `bufferIndexProbe`, `particleInit`, `particleStep`)
 
 For full built-in transform definitions, see `packages/core/src/transforms/default-transforms.ts`.
-
-Macro-level system conventions are documented in `packages/core/SYSTEMS_CONVENTIONS.md`.
-
-## Systems (Macro Layer)
-
-Macro-level systems are graph builders that bundle multi-pass behavior behind a small parameter surface. When `attachSystems` is used by the host runtime, they are available under `systems.*` and remain compatible with the standard DSL chain:
-
-```js
-systems.feedback({ mix: 0.85, modulate: 0.08, scale: 1.01 }).out()
-systems.displace({ amount: 0.12, detailAmount: 0.06 }).out()
-```
 
 ## Optional Livecoding Plugin
 

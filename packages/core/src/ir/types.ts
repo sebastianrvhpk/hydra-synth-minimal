@@ -1,40 +1,20 @@
 import type {
   HydraPassUpdateRate,
-  HydraResourceAccess,
-  HydraResourceElementType,
   HydraResourceFormat,
-  HydraResourceLifetime,
-  HydraStorageBufferBinding,
-  HydraStorageTextureBinding,
   HydraTextureBinding,
   HydraTransformCall,
   HydraUniformBinding
 } from '../types.js'
 
-export type HydraKernelNodeKind =
-  | 'ImageKernel'
-  | 'DataKernel'
-  | 'ReductionKernel'
-  | 'QueueProducer'
-  | 'QueueConsumer'
-  | 'Present'
+export type HydraKernelNodeKind = 'ImageKernel'
 
 export type HydraResourceKind =
   | 'Texture2D'
-  | 'Texture2DArray'
-  | 'Buffer'
-  | 'IndirectArgs'
-  | 'QueueBuffer'
   | 'HistoryRing'
 
-export type HydraDependencyEdgeKind = 'RAW' | 'WAR' | 'WAW' | 'Event' | 'QueueFlow'
+export type HydraDependencyEdgeKind = 'RAW' | 'WAR' | 'WAW' | 'Event'
 
-export type HydraDispatchDomain =
-  | 'pixel2d'
-  | 'linear1d'
-  | 'indirect2d'
-  | 'indirect1d'
-  | 'queue1d'
+export type HydraDispatchDomain = 'pixel2d'
 
 export interface HydraKernelSchedule {
   resolutionScale: number
@@ -42,7 +22,6 @@ export interface HydraKernelSchedule {
   sparse: boolean
   dispatchDomain: HydraDispatchDomain
   variantPolicy: 'compat' | 'balanced' | 'aggressive'
-  maxIterations?: number
 }
 
 export interface HydraKernelResourceShape {
@@ -55,11 +34,8 @@ export interface HydraKernelResourceShape {
 export interface HydraKernelResourceSpec {
   id: string
   kind: HydraResourceKind
-  access: HydraResourceAccess
   format?: HydraResourceFormat
-  elementType?: HydraResourceElementType
-  lifetime: HydraResourceLifetime | 'history' | 'external' | 'transient'
-  historyDepth?: number
+  lifetime: 'history' | 'external' | 'transient'
   shape?: HydraKernelResourceShape
   aliasClass?: string
   externalBinding?: string
@@ -78,8 +54,6 @@ export interface HydraKernelNode {
   transforms: HydraTransformCall[]
   uniforms: HydraUniformBinding[]
   textures: HydraTextureBinding[]
-  storageBuffers: HydraStorageBufferBinding[]
-  storageTextures: HydraStorageTextureBinding[]
   schedule: HydraKernelSchedule
   resources: string[]
   reads: string[]
@@ -103,4 +77,3 @@ export interface HydraKernelGraph {
   resources: HydraKernelResourceSpec[]
   edges: HydraDependencyEdge[]
 }
-

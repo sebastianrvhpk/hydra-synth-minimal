@@ -1,12 +1,7 @@
 import type {
   HydraFrameState,
-  HydraResourceAccess,
-  HydraResourceElementType,
-  HydraResourceFormat,
-  HydraResourceLifetime,
   HydraTransformCall,
   HydraTypedArgument,
-  HydraTypedResource,
   HydraWgslType
 } from '../types.js'
 
@@ -15,10 +10,7 @@ const WGSL_TYPES: Record<string, HydraWgslType> = {
   vec2: 'vec2f',
   vec3: 'vec3f',
   vec4: 'vec4f',
-  sampler2D: 'texture_2d<f32>',
-  storageTexture2D: 'texture_storage_2d<rgba8unorm, read_write>',
-  storageTexture2DArray: 'texture_storage_2d_array<rgba8unorm, read_write>',
-  storageBuffer: 'ptr<storage, array<vec4f>, read_write>'
+  sampler2D: 'texture_2d<f32>'
 }
 
 const ensureFloatLiteral = (value: unknown): string => {
@@ -41,12 +33,6 @@ const vecLiteral = (value: unknown, len: number): string => {
 }
 
 const sanitizeName = (name: string): string => name.replace(/[^a-zA-Z0-9_]/g, '_')
-
-const isResourceBindingMap = (value: unknown): value is Record<string, unknown> => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
-  if ('transforms' in value || 'getTexture' in value || 'getBuffer' in value) return false
-  return true
-}
 
 const toFiniteNumber = (value: unknown, fallback = 0): number => {
   if (typeof value === 'number' && Number.isFinite(value)) return value
@@ -209,12 +195,6 @@ export const formatArguments = (
       return typedArg
     }
 
-    if (input.type === 'storageBuffer' || input.type === 'storageTexture2D' || input.type === 'storageTexture2DArray') {
-      throw new Error(
-        `Resource input "${input.name}" in "${transform.name}" must be declared under "resources", not "inputs".`
-      )
-    }
-
     if (
       typedArg.type === 'vec4' &&
       typedArg.value &&
@@ -260,137 +240,5 @@ export const formatArguments = (
 
     typedArg.literal = `${typedArg.value ?? 0}`
     return typedArg
-  })
-}
-
-interface ResolvedResourceOptions {
-  access: HydraResourceAccess
-  format: HydraResourceFormat | undefined
-  lifetime: HydraResourceLifetime
-  stateKey: string | undefined
-  elementType: HydraResourceElementType
-  minLength: number
-  widthScale: number | undefined
-  heightScale: number | undefined
-  depthOrArrayLayers: number | undefined
-}
-
-const normalizeScale = (value: unknown): number | undefined => {
-  const numberValue = Number(value)
-  if (!Number.isFinite(numberValue) || numberValue <= 0) return undefined
-  return numberValue
-}
-
-const normalizeArrayLayers = (value: unknown): number | undefined => {
-  const numberValue = Number(value)
-  if (!Number.isFinite(numberValue) || numberValue <= 0) return undefined
-  return Math.max(1, Math.floor(numberValue))
-}
-
-const resolveResourceOptions = (
-  input: {
-    type: string
-    access?: HydraResourceAccess
-    format?: HydraResourceFormat
-    lifetime?: HydraResourceLifetime
-  stateKey?: string
-  elementType?: HydraResourceElementType
-  minLength?: number
-  widthScale?: number
-  heightScale?: number
-  depthOrArrayLayers?: number
-  }
-): ResolvedResourceOptions => ({
-  access: input.access ?? (input.type === 'storageBuffer' ? 'read_write' : 'read_write'),
-  format: input.format,
-  lifetime: input.lifetime ?? 'frame',
-  stateKey: input.stateKey,
-  elementType: input.elementType ?? 'vec4f',
-  minLength: Math.max(1, Number.isFinite(input.minLength) ? Math.floor(input.minLength ?? 1) : 1),
-  widthScale: normalizeScale(input.widthScale),
-  heightScale: normalizeScale(input.heightScale),
-  depthOrArrayLayers: normalizeArrayLayers(input.depthOrArrayLayers)
-})
-
-const resolveResourceValue = (
-  userArgs: unknown[],
-  inputCount: number,
-  index: number,
-  name: string,
-  fallback: unknown
-): unknown => {
-  const maybeMap = userArgs.length > 0 ? userArgs[userArgs.length - 1] : undefined
-  if (isResourceBindingMap(maybeMap) && Object.prototype.hasOwnProperty.call(maybeMap, name)) {
-    return maybeMap[name]
-  }
-
-  const byPosition = userArgs[inputCount + index]
-  if (typeof byPosition !== 'undefined') return byPosition
-  return fallback
-}
-
-export const formatResourceBindings = (
-  transform: HydraTransformCall,
-  startIndex = 0
-): HydraTypedResource[] => {
-  const resources = transform.transform.resources ?? []
-  const inputCount = (transform.transform.inputs ?? []).length
-  const userArgs = transform.userArgs ?? []
-
-  return resources.map((resource, index) => {
-    const value = resolveResourceValue(userArgs, inputCount, index, resource.name, resource.default)
-    const options = resolveResourceOptions(resource)
-    const variableName = sanitizeName(resource.name)
-    const resourceEntry: HydraTypedResource = {
-      name: resource.name,
-      type: resource.type,
-      access: options.access,
-      lifetime: options.lifetime,
-      stateKey: options.stateKey,
-      format: options.format,
-      elementType: options.elementType,
-      minLength: options.minLength,
-      widthScale: options.widthScale,
-      heightScale: options.heightScale,
-      depthOrArrayLayers: options.depthOrArrayLayers,
-      variableName,
-      value,
-      getTexture: null,
-      getBuffer: null
-    }
-
-    if (value && typeof value === 'object' && 'getTexture' in value && typeof value.getTexture === 'function') {
-      resourceEntry.getTexture = () => value.getTexture()
-      resourceEntry.sourceRef = value
-      return resourceEntry
-    }
-
-    if (value && typeof value === 'object' && 'getBuffer' in value && typeof value.getBuffer === 'function') {
-      resourceEntry.getBuffer = () => value.getBuffer()
-      resourceEntry.sourceRef = value
-      return resourceEntry
-    }
-
-    if (typeof value === 'function') {
-      if (resource.type === 'storageBuffer') {
-        resourceEntry.getBuffer = value as () => unknown
-      } else {
-        resourceEntry.getTexture = value as () => unknown
-      }
-      return resourceEntry
-    }
-
-    const canAutoAllocate = Boolean(resourceEntry.stateKey) || resourceEntry.lifetime === 'persistent'
-    if (canAutoAllocate) return resourceEntry
-
-    if (resource.type === 'storageBuffer') {
-      throw new Error(`Expected a storage buffer provider for resource "${resource.name}" in "${transform.name}"`)
-    }
-
-    if (resource.type === 'storageTexture2D' || resource.type === 'storageTexture2DArray') {
-      throw new Error(`Expected a storage texture provider for resource "${resource.name}" in "${transform.name}"`)
-    }
-
-    return resourceEntry
   })
 }

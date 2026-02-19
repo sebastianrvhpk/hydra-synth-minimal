@@ -7,9 +7,7 @@ export { compileWgslPass, buildStructureSignature } from './transforms/compile-w
 export { splitPasses } from './transforms/split-passes.js'
 export {
   lowerDslToIr,
-  getTextureResourceId,
-  getStorageBufferResourceId,
-  getStorageTextureResourceId
+  getTextureResourceId
 } from './lowering/dsl-to-ir.js'
 export { dumpKernelGraph } from './ir/dump.js'
 export { validateKernelGraph, throwOnKernelGraphErrors } from './ir/validate.js'
@@ -18,19 +16,6 @@ export { validateExecutionPlan, throwOnExecutionPlanErrors } from './compiler/va
 export { PRIMITIVE_DESCRIPTORS, getPrimitiveDescriptorByKind } from './primitives/descriptors.js'
 export { PRIMITIVE_WGSL_MODULES } from './primitives/wgsl/index.js'
 export {
-  attachSystems,
-  SYSTEM_DEFINITIONS
-} from './systems/index.js'
-export { attachHighLevelHelpers } from './helpers/high-level.js'
-export {
-  reduceMeanLumaCpu,
-  histogramLumaCpu,
-  exclusiveScanU32Cpu,
-  compactByPredicateCpu,
-  radixSortKeyValueU32Cpu,
-  queueAppendConsumeCountCpu,
-  scatterToTexture2DCpu,
-  gatherFromTexture2DCpu,
   pyramidDownsampleCpu,
   pyramidUpsampleCpu
 } from './primitives/cpu-reference.js'
@@ -40,7 +25,6 @@ export { collectUtilityDeclarations } from './transforms/utility-wgsl.js'
 
 export type {
   Disposable,
-  HydraAnalysisOutputBinding,
   HydraCompiledPass,
   HydraDispatchDomain,
   HydraDispatchConfig,
@@ -60,26 +44,18 @@ export type {
   HydraPassUpdateRate,
   HydraComputeKernelDescriptor,
   HydraComputeKernelVariant,
-  HydraKernelSemantics,
-  HydraResourceAccess,
-  HydraResourceElementType,
   HydraResourceFormat,
-  HydraResourceLifetime,
-  HydraStorageBufferBinding,
-  HydraStorageTextureBinding,
   HydraTextureBinding,
   HydraTextureProvider,
   HydraTransformCall,
   HydraTransformDefinition,
   HydraTransformInput,
   HydraTransformInputType,
-  HydraTransformResource,
   HydraTransformRegistryChangeEvent,
   HydraTransformRegistryHost,
   HydraTransformRegistryOptions,
   HydraTransformType,
   HydraTypedArgument,
-  HydraTypedResource,
   HydraUniformBinding,
   HydraWgslType,
   ProcessedHydraTransform,
@@ -102,14 +78,7 @@ export type {
   HydraExecutionVariantCandidate,
   HydraExecutionPrimitiveSelection,
   HydraResourceAllocationPlan,
-  HydraExecutionPlanDiagnostics,
-  HydraQueuePolicy,
-  HydraQueueTerminationPolicy,
-  HydraQueueOverflowControl,
-  HydraQueueConvergencePolicy,
-  HydraQueueTerminationMode,
-  HydraQueueOverflowPolicy,
-  HydraQueueConvergenceStrategy
+  HydraExecutionPlanDiagnostics
 } from './compiler/types.js'
 export type { HydraExecutionPlanValidationIssue } from './compiler/validate-plan.js'
 
@@ -118,17 +87,3 @@ export type {
   HydraPrimitiveDescriptor,
   HydraPrimitiveCapabilityConstraint
 } from './primitives/types.js'
-export type {
-  AttachSystemsOptions,
-  ParticlesOptions,
-  ReactionDiffusionOptions,
-  FluidOptions,
-  FeedbackOptions,
-  DisplaceOptions,
-  ProbeOptions,
-  ProbeName,
-  HydraSystemDefinition,
-  HydraSystemInputSpec,
-  HydraSystemInputKind
-} from './systems/index.js'
-export type { AttachHighLevelHelpersOptions } from './helpers/high-level.js'
