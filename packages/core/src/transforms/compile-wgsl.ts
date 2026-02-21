@@ -452,8 +452,8 @@ fn hydraDynamicUniformVec4(index: u32) -> vec4f {
     `|rs${shaderInfo.schedule.resolutionScale}|sp${shaderInfo.schedule.sparse ? 1 : 0}|f${functionSignature}`
 
   // NOTE:
-  // The shader intentionally uses @builtin(position) in fragment stage to
-  // reconstruct normalized coordinates exactly at pixel centers.
+  // @builtin(position) in fragment stage is already at pixel centers
+  // (x + 0.5, y + 0.5). Do not add another 0.5 offset here.
   const wgsl = `
 struct GlobalUniforms {
   time: f32,
@@ -490,7 +490,7 @@ fn vsMain(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4f {
 fn fsMain(in: FragmentInput) -> @location(0) vec4f {
   let safeWidth = max(globals.width, 1.0);
   let safeHeight = max(globals.height, 1.0);
-  var st = vec2f((in.position.x + 0.5) / safeWidth, (in.position.y + 0.5) / safeHeight);
+  var st = vec2f(in.position.x / safeWidth, in.position.y / safeHeight);
   var c = vec4f(0.0);
   ${shaderInfo.fragColor}
   return c;

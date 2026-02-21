@@ -32,6 +32,19 @@ describe('HydraTransformRegistry', () => {
     expect(output.passes[0].wgsl).toContain('fn fsMain')
   })
 
+  it('uses fragment position directly when reconstructing normalized coordinates', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators.osc(4, 0.1, 0.2).out()
+
+    expect(output.passes.length).toBe(1)
+    const wgsl = output.passes[0].wgsl
+    expect(wgsl).toContain('var st = vec2f(in.position.x / safeWidth, in.position.y / safeHeight);')
+    expect(wgsl).not.toContain('(in.position.x + 0.5)')
+    expect(wgsl).not.toContain('(in.position.y + 0.5)')
+  })
+
   it('splits renderpass transforms into sequential GPU passes', () => {
     const output = new CaptureOutput()
     const registry = new HydraTransformRegistry({ defaultOutput: output })
