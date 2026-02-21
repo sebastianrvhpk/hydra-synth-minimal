@@ -3,9 +3,7 @@ import type { HydraDependencyEdge, HydraKernelGraph, HydraKernelNode } from '../
 import type {
   HydraExecutionBarrier,
   HydraExecutionPlanDiagnostics,
-  HydraExecutionPrimitiveSelection,
   HydraExecutionStep,
-  HydraExecutionVariantCandidate,
   HydraResourceAllocationPlan
 } from './types.js'
 
@@ -14,21 +12,11 @@ interface ResourceInterval {
   end: number
 }
 
-interface VariantPassCandidate extends HydraExecutionVariantCandidate {
-  pass: HydraCompiledPass
-}
-
 interface PlannerSlotState {
   id: string
   aliasGroup: string
   end: number
   bytes: number
-}
-
-export interface HydraPlannerCapabilityProfile {
-  supportedFeatures: string[]
-  hasSubgroups: boolean
-  maxWorkgroupStorageBytes: number
 }
 
 export interface HydraResourcePlanningResult {
@@ -49,12 +37,7 @@ const resourceByteEstimate = (resource: HydraKernelGraph['resources'][number]): 
   return width * height * depth * 4
 }
 
-const variantOfPass = (pass: HydraCompiledPass): HydraExecutionStep['variant'] => {
-  const requiredFeatures = pass.dispatch?.requiredFeatures ?? []
-  if (requiredFeatures.includes('subgroups')) return 'subgroup'
-  if ((pass.dispatch?.requiredWorkgroupStorageBytes ?? 0) > 0) return 'tiled'
-  return 'generic'
-}
+const variantOfPass = (_pass: HydraCompiledPass): HydraExecutionStep['variant'] => 'fragment'
 
 const resolveResourceRef = (resourceIds: Set<string>, reference: string): string | null => {
   if (resourceIds.has(reference)) return reference
@@ -65,103 +48,10 @@ const resolveResourceRef = (resourceIds: Set<string>, reference: string): string
   return null
 }
 
-const flattenFallbackChain = (root: HydraCompiledPass): HydraCompiledPass[] => {
-  const chain: HydraCompiledPass[] = []
-  const visited = new Set<string>()
-  let current: HydraCompiledPass | undefined = root
-  while (current && !visited.has(current.signature)) {
-    visited.add(current.signature)
-    chain.push(current)
-    current = current.fallbackPass
-  }
-  return chain
-}
-
-const countFallbackDepth = (pass: HydraCompiledPass): number => {
-  return Math.max(0, flattenFallbackChain(pass).length - 1)
-}
-
-const evaluateCandidateLegality = (
-  pass: HydraCompiledPass,
-  capabilityProfile: HydraPlannerCapabilityProfile
-): { legal: boolean, reason?: string } => {
-  const requiredFeatures = pass.dispatch?.requiredFeatures ?? []
-  if (requiredFeatures.length > 0) {
-    const supported = new Set(capabilityProfile.supportedFeatures)
-    for (const feature of requiredFeatures) {
-      if (feature === 'subgroups' && !capabilityProfile.hasSubgroups) {
-        return { legal: false, reason: 'missing-feature:subgroups' }
-      }
-      if (!supported.has(feature)) {
-        return { legal: false, reason: `missing-feature:${feature}` }
-      }
-    }
-  }
-
-  const requiredStorage = pass.dispatch?.requiredWorkgroupStorageBytes ?? 0
-  if (
-    requiredStorage > 0 &&
-    capabilityProfile.maxWorkgroupStorageBytes > 0 &&
-    requiredStorage > capabilityProfile.maxWorkgroupStorageBytes
-  ) {
-    return {
-      legal: false,
-      reason: `workgroup-storage-exceeded:${requiredStorage}>${capabilityProfile.maxWorkgroupStorageBytes}`
-    }
-  }
-
-  return { legal: true }
-}
-
-const collectVariantCandidates = (
-  pass: HydraCompiledPass,
-  capabilityProfile: HydraPlannerCapabilityProfile
-): VariantPassCandidate[] => {
-  return flattenFallbackChain(pass).map((candidate) => {
-    const legality = evaluateCandidateLegality(candidate, capabilityProfile)
-    return {
-      pass: candidate,
-      variant: variantOfPass(candidate),
-      signature: candidate.signature,
-      legal: legality.legal,
-      reason: legality.reason
-    }
-  })
-}
-
-const selectVariantCandidate = (
-  candidates: VariantPassCandidate[],
-  policy: HydraExecutionPlanDiagnostics['selectedVariantPolicy']
-): VariantPassCandidate => {
-  const preferenceOrder: Record<
-    HydraExecutionPlanDiagnostics['selectedVariantPolicy'],
-    Array<HydraExecutionStep['variant']>
-  > = {
-    compat: ['generic', 'tiled', 'subgroup'],
-    balanced: ['tiled', 'generic', 'subgroup'],
-    aggressive: ['subgroup', 'tiled', 'generic']
-  }
-
-  const legal = candidates.filter((candidate) => candidate.legal)
-  const pool = legal.length > 0 ? legal : candidates
-  const preference = preferenceOrder[policy]
-
-  for (const variant of preference) {
-    const match = pool.find((candidate) => candidate.variant === variant)
-    if (match) return match
-  }
-
-  const fallback = pool[0] ?? candidates[0]
-  if (!fallback) {
-    throw new Error('Missing compiled pass variants while selecting execution candidate.')
-  }
-  return fallback
-}
-
 const aliasKeyForResource = (resource: HydraKernelGraph['resources'][number]): string =>
   resource.aliasClass ?? `${resource.kind}:${resource.format ?? 'default'}`
 
-const computeResourceIntervals = (
+const deriveResourceIntervals = (
   graph: HydraKernelGraph,
   orderedNodes: HydraKernelNode[]
 ): Map<string, ResourceInterval> => {
@@ -256,7 +146,7 @@ export const planResourceAllocations = (
   graph: HydraKernelGraph,
   orderedNodes: HydraKernelNode[]
 ): HydraResourcePlanningResult => {
-  const intervals = computeResourceIntervals(graph, orderedNodes)
+  const intervals = deriveResourceIntervals(graph, orderedNodes)
   const slotState = new Map<string, PlannerSlotState>()
   const slotsByAlias = new Map<string, PlannerSlotState[]>()
   let transientSlotCounter = 0
@@ -358,10 +248,7 @@ export const planResourceAllocations = (
 export const buildExecutionSteps = (
   orderedNodes: HydraKernelNode[],
   compiledPassByNodeId: Map<string, HydraCompiledPass>,
-  barriers: HydraExecutionBarrier[],
-  selectedVariantPolicy: HydraExecutionPlanDiagnostics['selectedVariantPolicy'],
-  capabilityProfile: HydraPlannerCapabilityProfile,
-  primitiveByNodeId: Map<string, HydraExecutionPrimitiveSelection> = new Map()
+  barriers: HydraExecutionBarrier[]
 ): HydraExecutionStep[] => {
   const barriersByNode = new Map<string, HydraExecutionBarrier[]>()
   barriers.forEach((barrier) => {
@@ -378,24 +265,12 @@ export const buildExecutionSteps = (
       throw new Error(`Missing compiled pass for node "${node.id}".`)
     }
 
-    const candidates = collectVariantCandidates(compiledPass, capabilityProfile)
-    const selected = selectVariantCandidate(candidates, selectedVariantPolicy)
-
     steps.push({
       id: `step${index}`,
       nodeId: node.id,
-      signature: selected.pass.signature,
-      dispatchDomain: node.schedule.dispatchDomain,
-      variant: selected.variant,
-      variantCandidates: candidates.map((candidate) => ({
-        variant: candidate.variant,
-        signature: candidate.signature,
-        legal: candidate.legal,
-        reason: candidate.reason
-      })),
-      fallbackDepth: countFallbackDepth(selected.pass),
-      primitive: primitiveByNodeId.get(node.id),
-      compiledPass: selected.pass,
+      signature: compiledPass.signature,
+      variant: variantOfPass(compiledPass),
+      compiledPass,
       barriersBefore: barriersByNode.get(node.id) ?? []
     })
   })
@@ -406,51 +281,28 @@ export const buildExecutionSteps = (
 export const scoreExecutionPlan = (
   steps: HydraExecutionStep[],
   _allocations: HydraResourceAllocationPlan[],
-  selectedVariantPolicy: HydraExecutionPlanDiagnostics['selectedVariantPolicy'],
   peakTransientBytes: number,
   totalPlannedBytes: number,
   barrierCount: number
 ): HydraExecutionPlanDiagnostics => {
-  const dispatchCost = steps.reduce((sum, step) => sum + (step.compiledPass.dispatch?.mode === 'indirect' ? 1.25 : 1), 0)
+  const runCost = steps.length
   const memoryCost = totalPlannedBytes / 1_000_000
-  const fallbackRiskCost = steps.reduce((sum, step) => {
-    if (step.variant === 'subgroup') return sum + 0.6
-    if (step.variant === 'tiled') return sum + 0.3
-    return sum + 0.05
-  }, 0)
-  const fallbackRiskRate = steps.length > 0 ? fallbackRiskCost / steps.length : 0
-  const selectedVariantCounts: Record<'generic' | 'tiled' | 'subgroup', number> = {
-    generic: 0,
-    tiled: 0,
-    subgroup: 0
-  }
-  const primitiveSelectionCounts: Record<string, number> = {}
-  steps.forEach((step) => {
-    selectedVariantCounts[step.variant] += 1
-    const key = step.primitive?.kind
-    if (!key) return
-    primitiveSelectionCounts[key] = (primitiveSelectionCounts[key] ?? 0) + 1
-  })
+  const barrierCost = barrierCount / Math.max(steps.length, 1)
 
   const score =
-    (dispatchCost * 0.45) +
-    (memoryCost * 0.25) +
-    (fallbackRiskCost * 0.2) +
-    ((barrierCount / Math.max(steps.length, 1)) * 0.1)
+    (runCost * 0.55) +
+    (memoryCost * 0.35) +
+    (barrierCost * 0.1)
 
   return {
     score,
     scoreBreakdown: {
-      dispatchCost,
+      runCost,
       memoryCost,
-      fallbackRiskCost
+      barrierCost
     },
-    selectedVariantPolicy,
     peakTransientBytes,
     totalPlannedBytes,
-    fallbackRiskRate,
-    selectedVariantCounts,
-    primitiveSelectionCounts,
     barrierCount,
     nodeOrder: steps.map((step) => step.nodeId)
   }

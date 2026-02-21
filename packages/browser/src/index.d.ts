@@ -1,7 +1,6 @@
 import { HydraEngine } from 'hydra-synth-core'
 import type {
   HydraCompiledPass,
-  HydraDispatchConfig,
   HydraEngineBindingHost,
   HydraEngineError,
   HydraEngineErrorType,
@@ -23,7 +22,6 @@ import type {
 export { HydraEngine }
 export type {
   HydraCompiledPass,
-  HydraDispatchConfig,
   HydraEngineBindingHost,
   HydraEngineError,
   HydraEngineErrorType,
@@ -70,31 +68,13 @@ export interface WebGPURendererOptions {
   height?: number
 }
 
-export interface WebGPUComputeCapabilities {
-  maxComputeInvocationsPerWorkgroup: number
-  maxComputeWorkgroupStorageSize: number
-  maxComputeWorkgroupSizeX: number
-  maxComputeWorkgroupSizeY: number
-  maxComputeWorkgroupSizeZ: number
-}
-
-export interface WebGPUStorageCapabilities {
-  maxStorageBuffersPerShaderStage: number
-  maxStorageTexturesPerShaderStage: number
-  maxBufferSize: number
-  preferredStorageFormats: string[]
-}
-
-export interface WebGPUSubgroupCapabilities {
-  supported: boolean
-  minSize: number | null
-  maxSize: number | null
+export interface WebGPUFragmentCapabilities {
+  targetFormat: GPUTextureFormat
+  maxColorAttachments: number
 }
 
 export interface WebGPUCapabilities {
-  compute: WebGPUComputeCapabilities
-  storage: WebGPUStorageCapabilities
-  subgroups: WebGPUSubgroupCapabilities
+  fragment: WebGPUFragmentCapabilities
   features: string[]
 }
 
@@ -111,7 +91,6 @@ export declare class WebGPURenderer {
   globalUniformBuffer: GPUBuffer | null
   linearSampler: GPUSampler | null
   fallbackTexture: GPUTexture | null
-  fallbackTextureArray: GPUTexture | null
   capabilities: WebGPUCapabilities | null
   constructor (options: WebGPURendererOptions)
   static assertSupport (): void
@@ -129,12 +108,9 @@ export declare class WebGPURenderer {
     }
   ): GPUTexture
   createDynamicUniformBuffer (label: string): GPUBuffer
-  createStorageBuffer (label: string, byteLength: number): GPUBuffer
-  createIndirectDispatchBuffer (label: string): GPUBuffer
   createReadbackBuffer (label: string, byteLength: number): GPUBuffer
   getCapabilities (): WebGPUCapabilities | null
   getFallbackTexture (): GPUTexture
-  getFallbackStorageTexture (dimension?: '2d' | '2d_array'): GPUTexture
   getOutputPipelineEntry (signature: string, code: string): unknown
   getObjectId (value: object | null | undefined): number
   getTextureView (texture: GPUTexture, dimension?: GPUTextureViewDimension): GPUTextureView

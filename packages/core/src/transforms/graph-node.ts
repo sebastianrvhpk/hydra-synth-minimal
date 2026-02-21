@@ -46,7 +46,9 @@ export class HydraGraphNode {
   }
 
   plan (): HydraExecutionPlan {
-    return compileGraph(this.transforms, { maxDynamicUniforms: this.maxDynamicUniforms })
+    return compileGraph(this.transforms, {
+      maxDynamicUniforms: this.maxDynamicUniforms
+    })
   }
 
   private compile (transforms: HydraTransformCall[]): HydraCompiledPass {

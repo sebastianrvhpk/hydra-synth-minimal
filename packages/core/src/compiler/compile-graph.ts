@@ -6,17 +6,12 @@ import {
   buildExecutionSteps,
   inferAndOrderNodes,
   planResourceAllocations,
-  scoreExecutionPlan,
-  type HydraPlannerCapabilityProfile
+  scoreExecutionPlan
 } from './passes.js'
 import type { HydraDebugEvent, HydraExecutionPlan } from './types.js'
-import { applyPrimitiveSubstitutions } from './primitive-substitution.js'
 import { throwOnExecutionPlanErrors, validateExecutionPlan } from './validate-plan.js'
 
 export interface CompileGraphOptions extends LowerDslToIrOptions {
-  capabilityProfileKey?: string
-  selectedVariantPolicy?: 'compat' | 'balanced' | 'aggressive'
-  primitiveSubstitution?: boolean
   shouldValidatePlan?: boolean
   onDebug?: (event: HydraDebugEvent) => void
 }
@@ -33,16 +28,12 @@ const hashString = (value = ''): string => {
 const serializePlanShape = (input: {
   nodeSignatures: string[]
   resources: Array<{ id: string, slot: string, aliasGroup: string, bytes: number }>
-  variants: Array<'generic' | 'tiled' | 'subgroup'>
-  profile: string
-  policy: 'compat' | 'balanced' | 'aggressive'
+  variants: Array<'fragment'>
 }): string => {
   const data = {
     nodeSignatures: input.nodeSignatures,
     resources: input.resources,
-    variants: input.variants,
-    profile: input.profile,
-    policy: input.policy
+    variants: input.variants
   }
   return JSON.stringify(data)
 }
@@ -53,10 +44,6 @@ export const compileGraph = (
     maxDynamicUniforms = 256,
     graphId = 'hydra-dsl-graph',
     validate = true,
-    capabilityProfileKey = 'default-profile',
-    selectedVariantPolicy = 'compat',
-    capabilityProfile = {},
-    primitiveSubstitution = true,
     shouldValidatePlan = true,
     onDebug
   }: CompileGraphOptions = {}
@@ -64,11 +51,6 @@ export const compileGraph = (
   const graph = lowerDslToIr(transforms, { maxDynamicUniforms, graphId, validate })
   const orderedNodes = inferAndOrderNodes(graph)
   const barriers = buildExecutionBarriers(graph.edges, orderedNodes.map((node) => node.id))
-  const resolvedCapabilityProfile: HydraPlannerCapabilityProfile = {
-    supportedFeatures: capabilityProfile.supportedFeatures ?? [],
-    hasSubgroups: capabilityProfile.hasSubgroups ?? false,
-    maxWorkgroupStorageBytes: capabilityProfile.maxWorkgroupStorageBytes ?? 0
-  }
 
   const compiledPassByNodeId = new Map<string, ReturnType<typeof compileWgslPass>>()
   orderedNodes.forEach((node) => {
@@ -85,28 +67,16 @@ export const compileGraph = (
       })
     }
   })
-  const primitiveByNodeId = primitiveSubstitution
-    ? applyPrimitiveSubstitutions(
-      orderedNodes,
-      compiledPassByNodeId,
-      maxDynamicUniforms
-    )
-    : new Map()
-
   const steps = buildExecutionSteps(
     orderedNodes,
     compiledPassByNodeId,
-    barriers,
-    selectedVariantPolicy,
-    resolvedCapabilityProfile,
-    primitiveByNodeId
+    barriers
   )
   const resourcePlan = planResourceAllocations(graph, orderedNodes)
   const resources = resourcePlan.allocations
   const diagnostics = scoreExecutionPlan(
     steps,
     resources,
-    selectedVariantPolicy,
     resourcePlan.peakTransientBytes,
     resourcePlan.totalPlannedBytes,
     barriers.length
@@ -119,9 +89,7 @@ export const compileGraph = (
       aliasGroup: resource.aliasGroup,
       bytes: resource.plannedBytes
     })),
-    variants: steps.map((step) => step.variant),
-    profile: capabilityProfileKey,
-    policy: selectedVariantPolicy
+    variants: steps.map((step) => step.variant)
   })
   const cacheKey = `plan|${hashString(serializedShape)}`
 
@@ -153,11 +121,7 @@ export const createExecutionPlanDebugReport = (plan: HydraExecutionPlan): string
       id: step.id,
       nodeId: step.nodeId,
       signature: step.signature,
-      dispatchDomain: step.dispatchDomain,
       variant: step.variant,
-      fallbackDepth: step.fallbackDepth,
-      primitive: step.primitive,
-      variantCandidates: step.variantCandidates,
       barriersBefore: step.barriersBefore.length
     })),
     resources: plan.resources.map((resource) => ({

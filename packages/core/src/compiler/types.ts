@@ -2,17 +2,8 @@ import type { HydraCompiledPass } from '../types.js'
 import type {
   HydraDependencyEdge,
   HydraKernelGraph,
-  HydraKernelNode,
   HydraKernelResourceSpec
 } from '../ir/types.js'
-import type { HydraPrimitiveKind } from '../primitives/types.js'
-
-export interface HydraExecutionVariantCandidate {
-  variant: 'generic' | 'tiled' | 'subgroup'
-  signature: string
-  legal: boolean
-  reason?: string
-}
 
 export interface HydraExecutionBarrier {
   fromNodeId: string
@@ -21,24 +12,11 @@ export interface HydraExecutionBarrier {
   resource?: string
 }
 
-export interface HydraExecutionPrimitiveSelection {
-  kind: HydraPrimitiveKind
-  descriptorId: string
-  wgslModuleId: string
-  entryPoint: string
-  substituted: boolean
-  note?: string
-}
-
 export interface HydraExecutionStep {
   id: string
   nodeId: string
   signature: string
-  dispatchDomain: HydraKernelNode['schedule']['dispatchDomain']
-  variant: 'generic' | 'tiled' | 'subgroup'
-  variantCandidates: HydraExecutionVariantCandidate[]
-  fallbackDepth: number
-  primitive?: HydraExecutionPrimitiveSelection
+  variant: 'fragment'
   compiledPass: HydraCompiledPass
   barriersBefore: HydraExecutionBarrier[]
 }
@@ -59,16 +37,12 @@ export interface HydraResourceAllocationPlan {
 export interface HydraExecutionPlanDiagnostics {
   score: number
   scoreBreakdown: {
-    dispatchCost: number
+    runCost: number
     memoryCost: number
-    fallbackRiskCost: number
+    barrierCost: number
   }
-  selectedVariantPolicy: HydraKernelNode['schedule']['variantPolicy']
   peakTransientBytes: number
   totalPlannedBytes: number
-  fallbackRiskRate: number
-  selectedVariantCounts: Record<'generic' | 'tiled' | 'subgroup', number>
-  primitiveSelectionCounts: Record<string, number>
   barrierCount: number
   nodeOrder: string[]
 }

@@ -170,8 +170,8 @@ describe('DSL compatibility matrix', () => {
       .blurY(1)
       .toneMap(1.1, 2.2)
 
-    const planA = compileGraph(script.transforms, { graphId: 'compat-matrix', selectedVariantPolicy: 'compat' })
-    const planB = compileGraph(script.transforms, { graphId: 'compat-matrix', selectedVariantPolicy: 'compat' })
+    const planA = compileGraph(script.transforms, { graphId: 'compat-matrix' })
+    const planB = compileGraph(script.transforms, { graphId: 'compat-matrix' })
 
     expect(planA.cacheKey).toBe(planB.cacheKey)
     expect(planA.sourceGraph.compatibilityMode).toBe('dsl-v2')

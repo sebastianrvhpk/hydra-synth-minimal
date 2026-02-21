@@ -55,7 +55,7 @@
           host.canvas.getContext = () => null
         }
 
-        const executionMode = mode === 'compute' || mode === 'auto'
+        const executionMode = mode === 'fragment' || mode === 'auto'
           ? mode
           : undefined
 
@@ -69,7 +69,7 @@
         })
 
         try {
-          if ((mode === 'compute' || mode === 'auto' || mode === 'default') && !navigator.gpu) {
+          if ((mode === 'fragment' || mode === 'auto' || mode === 'default') && !navigator.gpu) {
             publish({ status: 'no-webgpu', requestedMode: mode })
             return
           }
@@ -101,7 +101,7 @@
           )
 
           runtime.dispose()
-          if ((mode === 'compute' || mode === 'auto') && isUnavailableError) {
+          if ((mode === 'fragment' || mode === 'auto') && isUnavailableError) {
             publish({
               status: 'no-webgpu',
               requestedMode: mode,

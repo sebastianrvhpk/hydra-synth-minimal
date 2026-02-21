@@ -43,50 +43,22 @@ describe('core foundation', () => {
     expect(planA.steps.length).toBeGreaterThan(1)
     expect(planA.cacheKey).toBe(planB.cacheKey)
     expect(planA.diagnostics.nodeOrder.length).toBe(planA.steps.length)
-    expect(planA.steps.every((step) => step.variantCandidates.length > 0)).toBe(true)
     expect(planA.resources.every((resource) => resource.slot.length > 0)).toBe(true)
     expect(planA.diagnostics.totalPlannedBytes).toBeGreaterThanOrEqual(planA.diagnostics.peakTransientBytes)
     expect(planA.version).toBe('1.0')
     expect(validateExecutionPlan(planA).some((issue) => issue.type === 'error')).toBe(false)
   })
 
-  it('substitutes known primitive patterns and preserves fallback chains', () => {
+  it('keeps fragment variant metadata stable across recompiles', () => {
     const registry = new HydraTransformRegistry({ defaultOutput: new NullOutput() })
-    const node = registry.generators
-      .osc(8, 0.1, 0)
-      .bloomThreshold(0.6, 0.1)
-      .bloomDownsample(1.0)
-      .bloomUpsample(1.0, 1.2)
-
-    const plan = compileGraph(node.transforms, { graphId: 'primitive-substitute' })
-    const primitiveSteps = plan.steps.filter((step) => step.primitive?.substituted)
-
-    expect(primitiveSteps.length).toBeGreaterThanOrEqual(2)
-    expect(primitiveSteps.some((step) => step.primitive?.kind === 'pyramid.downsample')).toBe(true)
-    expect(primitiveSteps.some((step) => step.primitive?.kind === 'pyramid.upsample')).toBe(true)
-    primitiveSteps.forEach((step) => {
-      expect(step.compiledPass.fallbackPass).toBeDefined()
-    })
-    expect((plan.diagnostics.primitiveSelectionCounts['pyramid.downsample'] ?? 0) >= 1).toBe(true)
-  })
-
-  it('selects legal fallback variants when capability profile blocks subgroup execution', () => {
-    const registry = new HydraTransformRegistry({ defaultOutput: new NullOutput() })
-    const node = registry.generators.osc(8, 0.1, 0).blurSubgroupX(1.0)
+    const node = registry.generators.osc(8, 0.1, 0).blurX(1.0)
     const plan = compileGraph(node.transforms, {
-      graphId: 'capability-fallback',
-      selectedVariantPolicy: 'aggressive',
-      capabilityProfile: {
-        supportedFeatures: [],
-        hasSubgroups: false,
-        maxWorkgroupStorageBytes: 16384
-      }
+      graphId: 'variant-stability'
     })
 
     const step = plan.steps[1]
     if (!step) throw new Error('Expected blur step missing.')
-    expect(step.variant).not.toBe('subgroup')
-    expect(step.variantCandidates.some((candidate) => candidate.variant === 'subgroup' && candidate.legal === false)).toBe(true)
+    expect(step.variant).toBe('fragment')
   })
 
   it('reports validation errors for malformed execution plans', () => {
@@ -105,13 +77,21 @@ describe('core foundation', () => {
         id: 's0',
         nodeId: 'missing',
         signature: 'sig',
-        dispatchDomain: 'pixel2d',
-        variant: 'generic',
-        variantCandidates: [{ variant: 'generic', signature: 'sig', legal: true }],
-        fallbackDepth: 0,
+        variant: 'fragment',
         compiledPass: {
           signature: 'sig',
-          wgsl: '@compute @workgroup_size(1, 1, 1) fn csMain() {}',
+          wgsl: `
+@vertex
+fn vsMain(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
+  let positions = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0));
+  return vec4f(positions[i], 0.0, 1.0);
+}
+
+@fragment
+fn fsMain() -> @location(0) vec4f {
+  return vec4f(0.0);
+}
+`,
           uniforms: [],
           textures: []
         },
@@ -129,13 +109,9 @@ describe('core foundation', () => {
       }],
       diagnostics: {
         score: 0,
-        scoreBreakdown: { dispatchCost: 0, memoryCost: 0, fallbackRiskCost: 0 },
-        selectedVariantPolicy: 'compat',
+        scoreBreakdown: { runCost: 0, memoryCost: 0, barrierCost: 0 },
         peakTransientBytes: 0,
         totalPlannedBytes: 0,
-        fallbackRiskRate: 0,
-        selectedVariantCounts: { generic: 1, tiled: 0, subgroup: 0 },
-        primitiveSelectionCounts: {},
         barrierCount: 0,
         nodeOrder: ['other']
       },
@@ -146,7 +122,7 @@ describe('core foundation', () => {
     expect(issues.some((issue) => issue.type === 'error')).toBe(true)
   })
 
-  it('computes pyramid downsample/upsample on CPU helpers', () => {
+  it('runs pyramid downsample/upsample on CPU helpers', () => {
     const source = new Float32Array([
       1, 0, 0, 1, 0, 1, 0, 1,
       0, 0, 1, 1, 1, 1, 1, 1

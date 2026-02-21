@@ -1,6 +1,5 @@
 import type {
   HydraCompiledPass,
-  HydraDispatchConfig,
   HydraOutputTextureBinding,
   HydraPassIRNode,
   HydraPassIRResourceRef,
@@ -12,7 +11,6 @@ import type {
 interface BuildPassIROptions {
   signature: string
   schedule: HydraPassSchedule
-  dispatch: HydraDispatchConfig
   uniforms: HydraUniformBinding[]
   textures: HydraTextureBinding[]
   output?: HydraOutputTextureBinding
@@ -55,7 +53,6 @@ const normalizeResources = (resources: HydraPassIRResourceRef[]): HydraPassIRRes
 export const buildPassIR = ({
   signature,
   schedule,
-  dispatch,
   uniforms,
   textures,
   output
@@ -95,7 +92,6 @@ export const buildPassIR = ({
     signature,
     kind: 'image',
     schedule,
-    workgroupSize: dispatch.workgroupSize,
     resources,
     reads: readSetFrom(resources),
     writes: writeSetFrom(resources)

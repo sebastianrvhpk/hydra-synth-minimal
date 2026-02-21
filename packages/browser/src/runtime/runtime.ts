@@ -19,23 +19,14 @@ import { WebGPUFrameRendererAdapter } from './renderer-adapter.js'
 import { HydraSourceNode, type PatchBayAdapter } from './source-node.js'
 import {
   HydraAutotuner,
-  buildWorkgroupCandidateSignature,
+  buildCandidateSignature,
   type HydraAutotuneProfile,
   type HydraTuningPolicy
 } from './autotune.js'
 import { buildProfilerSnapshot, type HydraProfilerSnapshot } from './profiler.js'
 import { HydraExecutor, type HydraExecutePlanOptions, type ExecutePlanResult } from './executor.js'
 import type { WebGPUCapabilities, WebGPURenderer } from '../webgpu/renderer.js'
-
-const mapTuningPolicyToVariantPolicy = (
-  policy: HydraTuningPolicy
-): 'compat' | 'balanced' | 'aggressive' => {
-  if (policy === 'throughput') return 'aggressive'
-  if (policy === 'balanced_research') return 'balanced'
-  return 'compat'
-}
-
-export type HydraRuntimeExecutionMode = 'compute' | 'auto'
+export type HydraRuntimeExecutionMode = 'fragment' | 'auto'
 
 export const normalizeRuntimeExecutionMode = (
   value: unknown,
@@ -43,13 +34,13 @@ export const normalizeRuntimeExecutionMode = (
 ): HydraRuntimeExecutionMode => {
   if (typeof value !== 'string') return fallback
   const normalized = value.trim().toLowerCase()
-  if (normalized === 'compute' || normalized === 'auto') return normalized
+  if (normalized === 'fragment' || normalized === 'auto') return normalized
   return fallback
 }
 
 interface HydraRuntimeRoutingDiagnostics {
   configuredMode: HydraRuntimeExecutionMode
-  activeMode: 'compute'
+  activeMode: 'fragment'
   compileFailures: number
   routeFailureCount: number
 }
@@ -118,7 +109,7 @@ export class HydraBrowserRuntime {
     this.onDebugCallback = onDebug
     this.routingDiagnostics = {
       configuredMode: this.executionMode,
-      activeMode: 'compute',
+      activeMode: 'fragment',
       compileFailures: 0,
       routeFailureCount: 0
     }
@@ -359,17 +350,23 @@ export class HydraBrowserRuntime {
 
   private routeGraphRender(output: WebGPUOutputNode, graphSource: HydraOutputGraphSource): void {
     this.routingDiagnostics.configuredMode = this.executionMode
-    this.routingDiagnostics.activeMode = 'compute'
+    this.routingDiagnostics.activeMode = 'fragment'
 
     let plan: HydraExecutionPlan | null = null
     try {
-      plan = graphSource.compilePlan
-        ? (graphSource.compilePlan() as HydraExecutionPlan | null)
-        : this.compilePlan({ transforms: graphSource.transforms })
+      const transforms = Array.isArray(graphSource.transforms) ? graphSource.transforms : []
+      if (transforms.length > 0) {
+        // Prefer compiling from active transforms so routing always matches the
+        // current fragment compiler behavior.
+        plan = this.compilePlan({ transforms })
+      } else if (typeof graphSource.compilePlan === 'function') {
+        // Compatibility path for callers that provide precompiled plans.
+        plan = (graphSource.compilePlan() as HydraExecutionPlan | null) ?? null
+      }
     } catch (error) {
       this.routingDiagnostics.compileFailures += 1
       this.routingDiagnostics.routeFailureCount += 1
-      this.engine.reportCompileError(`${output.label}:compute-route`, error)
+      this.engine.reportCompileError(`${output.label}:fragment-route`, error)
       return
     }
 
@@ -377,7 +374,7 @@ export class HydraBrowserRuntime {
       this.routingDiagnostics.compileFailures += 1
       this.routingDiagnostics.routeFailureCount += 1
       this.engine.reportCompileError(
-        `${output.label}:compute-route`,
+        `${output.label}:fragment-route`,
         new Error('Plan compilation produced no plan for the current graph output.')
       )
       return
@@ -391,25 +388,18 @@ export class HydraBrowserRuntime {
         {}
       )
       this.lastPlan = plan
-      this.routingDiagnostics.activeMode = 'compute'
+      this.routingDiagnostics.activeMode = 'fragment'
     } catch (error) {
       this.routingDiagnostics.routeFailureCount += 1
-      this.engine.reportCompileError(`${output.label}:compute-route`, error)
+      this.engine.reportCompileError(`${output.label}:fragment-route`, error)
     }
   }
 
   compilePlan(graphNode: { transforms?: HydraTransformCall[] } | null | undefined): HydraExecutionPlan | null {
     const transforms = Array.isArray(graphNode?.transforms) ? graphNode?.transforms : null
     if (!transforms || transforms.length === 0) return null
-    const capabilities = this.capabilities
     return compileGraph(transforms, {
       graphId: 'runtime-plan',
-      selectedVariantPolicy: mapTuningPolicyToVariantPolicy(this.autotuner.getPolicy()),
-      capabilityProfile: {
-        supportedFeatures: capabilities?.features ?? [],
-        hasSubgroups: Boolean(capabilities?.subgroups?.supported),
-        maxWorkgroupStorageBytes: capabilities?.compute?.maxComputeWorkgroupStorageSize ?? 0
-      },
       onDebug: this.onDebugCallback
     })
   }
@@ -424,7 +414,7 @@ export class HydraBrowserRuntime {
     this.lastExecuteResult = this.ensureExecutor().executePlan(output, plan, this.getCurrentFrameState(), {
       ...options
     })
-    this.routingDiagnostics.activeMode = 'compute'
+    this.routingDiagnostics.activeMode = 'fragment'
     this.lastPlan = plan
     return plan
   }
@@ -433,7 +423,7 @@ export class HydraBrowserRuntime {
     const residentBytesEstimate = this.executor?.getResidentByteEstimate() ?? this.outputs
       .map((output) => output.getPassStats())
       .reduce((sum, outputStats) => {
-        const outputBytes = Object.values(outputStats).reduce((local, stats) => local + (stats.dispatchCount * 16), 0)
+        const outputBytes = Object.values(outputStats).reduce((local, stats) => local + (stats.runCount * 16), 0)
         return sum + outputBytes
       }, 0)
 
@@ -454,38 +444,33 @@ export class HydraBrowserRuntime {
   autotune({
     profileKey = 'default',
     policy,
-    candidateWorkgroups,
+    candidateProfiles,
     kernelSignature = 'runtime-default'
   }: {
     profileKey?: string
     policy?: HydraTuningPolicy
-    candidateWorkgroups?: Array<[number, number, number]>
+    candidateProfiles?: string[]
     kernelSignature?: string
   } = {}): HydraAutotuneProfile {
     const snapshot = this.getProfilerSnapshot()
     const activePolicy = policy ?? this.autotuner.getPolicy()
-    const compute = this.capabilities?.compute
     const adapterFingerprint = this.capabilities
       ? [
         `features:${(this.capabilities.features ?? []).join(',')}`,
-        `invocations:${compute?.maxComputeInvocationsPerWorkgroup ?? 0}`,
-        `storage:${compute?.maxComputeWorkgroupStorageSize ?? 0}`
+        `target:${this.capabilities.fragment.targetFormat}`,
+        `attachments:${this.capabilities.fragment.maxColorAttachments}`
       ].join('|')
       : 'unknown-adapter'
     const browserFingerprint = typeof navigator !== 'undefined'
       ? `${navigator.userAgent}`
       : 'non-browser'
     const resolutionClass = `${this.host.canvas.width}x${this.host.canvas.height}`
-    const normalizedCandidates = (candidateWorkgroups && candidateWorkgroups.length > 0
-      ? candidateWorkgroups
-      : [[16, 16, 1], [8, 8, 1], [32, 8, 1]]
-    ).map((candidate) => [
-      Math.max(1, Math.floor(candidate[0] ?? 16)),
-      Math.max(1, Math.floor(candidate[1] ?? 16)),
-      Math.max(1, Math.floor(candidate[2] ?? 1))
-    ] as [number, number, number])
+    const normalizedCandidates = (candidateProfiles && candidateProfiles.length > 0
+      ? candidateProfiles
+      : ['conservative', 'balanced', 'aggressive']
+    ).map((candidate) => `${candidate}`.trim().toLowerCase()).filter((candidate) => candidate.length > 0)
     const fingerprintKey = [adapterFingerprint, browserFingerprint, kernelSignature, resolutionClass].join('|')
-    const candidateSignature = buildWorkgroupCandidateSignature(normalizedCandidates)
+    const candidateSignature = buildCandidateSignature(normalizedCandidates)
     const cached = this.autotuner.getProfileByFingerprint(profileKey, fingerprintKey)
     if (
       cached &&
@@ -498,7 +483,7 @@ export class HydraBrowserRuntime {
     return this.autotuner.run({
       profileKey,
       policy: activePolicy,
-      candidateWorkgroups: normalizedCandidates,
+      candidateProfiles: normalizedCandidates,
       profilerSnapshot: snapshot,
       adapterFingerprint,
       browserFingerprint,

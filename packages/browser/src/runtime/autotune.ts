@@ -13,8 +13,7 @@ export type {
 }
 
 interface CandidateEvaluation {
-  workgroup: [number, number, number]
-  variant: HydraAutotuneProfile['variantPreference']
+  profile: string
   measuredMeanMs: number
   measuredP95Ms: number
   sampleCount: number
@@ -35,34 +34,44 @@ const percentile = (values: number[], ratio: number): number => {
   return sorted[index] ?? 0
 }
 
-const candidateKey = (candidate: [number, number, number]): string => `${candidate[0]}x${candidate[1]}x${candidate[2]}`
+const normalizeProfileName = (value: string): string => {
+  const normalized = `${value}`.trim().toLowerCase()
+  return normalized.length > 0 ? normalized : 'balanced'
+}
 
-export const buildWorkgroupCandidateSignature = (
-  candidateWorkgroups: Array<[number, number, number]>
-): string => candidateWorkgroups
-  .map((candidate) => candidateKey(candidate))
+export const buildCandidateSignature = (candidateProfiles: string[]): string => candidateProfiles
+  .map((candidate) => normalizeProfileName(candidate))
   .join('|')
 
-const inferVariantPreference = (
-  policy: HydraTuningPolicy,
-  workgroup: [number, number, number]
-): HydraAutotuneProfile['variantPreference'] => {
-  const area = Math.max(1, Math.floor(workgroup[0] * workgroup[1] * workgroup[2]))
+const profileBias = (policy: HydraTuningPolicy, profile: string): number => {
+  const normalized = normalizeProfileName(profile)
+  const conservative = normalized.includes('conservative') || normalized.includes('stable')
+  const aggressive = normalized.includes('aggressive') || normalized.includes('throughput')
+  const balanced = normalized.includes('balanced')
+
+  if (policy === 'compat_stable') {
+    if (conservative) return 0.0
+    if (balanced) return 0.08
+    if (aggressive) return 0.18
+    return 0.1
+  }
+
   if (policy === 'throughput') {
-    if (area >= 256) return 'tiled'
-    return 'subgroup'
+    if (aggressive) return 0.0
+    if (balanced) return 0.06
+    if (conservative) return 0.12
+    return 0.08
   }
-  if (policy === 'balanced_research') {
-    if (area >= 192) return 'tiled'
-    return 'generic'
-  }
-  return 'generic'
+
+  if (balanced) return 0.0
+  if (conservative || aggressive) return 0.06
+  return 0.04
 }
 
 const evaluateCandidate = (
   {
     policy,
-    workgroup,
+    profile,
     baselineP95FrameMs,
     baselineFallbackRate,
     residentBytesEstimate,
@@ -72,7 +81,7 @@ const evaluateCandidate = (
     measureCandidate
   }: {
     policy: HydraTuningPolicy
-    workgroup: [number, number, number]
+    profile: string
     baselineP95FrameMs: number
     baselineFallbackRate: number
     residentBytesEstimate: number
@@ -82,15 +91,9 @@ const evaluateCandidate = (
     measureCandidate?: HydraAutotuneRunOptions['measureCandidate']
   }
 ): CandidateEvaluation => {
-  const variant = inferVariantPreference(policy, workgroup)
-  const area = Math.max(1, Math.floor(workgroup[0] * workgroup[1] * workgroup[2]))
+  const normalizedProfile = normalizeProfileName(profile)
   const residentMb = residentBytesEstimate / 1_000_000
-  const targetArea = policy === 'throughput' ? 256 : policy === 'balanced_research' ? 192 : 128
-  const areaPenalty = Math.abs(area - targetArea) / targetArea
-  const shapePenalty = (workgroup[0] % 8 === 0 && workgroup[1] % 8 === 0) ? 0 : 0.08
-  const variantPenalty = policy === 'compat_stable'
-    ? (variant === 'generic' ? 0 : 0.3)
-    : (policy === 'throughput' ? (variant === 'tiled' || variant === 'subgroup' ? 0 : 0.2) : 0.1)
+  const bias = profileBias(policy, normalizedProfile)
   const correctnessPenalty = correctnessEquivalent ? 0 : 10
 
   const syntheticSampleMs = Math.max(
@@ -98,15 +101,12 @@ const evaluateCandidate = (
     baselineP95FrameMs +
     (baselineFallbackRate * 35) +
     (residentMb * 0.12) +
-    (areaPenalty * 6) +
-    (shapePenalty * 3) +
-    (variantPenalty * 2)
+    (bias * 4)
   )
 
   for (let trialIndex = 0; trialIndex < warmupTrials; trialIndex += 1) {
     measureCandidate?.({
-      workgroup,
-      variant,
+      profile: normalizedProfile,
       phase: 'warmup',
       trialIndex,
       baselineP95FrameMs
@@ -117,8 +117,7 @@ const evaluateCandidate = (
   const safeSampleTrials = Math.max(1, Math.floor(sampleTrials))
   for (let trialIndex = 0; trialIndex < safeSampleTrials; trialIndex += 1) {
     const measured = measureCandidate?.({
-      workgroup,
-      variant,
+      profile: normalizedProfile,
       phase: 'sample',
       trialIndex,
       baselineP95FrameMs
@@ -134,8 +133,7 @@ const evaluateCandidate = (
   const measuredP95Ms = percentile(measuredSamples, 0.95)
   const score = measuredP95Ms + correctnessPenalty
   return {
-    workgroup,
-    variant,
+    profile: normalizedProfile,
     measuredMeanMs,
     measuredP95Ms,
     sampleCount: measuredSamples.length,
@@ -171,7 +169,7 @@ export class HydraAutotuner {
   run({
     profileKey,
     policy,
-    candidateWorkgroups = [[16, 16, 1], [8, 8, 1], [32, 8, 1]],
+    candidateProfiles = ['conservative', 'balanced', 'aggressive'],
     profilerSnapshot = null,
     adapterFingerprint = 'unknown-adapter',
     browserFingerprint = 'unknown-browser',
@@ -187,18 +185,14 @@ export class HydraAutotuner {
     const baselineFallbackRate = clamp(Number(profilerSnapshot?.scheduler?.fallbackRate ?? 0), 0, 1)
     const residentBytesEstimate = clamp(Number(profilerSnapshot?.resources?.residentBytesEstimate ?? 0), 0, Number.MAX_SAFE_INTEGER)
 
-    const normalizedCandidates = (candidateWorkgroups.length > 0 ? candidateWorkgroups : [[16, 16, 1]])
-      .map((candidate) => {
-        const x = Math.max(1, Math.floor(candidate[0] ?? 16))
-        const y = Math.max(1, Math.floor(candidate[1] ?? 16))
-        const z = Math.max(1, Math.floor(candidate[2] ?? 1))
-        return [x, y, z] as [number, number, number]
-      })
-    const candidateSignature = buildWorkgroupCandidateSignature(normalizedCandidates)
+    const normalizedCandidates = (candidateProfiles.length > 0 ? candidateProfiles : ['balanced'])
+      .map((candidate) => normalizeProfileName(candidate))
+      .filter((candidate, index, all) => all.indexOf(candidate) === index)
+    const candidateSignature = buildCandidateSignature(normalizedCandidates)
 
     const evaluations = normalizedCandidates.map((candidate) => evaluateCandidate({
       policy: activePolicy,
-      workgroup: candidate,
+      profile: candidate,
       baselineP95FrameMs,
       baselineFallbackRate,
       residentBytesEstimate,
@@ -211,11 +205,10 @@ export class HydraAutotuner {
       if (left.score !== right.score) return left.score - right.score
       if (left.measuredP95Ms !== right.measuredP95Ms) return left.measuredP95Ms - right.measuredP95Ms
       if (left.measuredMeanMs !== right.measuredMeanMs) return left.measuredMeanMs - right.measuredMeanMs
-      return candidateKey(left.workgroup).localeCompare(candidateKey(right.workgroup))
+      return left.profile.localeCompare(right.profile)
     })
     const selected = evaluations[0] ?? {
-      workgroup: [16, 16, 1] as [number, number, number],
-      variant: inferVariantPreference(activePolicy, [16, 16, 1]),
+      profile: 'balanced',
       measuredMeanMs: baselineP95FrameMs,
       measuredP95Ms: baselineP95FrameMs,
       sampleCount: Math.max(1, Math.floor(sampleTrials)),
@@ -232,8 +225,7 @@ export class HydraAutotuner {
     const profile: HydraAutotuneProfile = {
       profileKey,
       policy: activePolicy,
-      selectedWorkgroupSize: selected.workgroup,
-      variantPreference: selected.variant,
+      selectedProfile: selected.profile,
       score: selected.score,
       candidateSignature,
       fingerprintKey,

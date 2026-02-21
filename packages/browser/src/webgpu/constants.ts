@@ -5,8 +5,7 @@ export const createOutputTextureUsage = ({ includeRenderAttachment = true }: { i
   let usage =
     GPUTextureUsage.TEXTURE_BINDING |
     GPUTextureUsage.COPY_DST |
-    GPUTextureUsage.COPY_SRC |
-    GPUTextureUsage.STORAGE_BINDING
+    GPUTextureUsage.COPY_SRC
   if (includeRenderAttachment) usage |= GPUTextureUsage.RENDER_ATTACHMENT
   return usage
 }

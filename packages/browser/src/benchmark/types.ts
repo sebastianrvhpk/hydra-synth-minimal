@@ -3,9 +3,8 @@ import type { WebGPUCapabilities } from '../webgpu/renderer.js'
 export type HydraWorkloadClass = 'image'
 
 export interface HydraCapabilityMatrix {
-  subgroups: boolean
-  maxWorkgroupStorageBytes: number
-  indirectDispatch: boolean
+  targetFormat: string
+  maxColorAttachments: number
   timestampQuery: boolean
 }
 
@@ -26,7 +25,7 @@ export interface HydraBenchmarkSample {
   frameMs: number
   cpuEncodeMs?: number
   gpuMs?: number | null
-  dispatchCount?: number
+  runCount?: number
   fallbackCount?: number
   residentBytes?: number
 }
@@ -40,7 +39,7 @@ export interface HydraBenchmarkReport {
   p99FrameMs: number
   avgCpuEncodeMs: number
   avgGpuMs: number | null
-  avgDispatchCount: number
+  avgRunCount: number
   fallbackRate: number
   peakResidentBytes: number
   deltaFromBaseline?: HydraBenchmarkDelta | null
@@ -53,7 +52,7 @@ export interface HydraBenchmarkDelta {
   p99FrameMs: number
   avgCpuEncodeMs: number
   avgGpuMs: number | null
-  avgDispatchCount: number
+  avgRunCount: number
   fallbackRate: number
   peakResidentBytes: number
 }
@@ -61,9 +60,8 @@ export interface HydraBenchmarkDelta {
 export const buildCapabilityMatrix = (capabilities: WebGPUCapabilities | null | undefined): HydraCapabilityMatrix => {
   const features = new Set(capabilities?.features ?? [])
   return {
-    subgroups: Boolean(capabilities?.subgroups?.supported),
-    maxWorkgroupStorageBytes: capabilities?.compute?.maxComputeWorkgroupStorageSize ?? 0,
-    indirectDispatch: true,
+    targetFormat: capabilities?.fragment?.targetFormat ?? 'unknown',
+    maxColorAttachments: capabilities?.fragment?.maxColorAttachments ?? 0,
     timestampQuery: features.has('timestamp-query')
   }
 }

@@ -1,6 +1,4 @@
 import {
-  type HydraDispatchDomain,
-  type HydraDispatchConfig,
   HydraEngine,
   type HydraEngineBindingHost,
   type HydraEngineError,
@@ -43,7 +41,7 @@ import {
   type HydraRuntimeExecutionMode
 } from './runtime/runtime.js'
 import {
-  buildWorkgroupCandidateSignature,
+  buildCandidateSignature,
   HydraAutotuner,
   type HydraAutotuneProfile,
   type HydraAutotuneProfilerInput,
@@ -57,10 +55,8 @@ import {
   WEBGPU_UNAVAILABLE_MESSAGE,
   WebGPURenderer,
   type WebGPUCapabilities,
-  type WebGPUComputeCapabilities,
-  type WebGPUStorageCapabilities,
-  type WebGPURendererOptions,
-  type WebGPUSubgroupCapabilities
+  type WebGPUFragmentCapabilities,
+  type WebGPURendererOptions
 } from './webgpu/renderer.js'
 import {
   BENCHMARK_CORPUS,
@@ -84,8 +80,6 @@ import type {
 
 export { HydraEngine }
 export type {
-  HydraDispatchDomain,
-  HydraDispatchConfig,
   HydraEngineBindingHost,
   HydraEngineError,
   HydraEngineErrorType,
@@ -112,9 +106,7 @@ export type {
   CaptureVideoOptions,
   FfmpegCommandSet,
   WebGPUCapabilities,
-  WebGPUComputeCapabilities,
-  WebGPUStorageCapabilities,
-  WebGPUSubgroupCapabilities,
+  WebGPUFragmentCapabilities,
   HydraProfilerSnapshot,
   HydraTuningPolicy,
   HydraAutotuneProfile,
@@ -142,7 +134,7 @@ export {
   WebGPUOutputNode,
   HydraExecutor,
   HydraAutotuner,
-  buildWorkgroupCandidateSignature,
+  buildCandidateSignature,
   buildProfilerSnapshot,
   normalizeRuntimeExecutionMode,
   BENCHMARK_CORPUS,

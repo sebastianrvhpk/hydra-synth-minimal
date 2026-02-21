@@ -55,8 +55,7 @@ export interface HydraAutotuneProfilerInput {
 export interface HydraAutotuneProfile {
   profileKey: string
   policy: HydraTuningPolicy
-  selectedWorkgroupSize: [number, number, number]
-  variantPreference: 'generic' | 'tiled' | 'subgroup'
+  selectedProfile: string
   score: number
   candidateSignature: string
   fingerprintKey: string
@@ -77,7 +76,7 @@ export interface HydraAutotuneProfile {
 export interface HydraAutotuneRunOptions {
   profileKey: string
   policy?: HydraTuningPolicy
-  candidateWorkgroups?: Array<[number, number, number]>
+  candidateProfiles?: string[]
   profilerSnapshot?: HydraAutotuneProfilerInput | null
   adapterFingerprint?: string
   browserFingerprint?: string
@@ -87,8 +86,7 @@ export interface HydraAutotuneRunOptions {
   warmupTrials?: number
   sampleTrials?: number
   measureCandidate?: (context: {
-    workgroup: [number, number, number]
-    variant: HydraAutotuneProfile['variantPreference']
+    profile: string
     phase: 'warmup' | 'sample'
     trialIndex: number
     baselineP95FrameMs: number
@@ -166,41 +164,10 @@ export type HydraResourceFormat =
   | 'rg32float'
   | 'r32uint'
 
-export type HydraComputeKernelVariant = 'generic' | 'tiled' | 'subgroup'
-
-export interface HydraSeparableBlurKernelDescriptor {
-  kind: 'separableBlur'
-  axis: 'x' | 'y'
-  preferredVariant?: HydraComputeKernelVariant | 'auto'
-  allowSubgroups?: boolean
-}
-
-export interface HydraStencil3x3KernelDescriptor {
-  kind: 'stencil3x3'
-  operator: 'edgeDetect' | 'edgeLaplacian'
-  preferredVariant?: HydraComputeKernelVariant | 'auto'
-  allowSubgroups?: boolean
-}
-
-export interface HydraConvolution3x3KernelDescriptor {
-  kind: 'convolution3x3'
-  weights: number[]
-  radiusInputIndex?: number
-  preferredVariant?: HydraComputeKernelVariant | 'auto'
-  allowSubgroups?: boolean
-}
-
-export type HydraComputeKernelDescriptor =
-  | HydraSeparableBlurKernelDescriptor
-  | HydraStencil3x3KernelDescriptor
-  | HydraConvolution3x3KernelDescriptor
-
 export type HydraPassUpdateRate =
   | 'everyFrame'
   | { everyNFrames: number }
   | { onEvent: string }
-
-export type HydraDispatchDomain = 'pixel2d'
 
 export interface HydraTransformInput {
   type: HydraTransformInputType
@@ -218,7 +185,6 @@ export interface HydraTransformDefinition {
   type: HydraTransformType
   inputs?: HydraTransformInput[]
   wgsl: string
-  computeKernel?: HydraComputeKernelDescriptor
   resolutionScale?: 1 | 0.5 | 0.25 | number
   updateRate?: HydraPassUpdateRate
   sparse?: boolean
@@ -274,16 +240,6 @@ export interface HydraPassSchedule {
   sparse: boolean
 }
 
-export interface HydraDispatchConfig {
-  mode: 'direct' | 'indirect'
-  domain?: HydraDispatchDomain
-  workgroupSize: [number, number, number]
-  getIndirectBuffer?: (() => unknown) | null
-  indirectOffset?: number
-  requiredWorkgroupStorageBytes?: number
-  requiredFeatures?: string[]
-}
-
 export interface HydraPassIRResourceRef {
   name: string
   kind: 'uniform' | 'texture' | 'outputTexture'
@@ -297,7 +253,6 @@ export interface HydraPassIRNode {
   signature: string
   kind: 'image'
   schedule: HydraPassSchedule
-  workgroupSize: [number, number, number]
   resources: HydraPassIRResourceRef[]
   reads: string[]
   writes: string[]
@@ -310,9 +265,7 @@ export interface HydraCompiledPass {
   textures: HydraTextureBinding[]
   output?: HydraOutputTextureBinding
   schedule?: HydraPassSchedule
-  dispatch?: HydraDispatchConfig
   ir?: HydraPassIRNode
-  fallbackPass?: HydraCompiledPass
 }
 
 export interface HydraOutputGraphSource {

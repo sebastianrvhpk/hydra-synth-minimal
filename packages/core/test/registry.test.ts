@@ -15,16 +15,6 @@ class CaptureOutput implements HydraOutputAdapter {
   }
 }
 
-const getFallbackTail = (pass: HydraCompiledPass | undefined): HydraCompiledPass | undefined => {
-  let current = pass
-  const visited = new Set<string>()
-  while (current?.fallbackPass && !visited.has(current.signature)) {
-    visited.add(current.signature)
-    current = current.fallbackPass
-  }
-  return current
-}
-
 describe('HydraTransformRegistry', () => {
   it('registers default transforms and compiles a pass', () => {
     const output = new CaptureOutput()
@@ -36,8 +26,10 @@ describe('HydraTransformRegistry', () => {
     expect(output.passes.length).toBe(1)
     expect(output.passes[0].wgsl).toContain('fn osc')
     expect(output.passes[0].wgsl).toContain('fn rotate')
-    expect(output.passes[0].wgsl).toContain('@compute')
-    expect(output.passes[0].wgsl).toContain('fn csMain')
+    expect(output.passes[0].wgsl).toContain('@vertex')
+    expect(output.passes[0].wgsl).toContain('fn vsMain')
+    expect(output.passes[0].wgsl).toContain('@fragment')
+    expect(output.passes[0].wgsl).toContain('fn fsMain')
   })
 
   it('splits renderpass transforms into sequential GPU passes', () => {
@@ -91,10 +83,6 @@ describe('HydraTransformRegistry', () => {
     const output = new CaptureOutput()
     const registry = new HydraTransformRegistry({ defaultOutput: output })
     const expectedTransforms = [
-      'blurTiledX',
-      'blurTiledY',
-      'blurSubgroupX',
-      'blurSubgroupY',
       'blurFast',
       'blurBilateral',
       'sharpen',
@@ -197,7 +185,7 @@ describe('HydraTransformRegistry', () => {
     expect(wgsl).toContain('fn vignette')
     expect(wgsl).toContain('fn filmGrain')
     expect(wgsl).toContain('fn dither')
-    expect(wgsl).toContain('hydraTileIndex')
+    expect(wgsl).toContain('fn fsMain')
     expect(wgsl).toContain('fn radialBlur')
     expect(wgsl).toContain('fn zoomBlur')
     expect(wgsl).toContain('fn dualKawaseBlur')
@@ -208,64 +196,20 @@ describe('HydraTransformRegistry', () => {
     expect(wgsl).toContain('fn hydraMod')
   })
 
-  it('emits specialized compute workgroup sizes for directional blur kernels', () => {
+  it('emits fragment entry points for directional blur kernels', () => {
     const output = new CaptureOutput()
     const registry = new HydraTransformRegistry({ defaultOutput: output })
 
     registry.generators.osc(8, 0.1, 0).blurX(1).blurY(1).out()
 
     expect(output.passes.length).toBe(3)
-    expect(output.passes[1].wgsl).toContain('@workgroup_size(32, 8, 1)')
-    expect(output.passes[2].wgsl).toContain('@workgroup_size(8, 32, 1)')
+    expect(output.passes[1].wgsl).toContain('fn blurX')
+    expect(output.passes[2].wgsl).toContain('fn blurY')
+    expect(output.passes[1].wgsl).toContain('@fragment')
+    expect(output.passes[2].wgsl).toContain('@fragment')
   })
 
-  it('specializes blurTiledX/blurTiledY into workgroup-tiled kernels with fallback metadata', () => {
-    const output = new CaptureOutput()
-    const registry = new HydraTransformRegistry({ defaultOutput: output })
-
-    registry.generators.osc(8, 0.1, 0).blurTiledX(1).blurTiledY(1).out()
-
-    expect(output.passes.length).toBe(3)
-    const tiledXPass = output.passes[1]
-    const tiledYPass = output.passes[2]
-
-    expect(tiledXPass.wgsl).toContain('var<workgroup> tile')
-    expect(tiledYPass.wgsl).toContain('var<workgroup> tile')
-    expect(tiledXPass.dispatch?.workgroupSize).toEqual([128, 1, 1])
-    expect(tiledYPass.dispatch?.workgroupSize).toEqual([1, 128, 1])
-    expect((tiledXPass.dispatch?.requiredWorkgroupStorageBytes ?? 0) > 0).toBe(true)
-    expect((tiledYPass.dispatch?.requiredWorkgroupStorageBytes ?? 0) > 0).toBe(true)
-    expect(tiledXPass.fallbackPass).toBeDefined()
-    expect(tiledYPass.fallbackPass).toBeDefined()
-    expect(tiledXPass.fallbackPass?.dispatch?.mode).toBe('indirect')
-    expect(tiledYPass.fallbackPass?.dispatch?.mode).toBe('indirect')
-    expect(getFallbackTail(tiledXPass)?.wgsl).toContain('fn blurTiledX')
-    expect(getFallbackTail(tiledYPass)?.wgsl).toContain('fn blurTiledY')
-  })
-
-  it('specializes blurSubgroupX/blurSubgroupY into subgroup variants with tiled fallback chains', () => {
-    const output = new CaptureOutput()
-    const registry = new HydraTransformRegistry({ defaultOutput: output })
-
-    registry.generators.osc(8, 0.1, 0).blurSubgroupX(1).blurSubgroupY(1).out()
-
-    expect(output.passes.length).toBe(3)
-    const subgroupXPass = output.passes[1]
-    const subgroupYPass = output.passes[2]
-
-    expect(subgroupXPass.wgsl).toContain('subgroup_invocation_id')
-    expect(subgroupYPass.wgsl).toContain('subgroup_invocation_id')
-    expect(subgroupXPass.dispatch?.requiredFeatures).toEqual(['subgroups'])
-    expect(subgroupYPass.dispatch?.requiredFeatures).toEqual(['subgroups'])
-    expect(subgroupXPass.fallbackPass).toBeDefined()
-    expect(subgroupYPass.fallbackPass).toBeDefined()
-    expect(subgroupXPass.fallbackPass?.dispatch?.mode).toBe('indirect')
-    expect(subgroupYPass.fallbackPass?.dispatch?.mode).toBe('indirect')
-    expect(getFallbackTail(subgroupXPass)?.wgsl).toContain('fn blurSubgroupX')
-    expect(getFallbackTail(subgroupYPass)?.wgsl).toContain('fn blurSubgroupY')
-  })
-
-  it('specializes blurFast into convolution3x3 subgroup+tiled variants with fallback chains', () => {
+  it('compiles blurFast as a fragment pass', () => {
     const output = new CaptureOutput()
     const registry = new HydraTransformRegistry({ defaultOutput: output })
 
@@ -274,17 +218,10 @@ describe('HydraTransformRegistry', () => {
     expect(output.passes.length).toBe(2)
     const blurPass = output.passes[1]
 
-    expect(blurPass.wgsl).toContain('subgroup_invocation_id')
-    expect(blurPass.wgsl).toContain('var<workgroup> tile')
-    expect(blurPass.dispatch?.workgroupSize).toEqual([16, 16, 1])
-    expect(blurPass.dispatch?.requiredFeatures).toEqual(['subgroups'])
-    expect((blurPass.dispatch?.requiredWorkgroupStorageBytes ?? 0) > 0).toBe(true)
-    expect(blurPass.fallbackPass).toBeDefined()
-    expect(blurPass.fallbackPass?.dispatch?.mode).toBe('indirect')
-    expect(getFallbackTail(blurPass)?.wgsl).toContain('fn blurFast')
+    expect(blurPass.wgsl).toContain('fn blurFast')
   })
 
-  it('specializes edgeDetect/edgeLaplacian into subgroup variants with tiled+generic fallback chains', () => {
+  it('compiles edgeDetect/edgeLaplacian as fragment passes', () => {
     const output = new CaptureOutput()
     const registry = new HydraTransformRegistry({ defaultOutput: output })
 
@@ -294,22 +231,8 @@ describe('HydraTransformRegistry', () => {
     const edgeDetectPass = output.passes[1]
     const edgeLaplacianPass = output.passes[2]
 
-    expect(edgeDetectPass.wgsl).toContain('subgroup_invocation_id')
-    expect(edgeLaplacianPass.wgsl).toContain('subgroup_invocation_id')
-    expect(edgeDetectPass.wgsl).toContain('var<workgroup> tile')
-    expect(edgeLaplacianPass.wgsl).toContain('var<workgroup> tile')
-    expect(edgeDetectPass.dispatch?.workgroupSize).toEqual([16, 16, 1])
-    expect(edgeLaplacianPass.dispatch?.workgroupSize).toEqual([16, 16, 1])
-    expect(edgeDetectPass.dispatch?.requiredFeatures).toEqual(['subgroups'])
-    expect(edgeLaplacianPass.dispatch?.requiredFeatures).toEqual(['subgroups'])
-    expect((edgeDetectPass.dispatch?.requiredWorkgroupStorageBytes ?? 0) > 0).toBe(true)
-    expect((edgeLaplacianPass.dispatch?.requiredWorkgroupStorageBytes ?? 0) > 0).toBe(true)
-    expect(edgeDetectPass.fallbackPass).toBeDefined()
-    expect(edgeLaplacianPass.fallbackPass).toBeDefined()
-    expect(edgeDetectPass.fallbackPass?.dispatch?.mode).toBe('indirect')
-    expect(edgeLaplacianPass.fallbackPass?.dispatch?.mode).toBe('indirect')
-    expect(getFallbackTail(edgeDetectPass)?.wgsl).toContain('fn edgeDetect')
-    expect(getFallbackTail(edgeLaplacianPass)?.wgsl).toContain('fn edgeLaplacian')
+    expect(edgeDetectPass.wgsl).toContain('fn edgeDetect')
+    expect(edgeLaplacianPass.wgsl).toContain('fn edgeLaplacian')
   })
 
   it('injects prev() when chaining non-src transforms after renderpass boundaries', () => {
@@ -463,8 +386,6 @@ describe('HydraTransformRegistry', () => {
       updateRate: 'everyFrame',
       sparse: false
     })
-    expect(pass.dispatch?.mode).toBe('direct')
-    expect(pass.dispatch?.workgroupSize).toEqual([16, 16, 1])
     expect(pass.ir?.writes).toContain('outImage')
   })
 

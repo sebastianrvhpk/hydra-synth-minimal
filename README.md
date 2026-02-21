@@ -4,8 +4,8 @@ Hydra v2 is a workspace-split rewrite with strict package boundaries and ESM-onl
 
 ## Packages
 
-- `hydra-synth-core`: engine lifecycle, transform registry, WGSL pass compilation, DSL-to-IR lowering, execution-plan compilation/validation, primitive descriptors and CPU references.
-- `hydra-synth`: browser host, WebGPU renderer, compute-plan runtime execution, capture helpers, profiler/autotune helpers, benchmark corpus/report utilities.
+- `hydra-synth-core`: engine lifecycle, transform registry, WGSL pass compilation, DSL-to-IR lowering, execution-plan compilation/validation, and CPU reference utilities.
+- `hydra-synth`: browser host, WebGPU renderer, fragment-plan runtime execution, capture helpers, profiler/autotune helpers, benchmark corpus/report utilities.
 - `hydra-synth-livecoding`: optional plugin for explicit livecoding attach/run/dispose behavior and controlled global binding injection.
 
 ## Architecture
@@ -42,8 +42,8 @@ runtime.dispose()
 
 `executionMode` values:
 
-- `auto` (default): compute-plan routing with automatic policy selection.
-- `compute`: force compute-plan routing.
+- `auto` (default): fragment-plan routing with automatic policy selection.
+- `fragment`: force fragment-plan routing.
 
 You can also wire components explicitly:
 
@@ -57,15 +57,19 @@ const runtime = new HydraBrowserRuntime({ host, renderer, autoLoop: true })
 
 ## Multipass And Renderpass Features
 
-Transform chains are split into sequential compute passes when standalone renderpass transforms are present, with `prevBuffer` handoff where needed.
+Transform chains are split into sequential fragment passes when standalone renderpass transforms are present, with `prevBuffer` handoff where needed.
 
 Built-in coverage includes:
 
 - classic Hydra transforms (`osc`, `noise`, `shape`, coord/color/combine ops, `prev`, `prevN`)
 - low-level synthesis/operator extensions (`noiseLoop(scale, speed, radius)`, `fbm`, `ridged`, `turbulence`, `screen`, `overlay`, `softLight`, `hardLight`, `colorDodge`, `colorBurn`)
-- multipass/post-processing transforms (for example `blurX`, `blurY`, `blurTiledX`, `blurSubgroupX`, `blurFast`, `edgeDetect`, `edgeLaplacian`, `radialBlur`, `zoomBlur`, `dualKawaseBlur`, `dualKawaseBloom`, `toneMap`, `exposure`)
+- multipass/post-processing transforms (for example `blurX`, `blurY`, `blurFast`, `edgeDetect`, `edgeLaplacian`, `radialBlur`, `zoomBlur`, `dualKawaseBlur`, `dualKawaseBloom`, `toneMap`, `exposure`)
 
 For full built-in transform definitions, see `packages/core/src/transforms/default-transforms.ts`.
+
+Detailed runtime/compiler notes for the fragment backend:
+
+- `docs/fragment-pipeline.md`
 
 ## Optional Livecoding Plugin
 

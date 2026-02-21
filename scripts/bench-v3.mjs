@@ -5,13 +5,7 @@ import path from 'node:path'
 
 const SCENES = {
   img_chain_4k_postfx: { maxAvgFrameMs: 20, maxP95FrameMs: 24, maxFallbackRate: 0.15 },
-  img_pyramid_bloom: { maxAvgFrameMs: 16, maxP95FrameMs: 20, maxFallbackRate: 0.2 },
-  img_plus_data_histogram: { maxAvgFrameMs: 18, maxP95FrameMs: 22, maxFallbackRate: 0.2 },
-  img_plus_sort_overlay: { maxAvgFrameMs: 18, maxP95FrameMs: 22, maxFallbackRate: 0.2 },
-  data_scan_compact: { maxAvgFrameMs: 12, maxP95FrameMs: 16, maxFallbackRate: 0.1 },
-  data_queue_sparse: { maxAvgFrameMs: 12, maxP95FrameMs: 16, maxFallbackRate: 0.1 },
-  mixed_particles_field: { maxAvgFrameMs: 16, maxP95FrameMs: 20, maxFallbackRate: 0.15 },
-  mixed_reactive_event: { maxAvgFrameMs: 12, maxP95FrameMs: 16, maxFallbackRate: 0.1 }
+  img_pyramid_bloom: { maxAvgFrameMs: 16, maxP95FrameMs: 20, maxFallbackRate: 0.2 }
 }
 
 const percentile = (values, ratio) => {
@@ -31,11 +25,11 @@ const asSamples = (value) => Array.isArray(value) ? value : []
 const buildReport = (sceneId, samples) => {
   const frameMs = samples.map((sample) => Number(sample?.frameMs || 0))
   const cpuMs = samples.map((sample) => Number(sample?.cpuEncodeMs || 0))
-  const dispatchCounts = samples.map((sample) => Number(sample?.dispatchCount || 0))
+  const runCounts = samples.map((sample) => Number(sample?.runCount || 0))
   const fallbackCounts = samples.map((sample) => Number(sample?.fallbackCount || 0))
   const resident = samples.map((sample) => Number(sample?.residentBytes || 0))
 
-  const dispatchTotal = dispatchCounts.reduce((sum, value) => sum + value, 0)
+  const runTotal = runCounts.reduce((sum, value) => sum + value, 0)
   const fallbackTotal = fallbackCounts.reduce((sum, value) => sum + value, 0)
 
   return {
@@ -45,8 +39,8 @@ const buildReport = (sceneId, samples) => {
     p95FrameMs: percentile(frameMs, 0.95),
     p99FrameMs: percentile(frameMs, 0.99),
     avgCpuEncodeMs: average(cpuMs),
-    avgDispatchCount: average(dispatchCounts),
-    fallbackRate: dispatchTotal > 0 ? fallbackTotal / dispatchTotal : 0,
+    avgRunCount: average(runCounts),
+    fallbackRate: runTotal > 0 ? fallbackTotal / runTotal : 0,
     peakResidentBytes: resident.length > 0 ? Math.max(...resident) : 0
   }
 }

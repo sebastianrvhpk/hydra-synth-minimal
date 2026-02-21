@@ -22,20 +22,16 @@ const createMinimalExecutionPlan = (): HydraExecutionPlan => ({
   resources: [],
   diagnostics: {
     score: 0,
-    scoreBreakdown: { dispatchCost: 0, memoryCost: 0, fallbackRiskCost: 0 },
-    selectedVariantPolicy: 'compat',
+    scoreBreakdown: { runCost: 0, memoryCost: 0, barrierCost: 0 },
     peakTransientBytes: 0,
     totalPlannedBytes: 0,
-    fallbackRiskRate: 0,
-    selectedVariantCounts: { generic: 0, tiled: 0, subgroup: 0 },
-    primitiveSelectionCounts: {},
     barrierCount: 0,
     nodeOrder: []
   },
   cacheKey: 'minimal'
 })
 
-const createRuntimeHarness = (executionMode?: 'compute' | 'auto'): HydraBrowserRuntime => {
+const createRuntimeHarness = (executionMode?: 'fragment' | 'auto'): HydraBrowserRuntime => {
   const canvas = { width: 4, height: 4 } as HTMLCanvasElement
   const host = {
     canvas,
@@ -73,9 +69,9 @@ describe('browser foundation', () => {
     const report = buildBenchmarkReport({
       sceneId: scene.id,
       samples: [
-        { frameMs: 10, cpuEncodeMs: 1.2, dispatchCount: 12, fallbackCount: 0, residentBytes: 1024 },
-        { frameMs: 11, cpuEncodeMs: 1.1, dispatchCount: 12, fallbackCount: 0, residentBytes: 2048 },
-        { frameMs: 9, cpuEncodeMs: 1.0, dispatchCount: 12, fallbackCount: 1, residentBytes: 3072 }
+        { frameMs: 10, cpuEncodeMs: 1.2, runCount: 12, fallbackCount: 0, residentBytes: 1024 },
+        { frameMs: 11, cpuEncodeMs: 1.1, runCount: 12, fallbackCount: 0, residentBytes: 2048 },
+        { frameMs: 9, cpuEncodeMs: 1.0, runCount: 12, fallbackCount: 1, residentBytes: 3072 }
       ],
       capabilities: null
     })
@@ -91,9 +87,9 @@ describe('browser foundation', () => {
       const report = buildBenchmarkReport({
         sceneId: scene.id,
         samples: [
-          { frameMs: Math.max(1, (scene.acceptance.maxAvgFrameMs ?? 16) * 0.75), cpuEncodeMs: 1.0, dispatchCount: 10, fallbackCount: 0, residentBytes: 2048 },
-          { frameMs: Math.max(1, (scene.acceptance.maxAvgFrameMs ?? 16) * 0.85), cpuEncodeMs: 1.2, dispatchCount: 10, fallbackCount: 0, residentBytes: 4096 },
-          { frameMs: Math.max(1, (scene.acceptance.maxAvgFrameMs ?? 16) * 0.95), cpuEncodeMs: 1.1, dispatchCount: 10, fallbackCount: 0, residentBytes: 8192 }
+          { frameMs: Math.max(1, (scene.acceptance.maxAvgFrameMs ?? 16) * 0.75), cpuEncodeMs: 1.0, runCount: 10, fallbackCount: 0, residentBytes: 2048 },
+          { frameMs: Math.max(1, (scene.acceptance.maxAvgFrameMs ?? 16) * 0.85), cpuEncodeMs: 1.2, runCount: 10, fallbackCount: 0, residentBytes: 4096 },
+          { frameMs: Math.max(1, (scene.acceptance.maxAvgFrameMs ?? 16) * 0.95), cpuEncodeMs: 1.1, runCount: 10, fallbackCount: 0, residentBytes: 8192 }
         ],
         capabilities: null
       })
@@ -108,7 +104,7 @@ describe('browser foundation', () => {
     const report = buildBenchmarkReport({
       sceneId: scene.id,
       samples: [
-        { frameMs: (scene.acceptance.maxP95FrameMs ?? 20) * 1.5, dispatchCount: 10, fallbackCount: 2, residentBytes: 1024 }
+        { frameMs: (scene.acceptance.maxP95FrameMs ?? 20) * 1.5, runCount: 10, fallbackCount: 2, residentBytes: 1024 }
       ],
       capabilities: null
     })
@@ -123,8 +119,8 @@ describe('browser foundation', () => {
     const baseline = buildBenchmarkReport({
       sceneId: scene.id,
       samples: [
-        { frameMs: 14, cpuEncodeMs: 1.5, dispatchCount: 12, fallbackCount: 1, residentBytes: 4096 },
-        { frameMs: 13.5, cpuEncodeMs: 1.4, dispatchCount: 12, fallbackCount: 1, residentBytes: 4096 }
+        { frameMs: 14, cpuEncodeMs: 1.5, runCount: 12, fallbackCount: 1, residentBytes: 4096 },
+        { frameMs: 13.5, cpuEncodeMs: 1.4, runCount: 12, fallbackCount: 1, residentBytes: 4096 }
       ],
       capabilities: null
     })
@@ -132,8 +128,8 @@ describe('browser foundation', () => {
       sceneId: scene.id,
       baseline,
       samples: [
-        { frameMs: 10, cpuEncodeMs: 1.0, dispatchCount: 12, fallbackCount: 0, residentBytes: 4096 },
-        { frameMs: 9.8, cpuEncodeMs: 0.9, dispatchCount: 12, fallbackCount: 0, residentBytes: 4096 }
+        { frameMs: 10, cpuEncodeMs: 1.0, runCount: 12, fallbackCount: 0, residentBytes: 4096 },
+        { frameMs: 9.8, cpuEncodeMs: 0.9, runCount: 12, fallbackCount: 0, residentBytes: 4096 }
       ],
       capabilities: null
     })
@@ -146,12 +142,12 @@ describe('browser foundation', () => {
   it('captures profiler snapshots from output pass stats', () => {
     const outputA = {
       getPassStats: () => ({
-        passA: { dispatchCount: 4, avgCpuEncodeMs: 1.5, lastCpuEncodeMs: 2.0, fallbackCount: 1, variant: 'subgroup' as const }
+        passA: { runCount: 4, avgCpuEncodeMs: 1.5, lastCpuEncodeMs: 2.0, fallbackCount: 1, variant: 'fragment' as const }
       })
     }
     const outputB = {
       getPassStats: () => ({
-        passB: { dispatchCount: 2, avgCpuEncodeMs: 0.8, lastCpuEncodeMs: 1.1, fallbackCount: 0, variant: 'generic' as const }
+        passB: { runCount: 2, avgCpuEncodeMs: 0.8, lastCpuEncodeMs: 1.1, fallbackCount: 0, variant: 'fragment' as const }
       })
     }
     const snapshot = buildProfilerSnapshot({
@@ -164,20 +160,19 @@ describe('browser foundation', () => {
     expect(Object.keys(snapshot.passes).length).toBe(2)
     expect(snapshot.resources.residentBytesEstimate).toBe(4096)
     expect(snapshot.scheduler.fallbackRate).toBeCloseTo(1 / 6, 5)
-    expect(snapshot.scheduler.routingConfiguredMode).toBe('compute')
-    expect(snapshot.scheduler.routingActiveMode).toBe('compute')
+    expect(snapshot.scheduler.routingConfiguredMode).toBe('fragment')
+    expect(snapshot.scheduler.routingActiveMode).toBe('fragment')
     expect(snapshot.scheduler.routingCompileFailures).toBe(0)
     expect(snapshot.scheduler.routingRouteFailureCount).toBe(0)
-    expect(snapshot.passes['o0:passA']?.dispatchDomain).toBe('pixel2d')
     expect(snapshot.passes['o0:passA']?.gpuTimingSource).toBe('unavailable')
   })
 
   it('normalizes runtime execution mode values and defaults', () => {
     expect(normalizeRuntimeExecutionMode('deprecated-mode')).toBe('auto')
-    expect(normalizeRuntimeExecutionMode('compute')).toBe('compute')
+    expect(normalizeRuntimeExecutionMode('fragment')).toBe('fragment')
     expect(normalizeRuntimeExecutionMode(' auto ')).toBe('auto')
     expect(normalizeRuntimeExecutionMode('invalid')).toBe('auto')
-    expect(normalizeRuntimeExecutionMode('invalid', 'compute')).toBe('compute')
+    expect(normalizeRuntimeExecutionMode('invalid', 'fragment')).toBe('fragment')
   })
 
   it('defaults browser runtime execution mode to auto', () => {
@@ -186,8 +181,8 @@ describe('browser foundation', () => {
     runtime.dispose()
   })
 
-  it('routes graph rendering through compute mode and reports active mode diagnostics', () => {
-    const runtime = createRuntimeHarness('compute')
+  it('routes graph rendering through fragment mode and reports active mode diagnostics', () => {
+    const runtime = createRuntimeHarness('fragment')
     const executeCalls: HydraExecutionPlan[] = []
     ;(runtime as unknown as {
       executor: {
@@ -224,22 +219,22 @@ describe('browser foundation', () => {
 
     const snapshot = runtime.getProfilerSnapshot()
     expect(executeCalls).toHaveLength(1)
-    expect(snapshot.scheduler.routingConfiguredMode).toBe('compute')
-    expect(snapshot.scheduler.routingActiveMode).toBe('compute')
+    expect(snapshot.scheduler.routingConfiguredMode).toBe('fragment')
+    expect(snapshot.scheduler.routingActiveMode).toBe('fragment')
     expect(snapshot.scheduler.routingCompileFailures).toBe(0)
     expect(snapshot.scheduler.routingRouteFailureCount).toBe(0)
     runtime.dispose()
   })
 
   it('records deterministic route failures when plan compilation fails', () => {
-    const runtime = createRuntimeHarness('compute')
+    const runtime = createRuntimeHarness('fragment')
     const output = runtime.outputs[0]
     if (!output) throw new Error('Missing runtime output.')
     output.renderGraph({
       transforms: [],
       compilePasses: () => [{
         signature: 'route-failure-pass',
-        wgsl: '@compute @workgroup_size(1, 1, 1) fn csMain() {}',
+        wgsl: '@vertex fn vsMain(@builtin(vertex_index) i: u32)->@builtin(position) vec4f { return vec4f(0.0); } @fragment fn fsMain()->@location(0) vec4f { return vec4f(0.0); }',
         uniforms: [],
         textures: []
       }],
@@ -249,8 +244,8 @@ describe('browser foundation', () => {
     })
 
     const snapshot = runtime.getProfilerSnapshot()
-    expect(snapshot.scheduler.routingConfiguredMode).toBe('compute')
-    expect(snapshot.scheduler.routingActiveMode).toBe('compute')
+    expect(snapshot.scheduler.routingConfiguredMode).toBe('fragment')
+    expect(snapshot.scheduler.routingActiveMode).toBe('fragment')
     expect(snapshot.scheduler.routingCompileFailures).toBe(1)
     expect(snapshot.scheduler.routingRouteFailureCount).toBe(1)
     runtime.dispose()
@@ -287,31 +282,31 @@ describe('browser foundation', () => {
   it('selects measured candidate winners from sampled autotune trials', () => {
     const tuner = new HydraAutotuner()
     const measuredByCandidate = new Map<string, number[]>([
-      ['16x16x1', [8.5, 8.4, 8.6]],
-      ['8x8x1', [4.2, 4.1, 4.0]],
-      ['32x8x1', [6.7, 6.6, 6.8]]
+      ['slow', [8.5, 8.4, 8.6]],
+      ['best', [4.2, 4.1, 4.0]],
+      ['fast', [6.7, 6.6, 6.8]]
     ])
 
     const profile = tuner.run({
       profileKey: 'gpu-measured',
       policy: 'throughput',
-      candidateWorkgroups: [[16, 16, 1], [8, 8, 1], [32, 8, 1]],
+      candidateProfiles: ['slow', 'best', 'fast'],
       warmupTrials: 1,
       sampleTrials: 3,
-      measureCandidate: ({ workgroup, phase, trialIndex }) => {
+      measureCandidate: ({ profile, phase, trialIndex }) => {
         if (phase === 'warmup') return 100
-        const key = `${workgroup[0]}x${workgroup[1]}x${workgroup[2]}`
+        const key = profile
         const samples = measuredByCandidate.get(key) ?? [10]
         return samples[trialIndex] ?? samples[samples.length - 1]
       }
     })
 
-    expect(profile.selectedWorkgroupSize).toEqual([8, 8, 1])
+    expect(profile.selectedProfile).toBe('best')
     expect(profile.selectedMeasuredP95Ms).toBeCloseTo(4.1, 5)
   })
 
   it('reuses fingerprint-scoped autotune profiles in runtime', () => {
-    const runtime = createRuntimeHarness('compute')
+    const runtime = createRuntimeHarness('fragment')
     const autotuner = (runtime as unknown as {
       autotuner: HydraAutotuner & {
         run: HydraAutotuner['run']

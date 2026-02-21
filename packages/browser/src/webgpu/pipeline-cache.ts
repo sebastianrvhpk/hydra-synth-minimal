@@ -3,9 +3,9 @@ interface PipelineCacheEntry {
   signature: string
   code: string
   module: GPUShaderModule
-  pipeline: GPUComputePipeline | null
+  pipeline: GPURenderPipeline | null
   error: unknown | null
-  promise: Promise<GPUComputePipeline> | null
+  promise: Promise<GPURenderPipeline> | null
 }
 
 export class PipelineCache {
@@ -82,12 +82,22 @@ export class PipelineCache {
       promise: null
     }
 
-    entry.promise = this.device.createComputePipelineAsync({
+    // Pipelines are compiled asynchronously to avoid blocking the render loop.
+    // The caller may observe a transient "not ready" state for first-use shaders.
+    entry.promise = this.device.createRenderPipelineAsync({
       label: `hydra-pipeline-${labelSuffix}`,
       layout: 'auto',
-      compute: {
+      vertex: {
         module,
-        entryPoint: 'csMain'
+        entryPoint: 'vsMain'
+      },
+      fragment: {
+        module,
+        entryPoint: 'fsMain',
+        targets: [{ format: this.targetFormat }]
+      },
+      primitive: {
+        topology: 'triangle-list'
       }
     }).then((pipeline) => {
       entry.pipeline = pipeline

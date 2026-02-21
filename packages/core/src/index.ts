@@ -13,8 +13,6 @@ export { dumpKernelGraph } from './ir/dump.js'
 export { validateKernelGraph, throwOnKernelGraphErrors } from './ir/validate.js'
 export { compileGraph, createExecutionPlanDebugReport } from './compiler/compile-graph.js'
 export { validateExecutionPlan, throwOnExecutionPlanErrors } from './compiler/validate-plan.js'
-export { PRIMITIVE_DESCRIPTORS, getPrimitiveDescriptorByKind } from './primitives/descriptors.js'
-export { PRIMITIVE_WGSL_MODULES } from './primitives/wgsl/index.js'
 export {
   pyramidDownsampleCpu,
   pyramidUpsampleCpu
@@ -26,8 +24,6 @@ export { collectUtilityDeclarations } from './transforms/utility-wgsl.js'
 export type {
   Disposable,
   HydraCompiledPass,
-  HydraDispatchDomain,
-  HydraDispatchConfig,
   HydraEngineBindingHost,
   HydraEngineError,
   HydraEngineErrorType,
@@ -42,8 +38,6 @@ export type {
   HydraPassIRResourceRef,
   HydraPassSchedule,
   HydraPassUpdateRate,
-  HydraComputeKernelDescriptor,
-  HydraComputeKernelVariant,
   HydraResourceFormat,
   HydraTextureBinding,
   HydraTextureProvider,
@@ -75,15 +69,7 @@ export type {
   HydraExecutionPlan,
   HydraExecutionStep,
   HydraExecutionBarrier,
-  HydraExecutionVariantCandidate,
-  HydraExecutionPrimitiveSelection,
   HydraResourceAllocationPlan,
   HydraExecutionPlanDiagnostics
 } from './compiler/types.js'
 export type { HydraExecutionPlanValidationIssue } from './compiler/validate-plan.js'
-
-export type {
-  HydraPrimitiveKind,
-  HydraPrimitiveDescriptor,
-  HydraPrimitiveCapabilityConstraint
-} from './primitives/types.js'

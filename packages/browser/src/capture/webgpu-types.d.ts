@@ -22,22 +22,15 @@ interface GPUDevice {
     createShaderModule(descriptor: GPUShaderModuleDescriptor): GPUShaderModule;
     createBindGroupLayout(descriptor: GPUBindGroupLayoutDescriptor): GPUBindGroupLayout;
     createPipelineLayout(descriptor: GPUPipelineLayoutDescriptor): GPUPipelineLayout;
-    createComputePipeline(descriptor: GPUComputePipelineDescriptor): GPUComputePipeline;
+    createRenderPipeline(descriptor: GPURenderPipelineDescriptor): GPURenderPipeline;
     createBindGroup(descriptor: GPUBindGroupDescriptor): GPUBindGroup;
     queue: GPUQueue;
 }
 
 interface GPUCommandEncoder {
     copyTextureToBuffer(source: GPUImageCopyTexture, destination: GPUImageCopyBuffer, copySize: GPUExtent3D): void;
-    beginComputePass(descriptor?: GPUComputePassDescriptor): GPUComputePassEncoder;
+    beginRenderPass(descriptor: GPURenderPassDescriptor): GPURenderPassEncoder;
     finish(descriptor?: any): GPUCommandBuffer;
-}
-
-interface GPUComputePassEncoder {
-    setPipeline(pipeline: GPUComputePipeline): void;
-    setBindGroup(index: number, bindGroup: GPUBindGroup, dynamicOffsets?: number[]): void;
-    dispatchWorkgroups(workgroupCountX: number, workgroupCountY?: number, workgroupCountZ?: number): void;
-    end(): void;
 }
 
 interface GPUQueue {
@@ -98,12 +91,11 @@ interface GPUBindGroupLayoutEntry {
     buffer?: GPUBufferBindingLayout;
     sampler?: GPUSamplerBindingLayout;
     texture?: GPUTextureBindingLayout;
-    storageTexture?: GPUStorageTextureBindingLayout;
     externalTexture?: any;
 }
 
 interface GPUBufferBindingLayout {
-    type?: 'uniform' | 'storage' | 'read-only-storage';
+    type?: 'uniform';
     hasDynamicOffset?: boolean;
     minBindingSize?: number;
 }
@@ -118,27 +110,57 @@ interface GPUTextureBindingLayout {
     multisampled?: boolean;
 }
 
-interface GPUStorageTextureBindingLayout {
-    access?: 'write-only' | 'read-only' | 'read-write';
-    format: GPUTextureFormat;
-    viewDimension?: '1d' | '2d' | '2d-array' | 'cube' | 'cube-array' | '3d';
-}
-
 interface GPUPipelineLayoutDescriptor {
     label?: string;
     bindGroupLayouts: GPUBindGroupLayout[];
 }
 
-interface GPUComputePipelineDescriptor {
-    label?: string;
-    layout: GPUPipelineLayout | 'auto';
-    compute: GPUProgrammableStage;
-}
-
-interface GPUProgrammableStage {
+interface GPUVertexState {
     module: GPUShaderModule;
     entryPoint: string;
     constants?: Record<string, number>;
+}
+
+interface GPUFragmentState {
+    module: GPUShaderModule;
+    entryPoint: string;
+    constants?: Record<string, number>;
+    targets: GPUColorTargetState[];
+}
+
+interface GPUColorTargetState {
+    format: GPUTextureFormat;
+}
+
+interface GPUPrimitiveState {
+    topology?: 'point-list' | 'line-list' | 'line-strip' | 'triangle-list' | 'triangle-strip';
+}
+
+interface GPURenderPipelineDescriptor {
+    label?: string;
+    layout: GPUPipelineLayout | 'auto';
+    vertex: GPUVertexState;
+    fragment?: GPUFragmentState;
+    primitive?: GPUPrimitiveState;
+}
+
+interface GPURenderPassColorAttachment {
+    view: GPUTextureView;
+    loadOp: 'load' | 'clear';
+    storeOp: 'store' | 'discard';
+    clearValue?: { r: number; g: number; b: number; a: number };
+}
+
+interface GPURenderPassDescriptor {
+    label?: string;
+    colorAttachments: GPURenderPassColorAttachment[];
+}
+
+interface GPURenderPassEncoder {
+    setPipeline(pipeline: GPURenderPipeline): void;
+    setBindGroup(index: number, bindGroup: GPUBindGroup, dynamicOffsets?: number[]): void;
+    draw(vertexCount: number, instanceCount?: number, firstVertex?: number, firstInstance?: number): void;
+    end(): void;
 }
 
 interface GPUBindGroupDescriptor {
@@ -164,11 +186,10 @@ interface GPUCommandBuffer { }
 interface GPUShaderModule { }
 interface GPUBindGroupLayout { }
 interface GPUPipelineLayout { }
-interface GPUComputePipeline { }
+interface GPURenderPipeline { }
 interface GPUBindGroup { }
 interface GPUTextureView { }
 interface GPUSampler { }
-interface GPUComputePassDescriptor { label?: string; }
 
 type GPUExtent3D = { width: number; height: number; depthOrArrayLayers?: number } | [number, number, number] | [number, number];
 type GPUOrigin3D = { x?: number; y?: number; z?: number } | [number, number, number] | [number, number];
@@ -179,7 +200,6 @@ declare const GPUBufferUsage: {
     MAP_READ: number;
     COPY_DST: number;
     COPY_SRC: number;
-    STORAGE: number;
 };
 
 declare const GPUMapMode: {
@@ -191,14 +211,12 @@ declare const GPUTextureUsage: {
     COPY_SRC: number;
     COPY_DST: number;
     TEXTURE_BINDING: number;
-    STORAGE_BINDING: number;
     RENDER_ATTACHMENT: number;
 };
 
 declare const GPUShaderStage: {
     VERTEX: number;
     FRAGMENT: number;
-    COMPUTE: number;
 };
 
 // File System Access API

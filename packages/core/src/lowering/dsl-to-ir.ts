@@ -69,8 +69,6 @@ export const getTextureResourceId = (texture: {
 
 const normalizeUpdateRate = (value: HydraPassUpdateRate | undefined): HydraPassUpdateRate => value ?? 'everyFrame'
 
-const inferDispatchDomain = (_pass: HydraCompiledPass): HydraKernelNode['schedule']['dispatchDomain'] => 'pixel2d'
-
 const isNodeUniformRef = (node: HydraKernelNode, resource: string): boolean =>
   node.uniforms.some((uniform) => uniform.name === resource)
 
@@ -138,7 +136,6 @@ const createKernelNode = (
   pass: HydraCompiledPass
 ): HydraKernelNode => {
   const schedule = pass.schedule
-  const dispatchDomain = inferDispatchDomain(pass)
   const reads = pass.ir?.reads ? pass.ir.reads.slice() : []
   const writes = pass.ir?.writes ? pass.ir.writes.slice() : []
   const textureResources = pass.textures.map((texture) => getTextureResourceId(texture))
@@ -156,11 +153,10 @@ const createKernelNode = (
     uniforms: pass.uniforms,
     textures: pass.textures,
     schedule: {
+      // Scheduler metadata is backend-agnostic and maps directly to fragment execution cadence.
       resolutionScale: schedule?.resolutionScale ?? 1,
       updateRate: normalizeUpdateRate(schedule?.updateRate),
-      sparse: Boolean(schedule?.sparse),
-      dispatchDomain,
-      variantPolicy: 'compat'
+      sparse: Boolean(schedule?.sparse)
     },
     resources,
     reads,

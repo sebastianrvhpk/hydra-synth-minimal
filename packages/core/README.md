@@ -12,15 +12,12 @@ Core runtime and compiler package for Hydra v2.
   - multipass splitting for standalone renderpass transforms
   - dynamic uniform packing for scalar/vector callback inputs
   - pass scheduling metadata (`resolutionScale`, `updateRate`, `sparse`)
-  - dispatch metadata (direct/indirect, pixel2d domain)
-  - fallback pass chains for capability-sensitive kernels
+  - fragment-stage metadata for pixel2d execution
 - DSL-to-IR lowering (`lowerDslToIr`) and IR diagnostics (`dumpKernelGraph`, `validateKernelGraph`)
 - execution-plan compilation/validation (`compileGraph`, `validateExecutionPlan`), including:
-  - variant candidate selection metadata (`generic`, `tiled`, `subgroup`)
+  - deterministic pass ordering and dependency barriers
   - resource allocation/alias planning diagnostics
-- primitive registries and references:
-  - primitive descriptors and WGSL module registry
-  - CPU reference implementations for baseline correctness checks
+- CPU reference implementations for baseline correctness checks
 
 ## Environment Contract
 

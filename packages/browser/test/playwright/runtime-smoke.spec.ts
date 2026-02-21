@@ -85,7 +85,7 @@ test.afterAll(async () => {
 
 const runFixture = async (
   page: import('@playwright/test').Page,
-  mode: 'default' | 'compute' | 'auto' | 'force-unavailable'
+  mode: 'default' | 'fragment' | 'auto' | 'force-unavailable'
 ) => {
   if (!fixtureServer) throw new Error('Fixture server was not initialized.')
   const target = `${fixtureServer.baseUrl}${fixturePath}?mode=${mode}`
@@ -94,23 +94,23 @@ const runFixture = async (
   return page.evaluate(() => (window as { __hydraSmokeResult: Record<string, unknown> }).__hydraSmokeResult)
 }
 
-test('browser runtime smoke: default mode is auto-compute-preferred', async ({ page }) => {
+test('browser runtime smoke: default mode is auto-fragment-preferred', async ({ page }) => {
   const result = await runFixture(page, 'default')
   expect(['ok', 'no-webgpu'], `unexpected result: ${JSON.stringify(result)}`).toContain(result.status)
   if (result.status === 'ok') {
     expect(result.requestedMode).toBe('default')
     expect(result.configuredMode).toBe('auto')
-    expect(result.activeMode).toBe('compute')
+    expect(result.activeMode).toBe('fragment')
   }
 })
 
-test('browser runtime smoke: compute mode init + one frame + dispose', async ({ page }) => {
-  const result = await runFixture(page, 'compute')
+test('browser runtime smoke: fragment mode init + one frame + dispose', async ({ page }) => {
+  const result = await runFixture(page, 'fragment')
   expect(['ok', 'no-webgpu'], `unexpected result: ${JSON.stringify(result)}`).toContain(result.status)
   if (result.status === 'ok') {
-    expect(result.requestedMode).toBe('compute')
-    expect(result.configuredMode).toBe('compute')
-    expect(result.activeMode).toBe('compute')
+    expect(result.requestedMode).toBe('fragment')
+    expect(result.configuredMode).toBe('fragment')
+    expect(result.activeMode).toBe('fragment')
   }
 })
 
@@ -120,7 +120,7 @@ test('browser runtime smoke: auto mode init + one frame + dispose', async ({ pag
   if (result.status === 'ok') {
     expect(result.requestedMode).toBe('auto')
     expect(result.configuredMode).toBe('auto')
-    expect(result.activeMode).toBe('compute')
+    expect(result.activeMode).toBe('fragment')
   }
 })
 

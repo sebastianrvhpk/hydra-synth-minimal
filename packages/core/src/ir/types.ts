@@ -14,14 +14,10 @@ export type HydraResourceKind =
 
 export type HydraDependencyEdgeKind = 'RAW' | 'WAR' | 'WAW' | 'Event'
 
-export type HydraDispatchDomain = 'pixel2d'
-
 export interface HydraKernelSchedule {
   resolutionScale: number
   updateRate: HydraPassUpdateRate
   sparse: boolean
-  dispatchDomain: HydraDispatchDomain
-  variantPolicy: 'compat' | 'balanced' | 'aggressive'
 }
 
 export interface HydraKernelResourceShape {

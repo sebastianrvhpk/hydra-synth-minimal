@@ -7,7 +7,7 @@
  *    rgba16float -> rgba8unorm on the GPU.
  */
 
-/** Result of creating a readback buffer with computed row alignment. */
+/** Result of creating a readback buffer with calculated row alignment. */
 export interface ReadbackBufferInfo {
     buffer: GPUBuffer
     /** Actual bytes per row of pixel data (width * bytesPerPixel). */

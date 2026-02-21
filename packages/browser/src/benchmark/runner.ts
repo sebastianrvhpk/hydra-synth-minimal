@@ -44,13 +44,13 @@ export const buildBenchmarkReport = ({
   const gpuTimes = samples
     .map((sample) => sample.gpuMs)
     .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
-  const dispatchCounts = samples.map((sample) => toFinite(sample.dispatchCount))
+  const runCounts = samples.map((sample) => toFinite(sample.runCount))
   const fallbackCounts = samples.map((sample) => toFinite(sample.fallbackCount))
   const residentBytes = samples.map((sample) => Math.max(0, Math.floor(toFinite(sample.residentBytes))))
 
   const totalFallbackCount = fallbackCounts.reduce((sum, value) => sum + value, 0)
-  const totalDispatchCount = dispatchCounts.reduce((sum, value) => sum + value, 0)
-  const fallbackRate = totalDispatchCount > 0 ? totalFallbackCount / totalDispatchCount : 0
+  const totalRunCount = runCounts.reduce((sum, value) => sum + value, 0)
+  const fallbackRate = totalRunCount > 0 ? totalFallbackCount / totalRunCount : 0
 
   const report: HydraBenchmarkReport = {
     sceneId: scene.id,
@@ -61,7 +61,7 @@ export const buildBenchmarkReport = ({
     p99FrameMs: percentile(frameTimes, 0.99),
     avgCpuEncodeMs: average(cpuTimes),
     avgGpuMs: gpuTimes.length > 0 ? average(gpuTimes) : null,
-    avgDispatchCount: average(dispatchCounts),
+    avgRunCount: average(runCounts),
     fallbackRate,
     peakResidentBytes: residentBytes.length > 0 ? Math.max(...residentBytes) : 0,
     capabilityMatrix: buildCapabilityMatrix(capabilities)
@@ -80,7 +80,7 @@ export const buildBenchmarkReport = ({
       )
         ? report.avgGpuMs - baseline.avgGpuMs
         : null,
-      avgDispatchCount: report.avgDispatchCount - baseline.avgDispatchCount,
+      avgRunCount: report.avgRunCount - baseline.avgRunCount,
       fallbackRate: report.fallbackRate - baseline.fallbackRate,
       peakResidentBytes: report.peakResidentBytes - baseline.peakResidentBytes
     }
