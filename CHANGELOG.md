@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+### Precision and Numerical Stability Audit
+
+- [x] Preserve FPS gate accumulator remainder in `HydraEngine.tick()` to avoid cadence drift from dropped sub-frame time.
+- [x] Stop synthesizing `gpuMs` pass metrics from CPU encode timings when GPU timestamp data is unavailable.
+- [x] Scope capture conversion pipeline caching per `GPUDevice` to prevent cross-device pipeline reuse.
+- [x] Add regression coverage for:
+  - FPS gate remainder behavior (`packages/core/test/engine.test.ts`)
+  - CPU/GPU timing source integrity (`packages/browser/test/foundation.test.ts`)
+  - Per-device readback conversion caching (`packages/browser/test/gpu-readback.test.ts`)
+- [ ] Align browser declaration surface with runtime capture/profiler APIs (`packages/browser/src/index.d.ts`).
+- [ ] Enforce a shared dynamic-uniform scalar ceiling between compile and runtime paths.
+- [ ] Add explicit alpha-preservation mode for GPU readback conversion (`rgba16float` -> `rgba8unorm`).
+- [ ] Tighten benchmark scripts to reject/flag invalid numeric samples instead of coercing to `0`.
+
 ## [2.0.0-alpha.0] - 2026-02-08
 
 ### Breaking

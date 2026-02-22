@@ -74,6 +74,18 @@ describe('HydraEngine lifecycle', () => {
     expect(renderer.frames[0].deltaMs).toBe(40)
   })
 
+  it('fps throttling preserves sub-frame remainder across ticks', async () => {
+    const renderer = new MockRenderer()
+    const engine = new HydraEngine({ renderer, fps: 30 })
+    await engine.init()
+
+    for (let index = 0; index < 120; index += 1) {
+      engine.tick(16)
+    }
+
+    expect(renderer.frames.length).toBe(57)
+  })
+
   it('dispose() is idempotent and prevents further work', async () => {
     const renderer = new MockRenderer()
     const source = new MockSource()

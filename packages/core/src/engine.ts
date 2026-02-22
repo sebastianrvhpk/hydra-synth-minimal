@@ -200,10 +200,11 @@ export class HydraEngine implements HydraEngineBindingHost {
     this.timeSinceLastUpdate += safeDeltaMs
 
     const fps = this.fps
-    if (fps && this.timeSinceLastUpdate < 1000 / fps) return 0
+    const framePeriod = fps ? (1000 / fps) : 0
+    if (fps && this.timeSinceLastUpdate < framePeriod) return 0
 
     const elapsed = this.timeSinceLastUpdate || safeDeltaMs
-    this.timeSinceLastUpdate = 0
+    this.timeSinceLastUpdate = fps ? (this.timeSinceLastUpdate % framePeriod) : 0
     this.frameState.deltaMs = elapsed
     this.syncBindings()
 

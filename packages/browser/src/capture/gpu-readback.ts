@@ -113,10 +113,11 @@ interface ConversionContext {
     bindGroupLayout: GPUBindGroupLayout
 }
 
-let conversionContext: ConversionContext | null = null
+const conversionContextByDevice = new WeakMap<GPUDevice, ConversionContext>()
 
 const getConversionContext = (device: GPUDevice): ConversionContext => {
-    if (conversionContext) return conversionContext
+    const cached = conversionContextByDevice.get(device)
+    if (cached) return cached
 
     const vertexModule = device.createShaderModule({
         label: 'hydra-capture-vertex',
@@ -155,8 +156,9 @@ const getConversionContext = (device: GPUDevice): ConversionContext => {
         }
     })
 
-    conversionContext = { pipeline, bindGroupLayout }
-    return conversionContext
+    const created = { pipeline, bindGroupLayout }
+    conversionContextByDevice.set(device, created)
+    return created
 }
 
 /**

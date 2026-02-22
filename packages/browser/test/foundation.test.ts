@@ -3,6 +3,7 @@ import type { HydraExecutionPlan } from 'hydra-synth-core'
 import { BENCHMARK_CORPUS } from '../src/benchmark/corpus.ts'
 import { buildBenchmarkReport, validateBenchmarkReport } from '../src/benchmark/runner.ts'
 import { HydraAutotuner } from '../src/runtime/autotune.ts'
+import { WebGPUOutputNode } from '../src/runtime/output-node.ts'
 import { buildProfilerSnapshot } from '../src/runtime/profiler.ts'
 import { HydraBrowserRuntime, normalizeRuntimeExecutionMode } from '../src/runtime/runtime.ts'
 
@@ -165,6 +166,19 @@ describe('browser foundation', () => {
     expect(snapshot.scheduler.routingCompileFailures).toBe(0)
     expect(snapshot.scheduler.routingRouteFailureCount).toBe(0)
     expect(snapshot.passes['o0:passA']?.gpuTimingSource).toBe('unavailable')
+  })
+
+  it('does not infer gpu timing from cpu encode durations', () => {
+    const output = new WebGPUOutputNode({ renderer: null, width: 4, height: 4, label: 'timing-audit' })
+    ;(output as unknown as {
+      recordPassStat: (signature: string, cpuEncodeMs: number, fallbackUsed: boolean, variant: 'fragment') => void
+    }).recordPassStat('pass-a', 3.75, false, 'fragment')
+
+    const stats = output.getPassStats()
+    expect(stats['pass-a']?.lastGpuMs).toBeNull()
+    expect(stats['pass-a']?.avgGpuMs).toBeNull()
+    expect(stats['pass-a']?.gpuTimingSource).toBe('unavailable')
+    output.dispose()
   })
 
   it('normalizes runtime execution mode values and defaults', () => {

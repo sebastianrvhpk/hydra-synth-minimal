@@ -506,22 +506,17 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
   }
 
   private estimateGpuMs (
-    cpuEncodeMs: number,
+    _cpuEncodeMs: number,
     existing: PassExecutionStats | undefined
   ): {
     value: number | null
     source: 'timestamp_query' | 'cpu_encode_fallback' | 'history_fallback' | 'unavailable'
   } {
-    const normalized = Number.isFinite(cpuEncodeMs) ? Math.max(0, cpuEncodeMs) : null
-
-    if (normalized != null) {
-      return {
-        value: normalized,
-        source: 'cpu_encode_fallback'
-      }
-    }
-
-    if (existing?.lastGpuMs != null && Number.isFinite(existing.lastGpuMs)) {
+    if (
+      existing?.gpuTimingSource === 'timestamp_query' &&
+      existing.lastGpuMs != null &&
+      Number.isFinite(existing.lastGpuMs)
+    ) {
       return {
         value: Math.max(0, existing.lastGpuMs),
         source: 'history_fallback'
