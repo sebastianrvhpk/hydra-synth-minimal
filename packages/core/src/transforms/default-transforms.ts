@@ -173,9 +173,11 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'offset', default: 0 }
     ],
     wgsl: `
-  let r = sin((_st.x - offset / frequency + globals.time * sync) * frequency) * 0.5 + 0.5;
-  let g = sin((_st.x + globals.time * sync) * frequency) * 0.5 + 0.5;
-  let b = sin((_st.x + offset / frequency + globals.time * sync) * frequency) * 0.5 + 0.5;
+  let safeFrequency = select(frequency, 0.0001, abs(frequency) < 0.0001);
+  let phase = globals.time * sync;
+  let r = sin((_st.x - offset / safeFrequency + phase) * safeFrequency) * 0.5 + 0.5;
+  let g = sin((_st.x + phase) * safeFrequency) * 0.5 + 0.5;
+  let b = sin((_st.x + offset / safeFrequency + phase) * safeFrequency) * 0.5 + 0.5;
   return vec4f(r, g, b, 1.0);
 `
   },
@@ -190,7 +192,8 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     wgsl: `
   let st = _st * 2.0 - 1.0;
   let a = atan2(st.x, st.y) + 3.1416;
-  let r = (2.0 * 3.1416) / sides;
+  let safeSides = max(abs(sides), 1.0);
+  let r = (2.0 * 3.1416) / safeSides;
   let d = cos(floor(0.5 + a / r) * r - a) * length(st);
   let v = 1.0 - smoothstep(radius, radius + smoothing + 0.0000001, d);
   return vec4f(vec3f(v), 1.0);
@@ -257,7 +260,11 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     ],
     wgsl: `
   var xy = _st - vec2f(offsetX, offsetY);
-  xy *= vec2f(1.0) / vec2f(amount * xMult, amount * yMult);
+  let safeScale = vec2f(
+    max(abs(amount * xMult), 0.0001),
+    max(abs(amount * yMult), 0.0001)
+  );
+  xy *= vec2f(1.0) / safeScale;
   xy += vec2f(offsetX, offsetY);
   return xy;
 `
@@ -270,7 +277,10 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'pixelY', default: 20 }
     ],
     wgsl: `
-  let xy = vec2f(pixelX, pixelY);
+  let xy = vec2f(
+    max(abs(pixelX), 1.0),
+    max(abs(pixelY), 1.0)
+  );
   return (floor(_st * xy) + 0.5) / xy;
 `
   },
@@ -282,11 +292,13 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'gamma', default: 0.6 }
     ],
     wgsl: `
-  var c2 = pow(_c0, vec4f(gamma));
-  c2 *= vec4f(bins);
+  let safeGamma = max(abs(gamma), 0.0001);
+  let safeBins = max(abs(bins), 1.0);
+  var c2 = pow(_c0, vec4f(safeGamma));
+  c2 *= vec4f(safeBins);
   c2 = floor(c2);
-  c2 /= vec4f(bins);
-  c2 = pow(c2, vec4f(1.0 / gamma));
+  c2 /= vec4f(safeBins);
+  c2 = pow(c2, vec4f(1.0 / safeGamma));
   return vec4f(c2.xyz, _c0.w);
 `
   },
@@ -404,8 +416,10 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
   let r = length(st);
   var a = atan2(st.y, st.x);
   let pi = 2.0 * 3.1416;
-  a = hydraMod(a, pi / nSides);
-  a = abs(a - pi / nSides / 2.0);
+  let safeSides = max(abs(nSides), 1.0);
+  let wedge = pi / safeSides;
+  a = hydraMod(a, wedge);
+  a = abs(a - wedge / 2.0);
   return r * vec2f(cos(a), sin(a));
 `
   },
@@ -420,8 +434,10 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
   let r = length(st);
   var a = atan2(st.y, st.x);
   let pi = 2.0 * 3.1416;
-  a = hydraMod(a, pi / nSides);
-  a = abs(a - pi / nSides / 2.0);
+  let safeSides = max(abs(nSides), 1.0);
+  let wedge = pi / safeSides;
+  a = hydraMod(a, wedge);
+  a = abs(a - wedge / 2.0);
   return (_c0.x + r) * vec2f(cos(a), sin(a));
 `
   },
@@ -663,7 +679,11 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     ],
     wgsl: `
   var xy = _st - vec2f(0.5);
-  xy *= vec2f(1.0) / vec2f(offset + multiple * _c0.x, offset + multiple * _c0.y);
+  let safeScale = vec2f(
+    max(abs(offset + multiple * _c0.x), 0.0001),
+    max(abs(offset + multiple * _c0.y), 0.0001)
+  );
+  xy *= vec2f(1.0) / safeScale;
   xy += vec2f(0.5);
   return xy;
 `
@@ -676,7 +696,10 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'offset', default: 3 }
     ],
     wgsl: `
-  let xy = vec2f(offset + _c0.x * multiple, offset + _c0.y * multiple);
+  let xy = vec2f(
+    max(abs(offset + _c0.x * multiple), 1.0),
+    max(abs(offset + _c0.y * multiple), 1.0)
+  );
   return (floor(_st * xy) + 0.5) / xy;
 `
   },
@@ -706,7 +729,8 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     ],
     wgsl: `
   let resolution = vec2f(globals.width, globals.height);
-  return _st + (vec2f(_c0.y - _c0.x, _c0.z - _c0.y) * amount * (1.0 / resolution));
+  let safeResolution = max(resolution, vec2f(1.0));
+  return _st + (vec2f(_c0.y - _c0.x, _c0.z - _c0.y) * amount * (1.0 / safeResolution));
 `
   },
   {

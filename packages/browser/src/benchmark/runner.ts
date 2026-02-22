@@ -2,11 +2,16 @@ import { getBenchmarkSceneDefinition } from './corpus.js'
 import { buildCapabilityMatrix, type HydraBenchmarkReport, type HydraBenchmarkSample } from './types.js'
 import type { WebGPUCapabilities } from '../webgpu/renderer.js'
 
-const toFinite = (value: unknown): number => {
+const toFiniteOrNull = (value: unknown): number | null => {
   const numeric = Number(value)
-  if (!Number.isFinite(numeric)) return 0
+  if (!Number.isFinite(numeric)) return null
   return numeric
 }
+
+const collectFinite = (values: Array<number | null>): number[] => values.filter((value): value is number => (
+  typeof value === 'number' &&
+  Number.isFinite(value)
+))
 
 const average = (values: number[]): number => {
   if (values.length === 0) return 0
@@ -39,14 +44,15 @@ export const buildBenchmarkReport = ({
     throw new Error(`Baseline scene "${baseline.sceneId}" does not match "${scene.id}".`)
   }
 
-  const frameTimes = samples.map((sample) => toFinite(sample.frameMs))
-  const cpuTimes = samples.map((sample) => toFinite(sample.cpuEncodeMs))
+  const frameTimes = collectFinite(samples.map((sample) => toFiniteOrNull(sample.frameMs)))
+  const cpuTimes = collectFinite(samples.map((sample) => toFiniteOrNull(sample.cpuEncodeMs)))
   const gpuTimes = samples
     .map((sample) => sample.gpuMs)
     .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
-  const runCounts = samples.map((sample) => toFinite(sample.runCount))
-  const fallbackCounts = samples.map((sample) => toFinite(sample.fallbackCount))
-  const residentBytes = samples.map((sample) => Math.max(0, Math.floor(toFinite(sample.residentBytes))))
+  const runCounts = collectFinite(samples.map((sample) => toFiniteOrNull(sample.runCount)))
+  const fallbackCounts = collectFinite(samples.map((sample) => toFiniteOrNull(sample.fallbackCount)))
+  const residentBytes = collectFinite(samples.map((sample) => toFiniteOrNull(sample.residentBytes)))
+    .map((value) => Math.max(0, Math.floor(value)))
 
   const totalFallbackCount = fallbackCounts.reduce((sum, value) => sum + value, 0)
   const totalRunCount = runCounts.reduce((sum, value) => sum + value, 0)

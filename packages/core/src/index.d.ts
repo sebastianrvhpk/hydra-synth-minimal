@@ -247,7 +247,7 @@ export declare class HydraEngine implements HydraEngineBindingHost {
   get isInitialized (): boolean
   init (): Promise<void>
   reportCompileError (transformName: string, cause: unknown): void
-  tick (deltaMs?: number): void
+  tick (deltaMs?: number): number
   getBindings (): Readonly<Record<string, unknown>>
   setBinding (name: string, value: unknown): void
   setResolution (width: number, height: number): void

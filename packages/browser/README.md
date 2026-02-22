@@ -27,7 +27,6 @@ Use `createHydraBrowserRuntime()` for default composition, or wire `BrowserHost`
 
 ```ts
 import {
-  buildFfmpegCommands,
   captureHydraFrameSequence,
   captureHydraVideo,
   createHydraBrowserRuntime
@@ -50,8 +49,6 @@ const videoBlob = await captureHydraVideo({
   duration: 2
 })
 
-const ffmpeg = buildFfmpegCommands(sequence)
-console.log(ffmpeg.mp4)
 console.log(videoBlob.type)
 ```
 

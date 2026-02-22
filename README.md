@@ -105,25 +105,21 @@ runtime.dispose()
 - `captureHydraFrameSequence(...)`
 - `captureVideo(...)`
 - `captureHydraVideo(...)`
-- `buildFfmpegCommands(...)`
 
 Playground shortcut: `playground/index.html?livecoding=1`
 
 When `livecoding=1` is enabled, helpers are exposed in the live scope:
 
 - `captureFrames(options)` (wrapper over `captureHydraFrameSequence`)
-- `buildFfmpegCommands({ fps, ffmpegPattern, outputBaseName? })`
-- `captureAndSaveGif(options?)`
 - `captureAndSaveVideo(options?)`
 - `captureAndSaveMp4(options?)`
 
 Current playground capture behavior:
 
-- GIF capture uploads frame images to the dev server, then encodes with `ffmpeg`.
 - MP4 capture uses WebCodecs (`VideoEncoder`) directly in-browser via `captureHydraVideo`.
 - The playground no longer supports WebM capture (`captureAndSaveWebm` intentionally throws).
 
-`ffmpeg` is required for dev-server GIF encoding and benchmark parity tooling.
+`ffmpeg` is only required for benchmark parity tooling.
 
 ## Development
 

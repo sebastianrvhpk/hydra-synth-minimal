@@ -357,8 +357,6 @@ export interface BuildFfmpegCommandsOptions {
 
 export interface FfmpegCommandSet {
   mp4: string
-  gif: string
-  webm: string
 }
 
 export declare const captureFrameSequence: (options: CaptureFrameSequenceOptions) => Promise<CaptureFrameSequenceResult>

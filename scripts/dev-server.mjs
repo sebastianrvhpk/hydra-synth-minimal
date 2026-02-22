@@ -34,7 +34,6 @@ const mimeTypes = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
   '.ico': 'image/x-icon'
 }
 
@@ -88,22 +87,6 @@ const normalizeCaptureExtension = (value) => {
 }
 
 const captureFormatConfigs = {
-  gif: {
-    outputExtension: 'gif',
-    mimeType: 'image/gif',
-    buildFfmpegArgs: ({ fps, inputPattern, outputPath }) => [
-      '-y',
-      '-framerate',
-      String(fps),
-      '-start_number',
-      '0',
-      '-i',
-      inputPattern,
-      '-vf',
-      `fps=${fps},split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither=sierra2_4a`,
-      outputPath
-    ]
-  },
   mp4: {
     outputExtension: 'mp4',
     mimeType: 'video/mp4',
@@ -127,78 +110,6 @@ const captureFormatConfigs = {
       'yuv420p',
       '-movflags',
       '+faststart',
-      outputPath
-    ]
-  },
-  webm: {
-    outputExtension: 'webm',
-    mimeType: 'video/webm',
-    buildFfmpegArgs: ({ fps, inputPattern, outputPath }) => [
-      '-y',
-      '-framerate',
-      String(fps),
-      '-start_number',
-      '0',
-      '-i',
-      inputPattern,
-      '-vf',
-      'pad=ceil(iw/2)*2:ceil(ih/2)*2',
-      '-c:v',
-      'libvpx-vp9',
-      '-pix_fmt',
-      'yuva420p',
-      '-crf',
-      '18',
-      '-b:v',
-      '0',
-      outputPath
-    ]
-  },
-  mp4_10bit: {
-    outputExtension: 'mp4',
-    mimeType: 'video/mp4',
-    buildFfmpegArgs: ({ fps, inputPattern, outputPath }) => [
-      '-y',
-      '-framerate',
-      String(fps),
-      '-start_number',
-      '0',
-      '-i',
-      inputPattern,
-      '-vf',
-      'pad=ceil(iw/2)*2:ceil(ih/2)*2',
-      '-c:v',
-      'libx264',
-      '-preset',
-      'slow',
-      '-crf',
-      '12',
-      '-pix_fmt',
-      'yuv420p10le',
-      '-profile:v',
-      'high10',
-      '-movflags',
-      '+faststart',
-      outputPath
-    ]
-  },
-  prores: {
-    outputExtension: 'mov',
-    mimeType: 'video/quicktime',
-    buildFfmpegArgs: ({ fps, inputPattern, outputPath }) => [
-      '-y',
-      '-framerate',
-      String(fps),
-      '-start_number',
-      '0',
-      '-i',
-      inputPattern,
-      '-c:v',
-      'prores_ks',
-      '-profile:v',
-      '4',
-      '-pix_fmt',
-      'yuva444p10le',
       outputPath
     ]
   }
@@ -372,7 +283,7 @@ const handleCaptureRoute = async (request, response, parsedUrl, pathname) => {
 
     const body = await readJsonBody(request)
     const sessionId = body.sessionId
-    const format = String(body.format ?? 'gif').toLowerCase()
+    const format = String(body.format ?? 'mp4').toLowerCase()
     const formatConfig = resolveCaptureFormatConfig(format)
     const fps = Number(body.fps)
     const outputBaseName = String(body.outputBaseName ?? `hydra-capture-${Date.now()}`)

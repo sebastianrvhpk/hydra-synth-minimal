@@ -15,7 +15,7 @@ const WGSL_TYPES: Record<string, HydraWgslType> = {
 }
 
 const ensureFloatLiteral = (value: unknown): string => {
-  if (typeof value !== 'number' || Number.isNaN(value)) return '0.0'
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '0.0'
   const asString = value.toString()
   if (asString.includes('.') || asString.includes('e') || asString.includes('E')) return asString
   return `${asString}.0`

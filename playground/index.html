@@ -208,7 +208,6 @@
     <div id="capture-controls">
       <label id="capture-duration-label" for="capture-duration-input">Duration (s)</label>
       <input id="capture-duration-input" type="number" min="0.1" max="600" step="0.1" value="2" inputmode="decimal" />
-      <button id="capture-gif-toggle" class="capture-toggle" type="button">Capture and Save GIF (2s)</button>
       <button id="capture-video-toggle" class="capture-toggle" type="button">Capture and Save MP4 (2s)</button>
       <div id="capture-status"></div>
     </div>
@@ -224,7 +223,7 @@
   </div>
 
   <script type="module">
-    import { buildFfmpegCommands, captureHydraFrameSequence, captureHydraVideo, createHydraBrowserRuntime } from 'hydra-synth'
+    import { captureHydraFrameSequence, captureHydraVideo, createHydraBrowserRuntime } from 'hydra-synth'
     import { createLivecodingPlugin } from 'hydra-synth-livecoding'
 
     const runtime = createHydraBrowserRuntime({
@@ -309,7 +308,6 @@
     })
     window.captureFrames = captureFrames
     window.captureHydraFrameSequence = captureFrames
-    window.buildFfmpegCommands = buildFfmpegCommands
 
     // Default scene so users immediately see output.
     if (typeof synth.osc === 'function') {
@@ -324,7 +322,6 @@
     const liveRunButton = document.getElementById('live-run')
     const liveStatus = document.getElementById('live-status')
     const captureDurationInput = document.getElementById('capture-duration-input')
-    const captureGifToggle = document.getElementById('capture-gif-toggle')
     const captureVideoToggle = document.getElementById('capture-video-toggle')
     const captureStatus = document.getElementById('capture-status')
     const liveEditorStorageKey = 'hydra-playground-livecode'
@@ -333,7 +330,6 @@
     const defaultCaptureDurationSeconds = 2
     const minCaptureDurationSeconds = 0.1
     const maxCaptureDurationSeconds = 600
-    const videoCaptureFormat = 'mp4'
     const defaultLiveSnippet = `osc(18, 0.05, 0)
   .rotate(() => time * 0.08)
   .out()
@@ -370,28 +366,6 @@ speed = 0.75`
       } catch {
         // Ignore local storage failures in restricted contexts.
       }
-    }
-
-    const parseJsonResponse = async (response) => {
-      const text = await response.text()
-      let payload = {}
-
-      if (text) {
-        try {
-          payload = JSON.parse(text)
-        } catch {
-          payload = { error: text }
-        }
-      }
-
-      if (!response.ok) {
-        const errorMessage = typeof payload.error === 'string'
-          ? payload.error
-          : `Request failed with status ${response.status}.`
-        throw new Error(errorMessage)
-      }
-
-      return payload
     }
 
     const sanitizeOutputBaseName = (value) => String(value ?? '')
@@ -469,53 +443,6 @@ speed = 0.75`
       }
     }
 
-    const requestCaptureSession = async ({ extension = 'png', signal } = {}) => {
-      const response = await fetch('/__capture/start', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ extension }),
-        signal
-      })
-      return parseJsonResponse(response)
-    }
-
-    const uploadCaptureFrame = async ({ sessionId, fileName, blob, signal }) => {
-      const query = new URLSearchParams({ sessionId, fileName })
-      const response = await fetch(`/__capture/frame?${query.toString()}`, {
-        method: 'POST',
-        body: blob,
-        signal
-      })
-      return parseJsonResponse(response)
-    }
-
-    const finalizeCaptureSession = async ({ sessionId, fps, format, outputBaseName, signal }) => {
-      const response = await fetch('/__capture/finalize', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sessionId, fps, format, outputBaseName }),
-        signal
-      })
-      return parseJsonResponse(response)
-    }
-
-    const abortCaptureSession = async (sessionId) => {
-      await fetch('/__capture/abort', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sessionId })
-      })
-    }
-
-    const fetchCaptureResultBlob = async ({ downloadPath, signal }) => {
-      const response = await fetch(downloadPath, { method: 'GET', signal })
-      if (!response.ok) {
-        const text = await response.text()
-        throw new Error(text || `Download failed with status ${response.status}.`)
-      }
-      return response.blob()
-    }
-
     const downloadBlob = ({ blob, fileName }) => {
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
@@ -532,17 +459,9 @@ speed = 0.75`
     }
 
     let activeCaptureAbortController = null
-    let activeCaptureSessionId = null
-    let activeCaptureFormat = null
     let detachLivecoding = null
     let livecodingPlugin = null
     let lastFullBufferBlocks = null
-
-    const captureLabel = (format) => {
-      if (format === 'gif') return 'GIF'
-      if (format === 'mp4') return 'MP4'
-      return 'Capture'
-    }
 
     const resolveRuntimeFps = () => {
       const runtimeFps = Number(synth.fps)
@@ -552,24 +471,14 @@ speed = 0.75`
 
     const updateCaptureButtonState = () => {
       const active = Boolean(activeCaptureAbortController)
-      const activeFormat = activeCaptureFormat
       const durationSeconds = formatDurationSeconds(readCaptureDurationSeconds())
 
-      if (captureGifToggle) {
-        const isActive = active && activeFormat === 'gif'
-        captureGifToggle.textContent = isActive ? 'Stop GIF Capture' : `Capture and Save GIF (${durationSeconds}s)`
-        captureGifToggle.disabled = active && !isActive
-        if (isActive) captureGifToggle.dataset.state = 'active'
-        else delete captureGifToggle.dataset.state
-      }
-
       if (captureVideoToggle) {
-        const isActive = active && activeFormat === videoCaptureFormat
-        captureVideoToggle.textContent = isActive
+        captureVideoToggle.textContent = active
           ? 'Stop MP4 Capture'
           : `Capture and Save MP4 (${durationSeconds}s)`
-        captureVideoToggle.disabled = active && !isActive
-        if (isActive) captureVideoToggle.dataset.state = 'active'
+        captureVideoToggle.disabled = false
+        if (active) captureVideoToggle.dataset.state = 'active'
         else delete captureVideoToggle.dataset.state
       }
 
@@ -578,40 +487,15 @@ speed = 0.75`
       }
     }
 
-    const encodeAndDownloadMedia = async ({ sessionId, fps, outputBaseName, format, signal }) => {
-      const label = captureLabel(format)
-      setCaptureStatus(`Encoding ${label} with ffmpeg...`)
-      const encoded = await finalizeCaptureSession({
-        sessionId,
-        fps,
-        format,
-        outputBaseName,
-        signal
-      })
-
-      const resultBlob = await fetchCaptureResultBlob({
-        downloadPath: encoded.downloadPath,
-        signal
-      })
-
-      downloadBlob({
-        blob: resultBlob,
-        fileName: encoded.fileName
-      })
-
-      return encoded
-    }
-
     const captureAndSaveMedia = async (options = {}) => {
       if (activeCaptureAbortController) {
         throw new Error('A capture is already in progress.')
       }
 
-      const format = String(options.format ?? 'gif').toLowerCase()
-      if (format !== 'gif' && format !== 'mp4') {
-        throw new Error('captureAndSaveMedia: format must be gif or mp4.')
+      const format = String(options.format ?? 'mp4').toLowerCase()
+      if (format !== 'mp4') {
+        throw new Error('captureAndSaveMedia: only mp4 capture is supported in the playground.')
       }
-      const label = captureLabel(format)
       const fps = Number.isFinite(options.fps) && Number(options.fps) > 0 ? Number(options.fps) : resolveRuntimeFps()
       const fallbackDuration = readCaptureDurationSeconds()
       const duration = Number.isFinite(options.duration) && Number(options.duration) > 0
@@ -619,132 +503,58 @@ speed = 0.75`
         : fallbackDuration
       const width = Number.isFinite(options.width) && Number(options.width) > 0 ? Math.floor(options.width) : undefined
       const height = Number.isFinite(options.height) && Number(options.height) > 0 ? Math.floor(options.height) : undefined
-      const defaultFrameExtension = 'png'
-      const frameExtension = options.extension ?? defaultFrameExtension
       const outputBaseName = sanitizeOutputBaseName(options.outputBaseName ?? loadCaptureBaseName()) || defaultOutputBaseName()
       const abortController = new AbortController()
 
       activeCaptureAbortController = abortController
-      activeCaptureFormat = format
       updateCaptureButtonState()
-      setCaptureStatus(`Starting ${label} capture session...`)
-
-      let shouldCleanupSession = false
-      let uploadedFrameCount = 0
-      let encodeFps = fps
+      setCaptureStatus('Starting MP4 capture session...')
 
       try {
-        if (format === 'mp4') {
-          if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined') {
-            throw new Error('WebCodecs is not available in this browser context. MP4 capture requires VideoEncoder support.')
-          }
-
-          const realtime = options.realtime !== false
-          setCaptureStatus(`Capturing MP4 with WebCodecs at ${fps} fps${realtime ? ' (real-time)' : ''}...`)
-          const videoBlob = await captureHydraVideo({
-            runtime,
-            fps,
-            duration,
-            width,
-            height,
-            realtime,
-            waitForGPU: true,
-            resumeAfterCapture: true,
-            restoreResolution: true,
-            ignoreEngineFpsGate: false,
-            signal: abortController.signal,
-            onProgress: (percent) => {
-              setCaptureStatus(`Encoding MP4 (${percent.toFixed(1)}%)...`)
-            }
-          })
-
-          if (abortController.signal.aborted) {
-            throw new Error('Capture aborted.')
-          }
-
-          const fileName = `${outputBaseName}.mp4`
-          const downloadVideoBlob = videoBlob.type === 'video/mp4'
-            ? videoBlob
-            : new Blob([videoBlob], { type: 'video/mp4' })
-          downloadBlob({
-            blob: downloadVideoBlob,
-            fileName
-          })
-          saveCaptureBaseName(outputBaseName)
-          setCaptureStatus(`Saved ${fileName} to your downloads folder.`, 'ok')
-          return {
-            fileName,
-            mimeType: 'video/mp4'
-          }
+        if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined') {
+          throw new Error('WebCodecs is not available in this browser context. MP4 capture requires VideoEncoder support.')
         }
 
-        const session = await requestCaptureSession({ extension: frameExtension, signal: abortController.signal })
-        activeCaptureSessionId = String(session.sessionId)
-        shouldCleanupSession = true
-
-        setCaptureStatus('Capturing frames...')
-        const captureResult = await captureHydraFrameSequence({
+        const realtime = options.realtime !== false
+        setCaptureStatus(`Capturing MP4 with WebCodecs at ${fps} fps${realtime ? ' (real-time)' : ''}...`)
+        const videoBlob = await captureHydraVideo({
           runtime,
           fps,
           duration,
           width,
           height,
-          extension: frameExtension,
-          waitForRAF: false,
-          downloadFallback: false,
+          realtime,
+          waitForGPU: true,
+          resumeAfterCapture: true,
+          restoreResolution: true,
+          ignoreEngineFpsGate: false,
           signal: abortController.signal,
-          onFrameBlob: async ({ fileName, blob, frameNumber, totalFrames }) => {
-            setCaptureStatus(`Uploading frame ${frameNumber}/${totalFrames}...`)
-            await uploadCaptureFrame({
-              sessionId: activeCaptureSessionId,
-              fileName,
-              blob,
-              signal: abortController.signal
-            })
-            uploadedFrameCount += 1
+          onProgress: (percent) => {
+            setCaptureStatus(`Encoding MP4 (${percent.toFixed(1)}%)...`)
           }
         })
-        encodeFps = captureResult.fps
 
         if (abortController.signal.aborted) {
-          throw new Error('Capture aborted.')
+          setCaptureStatus('Capture cancelled.', '')
+          return null
         }
 
-        const encoded = await encodeAndDownloadMedia({
-          sessionId: activeCaptureSessionId,
-          fps: captureResult.fps,
-          format,
-          outputBaseName,
-          signal: abortController.signal
+        const fileName = `${outputBaseName}.mp4`
+        const downloadVideoBlob = videoBlob.type === 'video/mp4'
+          ? videoBlob
+          : new Blob([videoBlob], { type: 'video/mp4' })
+        downloadBlob({
+          blob: downloadVideoBlob,
+          fileName
         })
-
-        shouldCleanupSession = false
         saveCaptureBaseName(outputBaseName)
-        setCaptureStatus(`Saved ${encoded.fileName} to your downloads folder.`, 'ok')
-        return encoded
+        setCaptureStatus(`Saved ${fileName} to your downloads folder.`, 'ok')
+        return {
+          fileName,
+          mimeType: 'video/mp4'
+        }
       } catch (error) {
         if (abortController.signal.aborted) {
-          if (uploadedFrameCount > 0 && activeCaptureSessionId) {
-            try {
-              setCaptureStatus(`Stopped. Encoding ${uploadedFrameCount} frame(s) to ${label}...`)
-              const encoded = await encodeAndDownloadMedia({
-                sessionId: activeCaptureSessionId,
-                fps: encodeFps,
-                format,
-                outputBaseName,
-                signal: undefined
-              })
-              shouldCleanupSession = false
-              saveCaptureBaseName(outputBaseName)
-              setCaptureStatus(`Saved ${encoded.fileName} to your downloads folder.`, 'ok')
-              return encoded
-            } catch (encodeError) {
-              const message = encodeError instanceof Error ? encodeError.message : String(encodeError)
-              setCaptureStatus(`Capture failed after stop: ${message}`, 'error')
-              console.error('[hydra] partial capture encode failed', encodeError)
-              return null
-            }
-          }
           setCaptureStatus('Capture cancelled.', '')
           return null
         }
@@ -754,53 +564,30 @@ speed = 0.75`
         console.error('[hydra] capture failed', error)
         throw error
       } finally {
-        if (shouldCleanupSession && activeCaptureSessionId) {
-          try {
-            await abortCaptureSession(activeCaptureSessionId)
-          } catch {
-            // Cleanup is best effort if the server session already ended.
-          }
-        }
         activeCaptureAbortController = null
-        activeCaptureSessionId = null
-        activeCaptureFormat = null
         updateCaptureButtonState()
       }
     }
 
-    const captureAndSaveGif = async (options = {}) => captureAndSaveMedia({ ...options, format: 'gif' })
     const captureAndSaveVideo = async (options = {}) => captureAndSaveMedia({ ...options, format: 'mp4' })
     const captureAndSaveMp4 = async (options = {}) => captureAndSaveMedia({ ...options, format: 'mp4' })
     const captureAndSaveWebm = async () => {
       throw new Error('captureAndSaveWebm is no longer available in the playground. Use captureAndSaveMp4() for WebCodecs capture.')
     }
 
-    const toggleMediaCapture = (format) => {
+    const toggleVideoCapture = () => {
       if (activeCaptureAbortController) {
-        const runningLabel = captureLabel(activeCaptureFormat)
-        const requestedLabel = captureLabel(format)
-        if (activeCaptureFormat === format) setCaptureStatus(`Stopping ${runningLabel} capture...`)
-        else setCaptureStatus(`Stopping ${runningLabel} capture before starting ${requestedLabel}...`)
+        setCaptureStatus('Stopping MP4 capture...')
         activeCaptureAbortController.abort()
         return
       }
-
-      void captureAndSaveMedia({ format }).catch(() => { })
-    }
-
-    const toggleGifCapture = () => {
-      toggleMediaCapture('gif')
-    }
-    const toggleVideoCapture = () => {
-      toggleMediaCapture('mp4')
+      void captureAndSaveMedia({ format: 'mp4' }).catch(() => { })
     }
 
     window.captureAndSaveMedia = captureAndSaveMedia
-    window.captureAndSaveGif = captureAndSaveGif
     window.captureAndSaveVideo = captureAndSaveVideo
     window.captureAndSaveMp4 = captureAndSaveMp4
     window.captureAndSaveWebm = captureAndSaveWebm
-    window.toggleGifCapture = toggleGifCapture
     window.toggleVideoCapture = toggleVideoCapture
     window.toggleMp4Capture = toggleVideoCapture
     setCaptureDurationSeconds(loadCaptureDurationSeconds())
@@ -951,10 +738,6 @@ speed = 0.75`
       liveRunButton.addEventListener('click', () => runEditorSnippet('smart'))
     }
 
-    if (captureGifToggle) {
-      captureGifToggle.addEventListener('click', toggleGifCapture)
-    }
-
     if (captureVideoToggle) {
       captureVideoToggle.addEventListener('click', toggleVideoCapture)
     }
@@ -972,12 +755,9 @@ speed = 0.75`
       livecodingPlugin = createLivecodingPlugin({
         exposeHelpers: {
           captureFrames,
-          captureAndSaveGif,
           captureAndSaveVideo,
           captureAndSaveMp4,
-          toggleGifCapture,
-          toggleVideoCapture,
-          buildFfmpegCommands
+          toggleVideoCapture
         },
         allowedBindings: [
           'speed',
@@ -995,7 +775,7 @@ speed = 0.75`
       window.livecodingDetach = detachLivecoding
       if (livePanel) livePanel.hidden = false
       if (livecodingNote) {
-        livecodingNote.innerHTML = 'Live editor enabled: <code>Ctrl/Cmd+Enter</code> runs selection/line. <code>Shift+Ctrl/Cmd+Enter</code> runs full buffer incrementally (unchanged blank-line blocks are skipped). Capture via buttons, <code>captureAndSaveGif()</code>, or <code>captureAndSaveVideo()</code>.'
+        livecodingNote.innerHTML = 'Live editor enabled: <code>Ctrl/Cmd+Enter</code> runs selection/line. <code>Shift+Ctrl/Cmd+Enter</code> runs full buffer incrementally (unchanged blank-line blocks are skipped). Capture via button, <code>captureAndSaveVideo()</code>, or <code>captureAndSaveMp4()</code>.'
       }
       setLiveStatus('Ready. Ctrl/Cmd+Enter runs selection/line; Shift+Ctrl/Cmd+Enter runs full buffer incrementally.')
       console.info('[hydra] livecoding plugin attached')
@@ -1009,10 +789,6 @@ speed = 0.75`
       if (activeCaptureAbortController) {
         activeCaptureAbortController.abort()
       }
-      if (activeCaptureSessionId) {
-        void abortCaptureSession(activeCaptureSessionId).catch(() => { })
-        activeCaptureSessionId = null
-      }
       if (typeof detachLivecoding === 'function') {
         detachLivecoding()
         detachLivecoding = null
@@ -1024,10 +800,8 @@ speed = 0.75`
 
     console.info('[hydra] ready')
     console.info('[hydra] try: osc(20, 0.1, 0).rotate(0.2).out()')
-    console.info('[hydra] capture gif: set Duration (s), then click GIF button or run await captureAndSaveGif({ duration: 3 })')
     console.info('[hydra] capture mp4 (WebCodecs): click Video button or run await captureAndSaveVideo({ duration: 3 })')
     console.info('[hydra] capture frames: await captureFrames({ duration: 2, fps: 60, extension: "png", pickDirectory: true })')
-    console.info('[hydra] ffmpeg: buildFfmpegCommands({ fps: 60, ffmpegPattern: "frame-%04d.png" })')
     console.info('[hydra] dispose via: hydra.dispose()')
   </script>
 </body>

@@ -4,7 +4,7 @@
  * This module provides two paths:
  * 1. `readbackTexture` (original): Reads raw rgba16float data.
  * 2. `readbackTextureWithConversion`: Uses a render pass to convert
- *    rgba16float -> rgba8unorm on the GPU.
+ *    rgba16float -> rgba8unorm on the GPU (linear quantization, no sRGB transfer).
  */
 
 /** Result of creating a readback buffer with calculated row alignment. */
@@ -98,8 +98,8 @@ const CONVERSION_FRAGMENT_WGSL = `
 
 @fragment
 fn fsMain(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
-  // Direct sample. The hardware handles linear -> sRGB conversion when writing 
-  // to the rgba8unorm render target, matching the screen's behavior exactly.
+  // Direct sample followed by UNORM quantization in the render target.
+  // Note: rgba8unorm does not apply sRGB transfer automatically.
   let color = textureLoad(tex0, vec2i(fragCoord.xy), 0);
   
   // Force opaque alpha for video capture (composites over black effectively)
@@ -160,7 +160,7 @@ const getConversionContext = (device: GPUDevice): ConversionContext => {
 }
 
 /**
- * Perform GPU-side conversion from rgba16float -> rgba8unorm sRGB via Render Pass.
+ * Perform GPU-side conversion from rgba16float -> rgba8unorm via Render Pass.
  * Requires a temporary intermediate texture as a render attachment.
  */
 export const readbackTextureWithConversion = (

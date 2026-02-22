@@ -6,7 +6,6 @@ import {
   readbackTextureWithConversion,
   createintermediateConversionTexture,
   mapReadbackBuffer,
-  float16ToUint8,
   stripRowPadding,
   type ReadbackBufferInfo
 } from './gpu-readback.js'
@@ -115,10 +114,6 @@ export interface BuildFfmpegCommandsOptions {
 
 export interface FfmpegCommandSet {
   mp4: string
-  gif: string
-  webm: string
-  mp4_10bit: string
-  prores: string
 }
 
 const normalizeExtension = (extension: CaptureFrameSequenceExtension | undefined): CaptureFrameSequenceNormalizedExtension => {
@@ -135,17 +130,56 @@ const resolveMimeType = (extension: CaptureFrameSequenceNormalizedExtension): st
   return 'image/webp'
 }
 
-const resolvePositiveNumber = (value: unknown, fallback: number, label: string): number => {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
-  if (value <= 0) throw new Error(`captureFrameSequence: ${label} must be greater than 0.`)
+const resolvePositiveNumber = (value: unknown, fallback: number, label: string, context = 'captureFrameSequence'): number => {
+  if (typeof value === 'undefined' || value === null) return fallback
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`${context}: ${label} must be a finite number greater than 0.`)
+  }
+  if (value <= 0) throw new Error(`${context}: ${label} must be greater than 0.`)
   return value
 }
 
-const resolveOptionalPositiveInteger = (value: unknown, fallback: number, label: string): number => {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
+const resolveOptionalPositiveInteger = (
+  value: unknown,
+  fallback: number,
+  label: string,
+  context = 'captureFrameSequence'
+): number => {
+  if (typeof value === 'undefined' || value === null) return fallback
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`${context}: ${label} must be a finite number greater than 0.`)
+  }
   const parsed = Math.floor(value)
-  if (parsed <= 0) throw new Error(`captureFrameSequence: ${label} must be greater than 0.`)
+  if (parsed <= 0) throw new Error(`${context}: ${label} must be greater than 0.`)
   return parsed
+}
+
+const FRAME_COUNT_EPSILON = 1e-9
+
+const resolveFrameCountFromDuration = (duration: number, fps: number, context: string): number => {
+  const rawFrameCount = duration * fps
+  if (!Number.isFinite(rawFrameCount) || rawFrameCount <= 0) {
+    throw new Error(`${context}: duration * fps must be a finite number greater than 0.`)
+  }
+  return Math.max(1, Math.ceil(rawFrameCount - FRAME_COUNT_EPSILON))
+}
+
+const resolveTotalFrames = ({
+  totalFrames,
+  duration,
+  fps,
+  context
+}: {
+  totalFrames: unknown
+  duration: unknown
+  fps: number
+  context: string
+}): number => {
+  if (typeof totalFrames !== 'undefined' && totalFrames !== null) {
+    return resolveOptionalPositiveInteger(totalFrames, 1, 'totalFrames', context)
+  }
+  const safeDuration = resolvePositiveNumber(duration, 1, 'duration', context)
+  return resolveFrameCountFromDuration(safeDuration, fps, context)
 }
 
 const resolveQuality = (extension: CaptureFrameSequenceNormalizedExtension, quality: unknown): number | undefined => {
@@ -237,12 +271,17 @@ export const captureFrameSequence = async (options: CaptureFrameSequenceOptions)
   const mimeType = resolveMimeType(extension)
   const quality = resolveQuality(extension, options.quality)
   const deltaTime = 1 / fps
-  const totalFrames = Number.isFinite(options.totalFrames)
-    ? resolveOptionalPositiveInteger(options.totalFrames, 1, 'totalFrames')
-    : resolveOptionalPositiveInteger(Math.round(resolvePositiveNumber(options.duration, 1, 'duration') * fps), 1, 'duration * fps')
+  const fallbackCanvasWidth = Number.isFinite(canvas.width) ? Math.max(1, Math.floor(canvas.width)) : 1
+  const fallbackCanvasHeight = Number.isFinite(canvas.height) ? Math.max(1, Math.floor(canvas.height)) : 1
+  const totalFrames = resolveTotalFrames({
+    totalFrames: options.totalFrames,
+    duration: options.duration,
+    fps,
+    context: 'captureFrameSequence'
+  })
   const duration = totalFrames / fps
-  const width = resolveOptionalPositiveInteger(options.width, canvas.width, 'width')
-  const height = resolveOptionalPositiveInteger(options.height, canvas.height, 'height')
+  const width = resolveOptionalPositiveInteger(options.width, fallbackCanvasWidth, 'width')
+  const height = resolveOptionalPositiveInteger(options.height, fallbackCanvasHeight, 'height')
   const prefix = String(options.prefix ?? 'frame')
   const waitForRAF = options.waitForRAF === true
   const downloadFallback = options.downloadFallback !== false
@@ -370,8 +409,12 @@ export const captureHydraFrameSequence = async (options: CaptureHydraFrameSequen
   const hasFpsBinding = Object.prototype.hasOwnProperty.call(synth, 'fps')
   const previousFpsBinding = synth.fps
   const shouldResize = Number.isFinite(width) || Number.isFinite(height)
-  const nextWidth = Number.isFinite(width) ? Math.max(1, Math.floor(width!)) : previousWidth
-  const nextHeight = Number.isFinite(height) ? Math.max(1, Math.floor(height!)) : previousHeight
+  const nextWidth = Number.isFinite(width)
+    ? resolveOptionalPositiveInteger(width, previousWidth, 'width', 'captureHydraFrameSequence')
+    : previousWidth
+  const nextHeight = Number.isFinite(height)
+    ? resolveOptionalPositiveInteger(height, previousHeight, 'height', 'captureHydraFrameSequence')
+    : previousHeight
 
   // Resolve GPU readback availability
   const device = runtime.renderer?.device ?? null
@@ -469,13 +512,12 @@ export const captureHydraFrameSequence = async (options: CaptureHydraFrameSequen
       const mimeType = resolveMimeType(extension)
       const quality = resolveQuality(extension, captureOptions.quality)
       const deltaTime = 1 / fps
-      const totalFrames = Number.isFinite(captureOptions.totalFrames)
-        ? resolveOptionalPositiveInteger(captureOptions.totalFrames, 1, 'totalFrames')
-        : resolveOptionalPositiveInteger(
-          Math.round(resolvePositiveNumber(captureOptions.duration, 1, 'duration') * fps),
-          1,
-          'duration * fps'
-        )
+      const totalFrames = resolveTotalFrames({
+        totalFrames: captureOptions.totalFrames,
+        duration: captureOptions.duration,
+        fps,
+        context: 'captureHydraFrameSequence'
+      })
       const duration = totalFrames / fps
       const captureWidth = runtime.host.canvas.width
       const captureHeight = runtime.host.canvas.height
@@ -614,8 +656,8 @@ export const captureHydraFrameSequence = async (options: CaptureHydraFrameSequen
         totalFrames,
         duration,
         prefix,
-        extension: normalizeExtension(captureOptions.extension),
-        ffmpegPattern: `${prefix}-%0${digits}d.${normalizeExtension(captureOptions.extension)}`
+        extension,
+        ffmpegPattern: `${prefix}-%0${digits}d.${extension}`
       }
     }
 
@@ -692,14 +734,24 @@ export const captureVideo = async (options: CaptureVideoOptions): Promise<Blob> 
     realtime = false,
     maxEncodeQueue
   } = options
-  const totalFrames = Math.ceil(duration * fps)
-  const deltaTime = 1 / fps
+  if (!canvas) throw new Error('captureVideo: canvas is required.')
+  if (typeof step !== 'function') throw new Error('captureVideo: step(frameInfo) is required.')
+
+  const safeFps = resolvePositiveNumber(fps, 30, 'fps', 'captureVideo')
+  const safeDuration = resolvePositiveNumber(duration, 1, 'duration', 'captureVideo')
+  const fallbackCanvasWidth = Number.isFinite(canvas.width) ? Math.max(1, Math.floor(canvas.width)) : 1
+  const fallbackCanvasHeight = Number.isFinite(canvas.height) ? Math.max(1, Math.floor(canvas.height)) : 1
+  const captureWidth = resolveOptionalPositiveInteger(width, fallbackCanvasWidth, 'width', 'captureVideo')
+  const captureHeight = resolveOptionalPositiveInteger(height, fallbackCanvasHeight, 'height', 'captureVideo')
+  const totalFrames = resolveFrameCountFromDuration(safeDuration, safeFps, 'captureVideo')
+  const normalizedDuration = totalFrames / safeFps
+  const deltaTime = 1 / safeFps
   const frameIntervalMs = deltaTime * 1000
 
   const recorder = new VideoRecorder({
-    width,
-    height,
-    fps,
+    width: captureWidth,
+    height: captureHeight,
+    fps: safeFps,
     ...(bitrate != null ? { bitrate } : {}),
     ...(maxEncodeQueue != null ? { maxEncodeQueue } : {})
   })
@@ -727,13 +779,13 @@ export const captureVideo = async (options: CaptureVideoOptions): Promise<Blob> 
       await step({
         frame,
         totalFrames,
-        fps,
+        fps: safeFps,
         time,
         deltaTime,
         playhead,
-        duration,
-        width,
-        height,
+        duration: normalizedDuration,
+        width: captureWidth,
+        height: captureHeight,
         canvas
       })
 
@@ -795,6 +847,9 @@ export const captureHydraVideo = async (options: CaptureHydraVideoOptions): Prom
     realtime = false
   } = options
 
+  const safeFps = resolvePositiveNumber(fps, 30, 'fps', 'captureHydraVideo')
+  const safeDuration = resolvePositiveNumber(duration, 1, 'duration', 'captureHydraVideo')
+
   await runtime.init()
   const hasGpuDevice = Boolean(runtime.renderer?.device)
 
@@ -802,9 +857,13 @@ export const captureHydraVideo = async (options: CaptureHydraVideoOptions): Prom
   // can be stale/blank depending on browser + GPU compositor behavior.
   if (hasGpuDevice) {
     const recorder = new VideoRecorder({
-      width: Number.isFinite(width) ? Math.max(1, Math.floor(width!)) : runtime.host.canvas.width,
-      height: Number.isFinite(height) ? Math.max(1, Math.floor(height!)) : runtime.host.canvas.height,
-      fps,
+      width: Number.isFinite(width)
+        ? resolveOptionalPositiveInteger(width, runtime.host.canvas.width, 'width', 'captureHydraVideo')
+        : runtime.host.canvas.width,
+      height: Number.isFinite(height)
+        ? resolveOptionalPositiveInteger(height, runtime.host.canvas.height, 'height', 'captureHydraVideo')
+        : runtime.host.canvas.height,
+      fps: safeFps,
       ...(bitrate != null ? { bitrate } : {}),
       ...(maxEncodeQueue != null ? { maxEncodeQueue } : {})
     })
@@ -814,7 +873,7 @@ export const captureHydraVideo = async (options: CaptureHydraVideoOptions): Prom
     let stagingCanvas: HTMLCanvasElement | null = null
     let stagingContext: CanvasRenderingContext2D | null = null
     let stagingImageData: ImageData | null = null
-    const frameIntervalMs = (1 / fps) * 1000
+    const frameIntervalMs = (1 / safeFps) * 1000
     const captureStartMs = realtime && typeof performance !== 'undefined' ? performance.now() : 0
 
     try {
@@ -823,8 +882,8 @@ export const captureHydraVideo = async (options: CaptureHydraVideoOptions): Prom
         output,
         width,
         height,
-        fps,
-        duration,
+        fps: safeFps,
+        duration: safeDuration,
         signal,
         waitForGPU,
         resumeAfterCapture,
@@ -898,8 +957,12 @@ export const captureHydraVideo = async (options: CaptureHydraVideoOptions): Prom
   const hasFpsBinding = Object.prototype.hasOwnProperty.call(synth, 'fps')
   const previousFpsBinding = synth.fps
   const shouldResize = Number.isFinite(width) || Number.isFinite(height)
-  const nextWidth = Number.isFinite(width) ? Math.max(1, Math.floor(width!)) : previousWidth
-  const nextHeight = Number.isFinite(height) ? Math.max(1, Math.floor(height!)) : previousHeight
+  const nextWidth = Number.isFinite(width)
+    ? resolveOptionalPositiveInteger(width, previousWidth, 'width', 'captureHydraVideo')
+    : previousWidth
+  const nextHeight = Number.isFinite(height)
+    ? resolveOptionalPositiveInteger(height, previousHeight, 'height', 'captureHydraVideo')
+    : previousHeight
 
   activeRuntimeCaptures.add(runtime)
   runtime.stop()
@@ -912,8 +975,8 @@ export const captureHydraVideo = async (options: CaptureHydraVideoOptions): Prom
 
   try {
     return await captureVideo({
-      duration,
-      fps,
+      duration: safeDuration,
+      fps: safeFps,
       width: nextWidth,
       height: nextHeight,
       ...(bitrate != null ? { bitrate } : {}),
@@ -969,18 +1032,15 @@ const quote = (value: string): string => `"${value}"`
 
 export const buildFfmpegCommands = ({ fps, ffmpegPattern, outputBaseName = 'out' }: BuildFfmpegCommandsOptions): FfmpegCommandSet => {
   const safeFps = resolveFfmpegFps(fps)
-  const pattern = quote(ffmpegPattern)
-  const mp4Name = quote(`${outputBaseName}.mp4`)
-  const gifName = quote(`${outputBaseName}.gif`)
-  const webmName = quote(`${outputBaseName}.webm`)
-  const mp4_10bitName = quote(`${outputBaseName}_10bit.mp4`)
-  const proresName = quote(`${outputBaseName}.mov`)
+  if (typeof ffmpegPattern !== 'string' || ffmpegPattern.trim().length <= 0) {
+    throw new Error('buildFfmpegCommands: ffmpegPattern must be a non-empty string.')
+  }
+  const safePattern = ffmpegPattern
+  const safeOutputBaseName = String(outputBaseName || 'out').trim() || 'out'
+  const pattern = quote(safePattern)
+  const mp4Name = quote(`${safeOutputBaseName}.mp4`)
 
   return {
-    mp4: `ffmpeg -framerate ${safeFps} -start_number 0 -i ${pattern} -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" -c:v libx264 -preset slow -crf 12 -pix_fmt yuv420p -movflags +faststart ${mp4Name}`,
-    gif: `ffmpeg -framerate ${safeFps} -start_number 0 -i ${pattern} -vf "fps=${safeFps},split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither=sierra2_4a" ${gifName}`,
-    webm: `ffmpeg -framerate ${safeFps} -start_number 0 -i ${pattern} -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" -c:v libvpx-vp9 -pix_fmt yuva420p -crf 18 -b:v 0 ${webmName}`,
-    mp4_10bit: `ffmpeg -framerate ${safeFps} -start_number 0 -i ${pattern} -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" -c:v libx264 -preset slow -crf 12 -pix_fmt yuv420p10le -profile:v high10 -movflags +faststart ${mp4_10bitName}`,
-    prores: `ffmpeg -framerate ${safeFps} -start_number 0 -i ${pattern} -c:v prores_ks -profile:v 4 -pix_fmt yuva444p10le ${proresName}`
+    mp4: `ffmpeg -framerate ${safeFps} -start_number 0 -i ${pattern} -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" -c:v libx264 -preset slow -crf 12 -pix_fmt yuv420p -movflags +faststart ${mp4Name}`
   }
 }

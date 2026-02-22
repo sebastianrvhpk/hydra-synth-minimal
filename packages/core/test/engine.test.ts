@@ -109,6 +109,24 @@ describe('HydraEngine lifecycle', () => {
     expect(source.tickCount).toBe(1)
     expect(source.disposed).toBe(true)
   })
+
+  it('sanitizes non-finite numeric bindings and resolution updates', async () => {
+    const renderer = new MockRenderer()
+    const engine = new HydraEngine({ renderer, fps: 30, speed: 1, bpm: 30, width: 1280, height: 720 })
+    await engine.init()
+
+    engine.setBinding('fps', Number.POSITIVE_INFINITY)
+    engine.setBinding('speed', Number.NaN)
+    engine.setBinding('bpm', Number.NEGATIVE_INFINITY)
+    engine.setResolution(Number.NaN, -200)
+
+    const bindings = engine.getBindings()
+    expect(bindings.fps).toBe(30)
+    expect(bindings.speed).toBe(1)
+    expect(bindings.bpm).toBe(30)
+    expect(bindings.width).toBe(1280)
+    expect(bindings.height).toBe(720)
+  })
 })
 
 describe('HydraEngine errors', () => {

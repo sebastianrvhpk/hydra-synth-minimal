@@ -10,6 +10,23 @@ export interface VideoRecorderOptions {
   maxEncodeQueue?: number
 }
 
+const MICROS_PER_SECOND = 1_000_000
+const MP4_TIMESCALE = 90_000
+
+const resolvePositiveInteger = (value: unknown, label: string): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    throw new Error(`[VideoRecorder] ${label} must be a finite number greater than 0.`)
+  }
+  return Math.max(1, Math.floor(value))
+}
+
+const resolvePositiveFiniteNumber = (value: unknown, label: string): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    throw new Error(`[VideoRecorder] ${label} must be a finite number greater than 0.`)
+  }
+  return value
+}
+
 const wait = (ms: number): Promise<void> =>
   new Promise((resolve) => {
     setTimeout(resolve, ms)
@@ -35,6 +52,8 @@ export class VideoRecorder {
   private readonly fps: number
   private readonly bitrate: number
   private readonly maxEncodeQueue: number
+  private readonly frameDurationMicros: number
+  private readonly keyFrameIntervalFrames: number
   private frameCounter = 0
   private recording = false
   private encoderError: DOMException | null = null
@@ -42,13 +61,18 @@ export class VideoRecorder {
   private droppedChunkCountWithoutTrack = 0
 
   constructor (options: VideoRecorderOptions) {
-    this.width = options.width
-    this.height = options.height
-    this.fps = options.fps
-    this.bitrate = options.bitrate ?? 25_000_000 // 25 Mbps default (visually lossless)
+    this.width = resolvePositiveInteger(options.width, 'width')
+    this.height = resolvePositiveInteger(options.height, 'height')
+    this.fps = resolvePositiveFiniteNumber(options.fps, 'fps')
+    if (typeof options.bitrate === 'number' && (!Number.isFinite(options.bitrate) || options.bitrate <= 0)) {
+      throw new Error('[VideoRecorder] bitrate must be a finite number greater than 0.')
+    }
+    this.bitrate = options.bitrate != null ? Math.max(1, Math.floor(options.bitrate)) : 25_000_000 // 25 Mbps default (visually lossless)
     this.maxEncodeQueue = Number.isFinite(options.maxEncodeQueue)
       ? Math.max(0, Math.floor(options.maxEncodeQueue!))
       : 8
+    this.frameDurationMicros = Math.max(1, Math.round(MICROS_PER_SECOND / this.fps))
+    this.keyFrameIntervalFrames = Math.max(1, Math.round(this.fps * 2))
   }
 
   async start (): Promise<void> {
@@ -131,8 +155,9 @@ export class VideoRecorder {
       throw new Error('[VideoRecorder] not running')
     }
 
-    const duration = 1_000_000 / this.fps // microseconds
-    const timestamp = this.frameCounter * duration
+    const timestamp = Math.round((this.frameCounter * MICROS_PER_SECOND) / this.fps)
+    const nextTimestamp = Math.round(((this.frameCounter + 1) * MICROS_PER_SECOND) / this.fps)
+    const duration = Math.max(1, nextTimestamp - timestamp)
 
     const frame = source instanceof VideoFrame
       ? new VideoFrame(source, { timestamp, duration })
@@ -140,7 +165,7 @@ export class VideoRecorder {
 
     try {
       // Force a key-frame every 2 seconds for seekability.
-      const keyFrame = this.frameCounter % (this.fps * 2) === 0
+      const keyFrame = this.frameCounter % this.keyFrameIntervalFrames === 0
       this.encoder.encode(frame, { keyFrame })
     } finally {
       frame.close()
@@ -221,9 +246,21 @@ export class VideoRecorder {
       return
     }
 
-    const timescale = 90_000
-    const durationTicks = Math.round(((chunk.duration ?? 0) / 1_000_000) * timescale)
-    const dtsTicks = Math.round((chunk.timestamp / 1_000_000) * timescale)
+    const durationMicros = (
+      typeof chunk.duration === 'number' &&
+      Number.isFinite(chunk.duration) &&
+      chunk.duration > 0
+    )
+      ? Math.max(1, Math.round(chunk.duration))
+      : this.frameDurationMicros
+    const timestampMicros = (
+      Number.isFinite(chunk.timestamp) &&
+      chunk.timestamp >= 0
+    )
+      ? Math.round(chunk.timestamp)
+      : this.sampleCount * this.frameDurationMicros
+    const durationTicks = Math.max(1, Math.round((durationMicros * MP4_TIMESCALE) / MICROS_PER_SECOND))
+    const dtsTicks = Math.max(0, Math.round((timestampMicros * MP4_TIMESCALE) / MICROS_PER_SECOND))
 
     this.mp4File.addSample(this.trackId, data, {
       duration: durationTicks,

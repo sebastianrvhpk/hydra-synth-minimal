@@ -513,14 +513,6 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     source: 'timestamp_query' | 'cpu_encode_fallback' | 'history_fallback' | 'unavailable'
   } {
     const normalized = Number.isFinite(cpuEncodeMs) ? Math.max(0, cpuEncodeMs) : null
-    const timestampSupported = Boolean(this.renderer?.capabilities?.features?.includes('timestamp-query'))
-
-    if (timestampSupported && normalized != null) {
-      return {
-        value: normalized,
-        source: 'timestamp_query'
-      }
-    }
 
     if (normalized != null) {
       return {

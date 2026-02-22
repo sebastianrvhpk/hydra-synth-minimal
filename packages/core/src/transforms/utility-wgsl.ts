@@ -2,7 +2,8 @@ const utilityWgsl = {
   hydraMod: {
     wgsl: `
 fn hydraMod(x: f32, y: f32) -> f32 {
-  return x - y * floor(x / y);
+  let safeY = select(y, 1.0e-6, abs(y) < 1.0e-6);
+  return x - safeY * floor(x / safeY);
 }
 `
   },

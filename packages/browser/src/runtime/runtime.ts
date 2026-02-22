@@ -45,6 +45,24 @@ export const normalizeRuntimeExecutionMode = (
   return fallback
 }
 
+const DEFAULT_RUNTIME_DELTA_MS = 16
+const MAX_FRAME_HISTORY = 240
+
+const coerceCount = (value: unknown, fallback: number, minimum: number): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
+  return Math.max(minimum, Math.floor(value))
+}
+
+const coercePositiveInteger = (value: unknown, fallback: number): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return fallback
+  return Math.max(1, Math.floor(value))
+}
+
+const coerceNonNegativeFinite = (value: unknown, fallback: number): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return fallback
+  return value
+}
+
 interface HydraRuntimeRoutingDiagnostics {
   configuredMode: HydraRuntimeExecutionMode
   activeMode: 'fragment'
@@ -139,8 +157,8 @@ export class HydraBrowserRuntime {
       routeFailureCount: 0
     }
 
-    const sourceCount = Math.max(0, Math.floor(numSources))
-    const outputCount = Math.max(1, Math.floor(numOutputs))
+    const sourceCount = coerceCount(numSources, 4, 0)
+    const outputCount = coerceCount(numOutputs, 4, 1)
 
     this.outputs = Array(outputCount).fill(null).map((_, index) => {
       const output = new WebGPUOutputNode({
@@ -274,13 +292,16 @@ export class HydraBrowserRuntime {
     this.host.stop()
   }
 
-  tick(deltaMs = 16): void {
+  tick(deltaMs = DEFAULT_RUNTIME_DELTA_MS): void {
     if (this.disposed) return
-    this.engine.tick(deltaMs)
-    this.frameTimesMs.push(deltaMs)
-    while (this.frameTimesMs.length > 240) this.frameTimesMs.shift()
+    const safeDeltaMs = coerceNonNegativeFinite(deltaMs, DEFAULT_RUNTIME_DELTA_MS)
+    const renderedDeltaMs = this.engine.tick(safeDeltaMs)
+    if (!(renderedDeltaMs > 0)) return
+
+    this.frameTimesMs.push(renderedDeltaMs)
+    while (this.frameTimesMs.length > MAX_FRAME_HISTORY) this.frameTimesMs.shift()
     const stats = this.synth.stats as { fps: number }
-    stats.fps = deltaMs > 0 ? Math.ceil(1000 / deltaMs) : 0
+    stats.fps = Math.ceil(1000 / renderedDeltaMs)
   }
 
   emitEvent(name: string): void {
@@ -306,16 +327,20 @@ export class HydraBrowserRuntime {
   }
 
   setResolution(width: number, height: number): void {
-    this.host.setResolution(width, height)
-    this.engine.setResolution(width, height)
-    this.outputs.forEach((output) => output.resize(width, height))
+    const nextWidth = coercePositiveInteger(width, this.host.canvas.width)
+    const nextHeight = coercePositiveInteger(height, this.host.canvas.height)
+    this.host.setResolution(nextWidth, nextHeight)
+    this.engine.setResolution(nextWidth, nextHeight)
+    this.outputs.forEach((output) => output.resize(nextWidth, nextHeight))
   }
 
   setCanvasDisplay(width: number, height: number, options?: CanvasDisplayOptions): void {
-    this.host.setCanvasDisplay(width, height, options)
-    this.engine.setResolution(width, height)
-    this.outputs.forEach((output) => output.resize(width, height))
-    this.renderer.setResolution(width, height)
+    const nextWidth = coercePositiveInteger(width, this.host.canvas.width)
+    const nextHeight = coercePositiveInteger(height, this.host.canvas.height)
+    this.host.setCanvasDisplay(nextWidth, nextHeight, options)
+    this.engine.setResolution(nextWidth, nextHeight)
+    this.outputs.forEach((output) => output.resize(nextWidth, nextHeight))
+    this.renderer.setResolution(nextWidth, nextHeight)
   }
 
   resetCanvasDisplay(): void {
@@ -370,7 +395,7 @@ export class HydraBrowserRuntime {
       time: Number(this.synth.time ?? 0),
       bpm: Number(this.synth.bpm ?? 30),
       resolution: [this.host.canvas.width, this.host.canvas.height],
-      deltaMs: this.frameTimesMs[this.frameTimesMs.length - 1] ?? 16
+      deltaMs: this.frameTimesMs[this.frameTimesMs.length - 1] ?? DEFAULT_RUNTIME_DELTA_MS
     }
   }
 

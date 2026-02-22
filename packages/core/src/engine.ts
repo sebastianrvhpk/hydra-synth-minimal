@@ -14,6 +14,68 @@ interface RuntimeContext {
   stage: string
 }
 
+const DEFAULT_WIDTH = 1280
+const DEFAULT_HEIGHT = 720
+const DEFAULT_BPM = 30
+const DEFAULT_SPEED = 1
+const DEFAULT_DELTA_MS = 16
+
+const normalizeFiniteNumber = (value: unknown, fallback: number, label: string): number => {
+  if (typeof value !== 'number') return fallback
+  if (!Number.isFinite(value)) {
+    throw new Error(`HydraEngine: ${label} must be a finite number.`)
+  }
+  return value
+}
+
+const normalizePositiveFiniteNumber = (value: unknown, fallback: number, label: string): number => {
+  if (typeof value !== 'number') return fallback
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`HydraEngine: ${label} must be a finite number greater than 0.`)
+  }
+  return value
+}
+
+const normalizeOptionalPositiveFiniteNumber = (value: unknown, label: string): number | undefined => {
+  if (typeof value === 'undefined' || value === null) return undefined
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    throw new Error(`HydraEngine: ${label} must be undefined or a finite number greater than 0.`)
+  }
+  return value
+}
+
+const normalizePositiveInteger = (value: unknown, fallback: number, label: string): number => {
+  if (typeof value !== 'number') return fallback
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`HydraEngine: ${label} must be a finite number greater than 0.`)
+  }
+  return Math.max(1, Math.floor(value))
+}
+
+const coerceFiniteNumber = (value: unknown, fallback: number): number => (
+  typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : fallback
+)
+
+const coercePositiveFiniteNumber = (value: unknown, fallback: number): number => (
+  typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : fallback
+)
+
+const coerceOptionalPositiveFiniteNumber = (value: unknown, fallback: number | undefined): number | undefined => {
+  if (typeof value === 'undefined' || value === null) return undefined
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value
+  return fallback
+}
+
+const coercePositiveInteger = (value: unknown, fallback: number): number => (
+  typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? Math.max(1, Math.floor(value))
+    : fallback
+)
+
 export class HydraEngine implements HydraEngineBindingHost {
   private readonly renderer
   private readonly sources: SourceAdapter[]
@@ -41,16 +103,15 @@ export class HydraEngine implements HydraEngineBindingHost {
     this.sources = options.sources ?? []
     this.updateCallback = options.update ?? (() => { })
     this.afterUpdateCallback = options.afterUpdate ?? (() => { })
-    this.afterUpdateCallback = options.afterUpdate ?? (() => { })
     this.onErrorCallback = options.onError
     this.onDebugCallback = options.onDebug
     this.errorPolicy = options.errorPolicy ?? 'emit'
 
-    const width = options.width ?? 1280
-    const height = options.height ?? 720
-    const bpm = options.bpm ?? 30
-    this.speed = options.speed ?? 1
-    this.fps = options.fps
+    const width = normalizePositiveInteger(options.width, DEFAULT_WIDTH, 'width')
+    const height = normalizePositiveInteger(options.height, DEFAULT_HEIGHT, 'height')
+    const bpm = normalizePositiveFiniteNumber(options.bpm, DEFAULT_BPM, 'bpm')
+    this.speed = normalizeFiniteNumber(options.speed, DEFAULT_SPEED, 'speed')
+    this.fps = normalizeOptionalPositiveFiniteNumber(options.fps, 'fps')
 
     this.frameState = {
       time: 0,
@@ -123,18 +184,25 @@ export class HydraEngine implements HydraEngineBindingHost {
     )
   }
 
-  tick(deltaMs = 16): void {
-    if (this.disposed || !this.initialized || this.initError) return
+  tick(deltaMs = DEFAULT_DELTA_MS): number {
+    if (this.disposed || !this.initialized || this.initError) return 0
 
     this.pullBindingOverrides()
+    const safeDeltaMs = (
+      typeof deltaMs === 'number' &&
+      Number.isFinite(deltaMs) &&
+      deltaMs >= 0
+    )
+      ? deltaMs
+      : DEFAULT_DELTA_MS
 
-    this.frameState.time += deltaMs * 0.001 * this.speed
-    this.timeSinceLastUpdate += deltaMs
+    this.frameState.time += safeDeltaMs * 0.001 * this.speed
+    this.timeSinceLastUpdate += safeDeltaMs
 
     const fps = this.fps
-    if (fps && this.timeSinceLastUpdate < 1000 / fps) return
+    if (fps && this.timeSinceLastUpdate < 1000 / fps) return 0
 
-    const elapsed = this.timeSinceLastUpdate || deltaMs
+    const elapsed = this.timeSinceLastUpdate || safeDeltaMs
     this.timeSinceLastUpdate = 0
     this.frameState.deltaMs = elapsed
     this.syncBindings()
@@ -159,6 +227,7 @@ export class HydraEngine implements HydraEngineBindingHost {
     }
 
     this.callRuntimeCallback('afterUpdate', this.afterUpdateCallback, elapsed)
+    return elapsed
   }
 
   getBindings(): Readonly<Record<string, unknown>> {
@@ -168,32 +237,56 @@ export class HydraEngine implements HydraEngineBindingHost {
   setBinding(name: string, value: unknown): void {
     if (this.disposed) return
 
-    this.bindings[name] = value
-    if (name === 'speed' && typeof value === 'number') this.speed = value
+    if (name === 'speed') {
+      this.speed = coerceFiniteNumber(value, this.speed)
+      this.bindings.speed = this.speed
+      return
+    }
     if (name === 'fps') {
-      this.fps = typeof value === 'number' ? value : undefined
+      this.fps = coerceOptionalPositiveFiniteNumber(value, this.fps)
       this.bindings.fps = this.fps
+      return
     }
     if (name === 'update') {
       this.updateCallback = typeof value === 'function' ? value as (deltaMs: number) => void : () => { }
       this.bindings.update = this.updateCallback
+      return
     }
     if (name === 'afterUpdate') {
       this.afterUpdateCallback = typeof value === 'function' ? value as (deltaMs: number) => void : () => { }
       this.bindings.afterUpdate = this.afterUpdateCallback
+      return
     }
-    if (name === 'bpm' && typeof value === 'number') this.frameState.bpm = value
-    if (name === 'width' && typeof value === 'number') this.frameState.resolution[0] = value
-    if (name === 'height' && typeof value === 'number') this.frameState.resolution[1] = value
+    if (name === 'bpm') {
+      this.frameState.bpm = coercePositiveFiniteNumber(value, this.frameState.bpm)
+      this.bindings.bpm = this.frameState.bpm
+      return
+    }
+    if (name === 'width') {
+      const nextWidth = coercePositiveInteger(value, this.frameState.resolution[0])
+      this.frameState.resolution[0] = nextWidth
+      this.bindings.width = nextWidth
+      return
+    }
+    if (name === 'height') {
+      const nextHeight = coercePositiveInteger(value, this.frameState.resolution[1])
+      this.frameState.resolution[1] = nextHeight
+      this.bindings.height = nextHeight
+      return
+    }
+
+    this.bindings[name] = value
   }
 
   setResolution(width: number, height: number): void {
     if (this.disposed) return
-    this.frameState.resolution[0] = width
-    this.frameState.resolution[1] = height
-    this.bindings.width = width
-    this.bindings.height = height
-    this.renderer.setResolution?.(width, height)
+    const nextWidth = coercePositiveInteger(width, this.frameState.resolution[0])
+    const nextHeight = coercePositiveInteger(height, this.frameState.resolution[1])
+    this.frameState.resolution[0] = nextWidth
+    this.frameState.resolution[1] = nextHeight
+    this.bindings.width = nextWidth
+    this.bindings.height = nextHeight
+    this.renderer.setResolution?.(nextWidth, nextHeight)
   }
 
   addSource(source: SourceAdapter): () => void {
@@ -296,11 +389,14 @@ export class HydraEngine implements HydraEngineBindingHost {
   }
 
   private pullBindingOverrides(): void {
-    if (typeof this.bindings.speed === 'number') this.speed = this.bindings.speed
-    if (typeof this.bindings.fps === 'number') this.fps = this.bindings.fps
-    else if (typeof this.bindings.fps === 'undefined' || this.bindings.fps === null) this.fps = undefined
+    this.speed = coerceFiniteNumber(this.bindings.speed, this.speed)
+    this.bindings.speed = this.speed
 
-    if (typeof this.bindings.bpm === 'number') this.frameState.bpm = this.bindings.bpm
+    this.fps = coerceOptionalPositiveFiniteNumber(this.bindings.fps, this.fps)
+    this.bindings.fps = this.fps
+
+    this.frameState.bpm = coercePositiveFiniteNumber(this.bindings.bpm, this.frameState.bpm)
+    this.bindings.bpm = this.frameState.bpm
 
     if (typeof this.bindings.update === 'function') {
       this.updateCallback = this.bindings.update as (deltaMs: number) => void

@@ -49,6 +49,8 @@ const asInteger = (value, fallback) => {
   return parsed
 }
 
+const frameCountFromDuration = (durationSeconds, fpsValue) => Math.max(1, Math.ceil((durationSeconds * fpsValue) - 1e-9))
+
 const isReachable = async (url) => {
   try {
     return await new Promise((resolve) => {
@@ -153,7 +155,7 @@ const main = async () => {
   const trials = asPositiveInt(args.trials, 3)
   const preRollSeconds = asNonNegativeNumber(args['pre-roll-seconds'], 15)
   const seed = asInteger(args.seed, 1337)
-  const totalFrames = Math.max(1, Math.ceil(duration * fps))
+  const totalFrames = frameCountFromDuration(duration, fps)
   const sampleFrames = parseFrameSampleList(args.sampleFrames, totalFrames)
   const exportDiffImages = args['no-diff-images'] ? false : true
   const exportMp4Artifacts = args['no-mp4-artifacts'] ? false : true
@@ -491,7 +493,7 @@ const main = async () => {
       const preRollRuntime = async (runtime, seconds) => {
         if (!(seconds > 0)) return { preRollSeconds: 0, preRollFrames: 0, deltaMs: 0 }
         const deltaMs = 1000 / fps
-        const preRollFrames = Math.max(0, Math.round(seconds * fps))
+        const preRollFrames = Math.max(0, Math.ceil((seconds * fps) - 1e-9))
         for (let frame = 0; frame < preRollFrames; frame += 1) {
           runtime.tick(deltaMs)
           if ((frame + 1) % 60 === 0) {
@@ -607,18 +609,18 @@ const main = async () => {
         const rgbaMae = absSumRgba / length
         const rgbaMse = sqSumRgba / length
         const rgbaRmse = Math.sqrt(rgbaMse)
-        const rgbaPsnr = rgbaMse === 0 ? Number.POSITIVE_INFINITY : 10 * Math.log10((255 * 255) / rgbaMse)
+        const rgbaPsnr = rgbaMse === 0 ? null : 10 * Math.log10((255 * 255) / rgbaMse)
 
         const rgbLength = pixelCount * 3
         const rgbMae = rgbLength > 0 ? absSumRgb / rgbLength : 0
         const rgbMse = rgbLength > 0 ? sqSumRgb / rgbLength : 0
         const rgbRmse = Math.sqrt(rgbMse)
-        const rgbPsnr = rgbMse === 0 ? Number.POSITIVE_INFINITY : 10 * Math.log10((255 * 255) / rgbMse)
+        const rgbPsnr = rgbMse === 0 ? null : 10 * Math.log10((255 * 255) / rgbMse)
 
         const alphaMae = pixelCount > 0 ? absSumAlpha / pixelCount : 0
         const alphaMse = pixelCount > 0 ? sqSumAlpha / pixelCount : 0
         const alphaRmse = Math.sqrt(alphaMse)
-        const alphaPsnr = alphaMse === 0 ? Number.POSITIVE_INFINITY : 10 * Math.log10((255 * 255) / alphaMse)
+        const alphaPsnr = alphaMse === 0 ? null : 10 * Math.log10((255 * 255) / alphaMse)
 
         return {
           comparable: true,
@@ -864,13 +866,19 @@ const main = async () => {
         }
       }
 
+      const averageFiniteMetric = (values) => {
+        const finite = values.filter((value) => typeof value === 'number' && Number.isFinite(value))
+        if (finite.length <= 0) return null
+        return finite.reduce((sum, value) => sum + value, 0) / finite.length
+      }
+
       const summarizeDiffFrames = (frames) => frames.length > 0
         ? {
             comparableFrameCount: frames.length,
             rgba: {
               maeAvg: frames.reduce((sum, item) => sum + (item.rgba?.mae ?? 0), 0) / frames.length,
               rmseAvg: frames.reduce((sum, item) => sum + (item.rgba?.rmse ?? 0), 0) / frames.length,
-              psnrAvg: frames.reduce((sum, item) => sum + (item.rgba?.psnr ?? 0), 0) / frames.length,
+              psnrAvg: averageFiniteMetric(frames.map((item) => item.rgba?.psnr ?? null)),
               maxDiffMax: Math.max(...frames.map((item) => item.rgba?.maxDiff ?? 0)),
               changedPixelRatioOver2Avg:
                 frames.reduce((sum, item) => sum + (item.rgba?.changedPixelRatioOver2 ?? 0), 0) / frames.length
@@ -878,7 +886,7 @@ const main = async () => {
             rgb: {
               maeAvg: frames.reduce((sum, item) => sum + (item.rgb?.mae ?? 0), 0) / frames.length,
               rmseAvg: frames.reduce((sum, item) => sum + (item.rgb?.rmse ?? 0), 0) / frames.length,
-              psnrAvg: frames.reduce((sum, item) => sum + (item.rgb?.psnr ?? 0), 0) / frames.length,
+              psnrAvg: averageFiniteMetric(frames.map((item) => item.rgb?.psnr ?? null)),
               maxDiffMax: Math.max(...frames.map((item) => item.rgb?.maxDiff ?? 0)),
               changedPixelRatioOver2Avg:
                 frames.reduce((sum, item) => sum + (item.rgb?.changedPixelRatioOver2 ?? 0), 0) / frames.length,
@@ -890,7 +898,7 @@ const main = async () => {
             alpha: {
               maeAvg: frames.reduce((sum, item) => sum + (item.alpha?.mae ?? 0), 0) / frames.length,
               rmseAvg: frames.reduce((sum, item) => sum + (item.alpha?.rmse ?? 0), 0) / frames.length,
-              psnrAvg: frames.reduce((sum, item) => sum + (item.alpha?.psnr ?? 0), 0) / frames.length,
+              psnrAvg: averageFiniteMetric(frames.map((item) => item.alpha?.psnr ?? null)),
               maxDiffMax: Math.max(...frames.map((item) => item.alpha?.maxDiff ?? 0)),
               changedPixelRatioOver2Avg:
                 frames.reduce((sum, item) => sum + (item.alpha?.changedPixelRatioOver2 ?? 0), 0) / frames.length

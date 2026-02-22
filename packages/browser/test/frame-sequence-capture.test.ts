@@ -54,6 +54,27 @@ describe('captureFrameSequence', () => {
     expect(files).toEqual(['frame-000.png', 'frame-001.png', 'frame-002.png'])
     expect(result.ffmpegPattern).toBe('frame-%03d.png')
   })
+
+  it('uses ceil-based frame counting for duration * fps', async () => {
+    const canvas = createMockCanvas()
+    const frames: number[] = []
+
+    const result = await captureFrameSequence({
+      canvas,
+      fps: 2.5,
+      duration: 1,
+      waitForRAF: false,
+      downloadFallback: false,
+      step: ({ frame }) => {
+        frames.push(frame)
+      },
+      onFrameBlob: () => {}
+    })
+
+    expect(frames).toEqual([0, 1, 2])
+    expect(result.totalFrames).toBe(3)
+    expect(result.duration).toBeCloseTo(1.2, 6)
+  })
 })
 
 describe('captureHydraFrameSequence', () => {
@@ -239,10 +260,6 @@ describe('buildFfmpegCommands', () => {
     expect(commands.mp4).toContain('"frame-%04d.png"')
     expect(commands.mp4).toContain('"shot-a.mp4"')
     expect(commands.mp4).toContain('-movflags +faststart')
-    expect(commands.gif).toContain('palettegen=stats_mode=diff')
-    expect(commands.webm).toContain('"shot-a.webm"')
-    expect(commands.webm).toContain('libvpx-vp9')
-    expect(commands.mp4_10bit).toContain('pix_fmt yuv420p10le')
-    expect(commands.prores).toContain('prores_ks')
+    expect(Object.keys(commands)).toEqual(['mp4'])
   })
 })
