@@ -863,6 +863,8 @@ export const captureHydraVideo = async (options: CaptureHydraVideoOptions): Prom
     let stagingCanvas: HTMLCanvasElement | null = null
     let stagingContext: CanvasRenderingContext2D | null = null
     let stagingImageData: ImageData | null = null
+    let mirroredCanvas: HTMLCanvasElement | null = null
+    let mirroredContext: CanvasRenderingContext2D | null = null
     const frameIntervalMs = (1 / safeFps) * 1000
     const captureStartMs = realtime && typeof performance !== 'undefined' ? performance.now() : 0
 
@@ -911,13 +913,28 @@ export const captureHydraVideo = async (options: CaptureHydraVideoOptions): Prom
               throw new Error('captureHydraVideo: unable to acquire 2D context for staging canvas.')
             }
             stagingImageData = stagingContext.createImageData(frameWidth, frameHeight)
+
+            mirroredCanvas = document.createElement('canvas')
+            mirroredCanvas.width = frameWidth
+            mirroredCanvas.height = frameHeight
+            mirroredContext = mirroredCanvas.getContext('2d')
+            if (!mirroredContext) {
+              throw new Error('captureHydraVideo: unable to acquire 2D context for mirrored staging canvas.')
+            }
           }
 
           const pixels = stripRowPadding(data, frameWidth, frameHeight, bytesPerRow)
           stagingImageData!.data.set(pixels)
           stagingContext!.putImageData(stagingImageData!, 0, 0)
 
-          await recorder.appendFrame(stagingCanvas)
+          // The screen-present pass flips X; mirror readback frames to match viewport output.
+          mirroredContext!.setTransform(1, 0, 0, 1, 0, 0)
+          mirroredContext!.clearRect(0, 0, frameWidth, frameHeight)
+          mirroredContext!.setTransform(-1, 0, 0, 1, frameWidth, 0)
+          mirroredContext!.drawImage(stagingCanvas, 0, 0)
+          mirroredContext!.setTransform(1, 0, 0, 1, 0, 0)
+
+          await recorder.appendFrame(mirroredCanvas!)
           if (onProgress) {
             onProgress(((frame + 1) / totalFrames) * 100)
           }
