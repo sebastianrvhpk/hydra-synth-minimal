@@ -106,16 +106,6 @@ export interface CaptureHydraFrameSequenceOptions extends Omit<CaptureFrameSeque
   onFrameBuffer?: (info: CaptureFrameSequenceBufferInfo) => void | Promise<void>
 }
 
-export interface BuildFfmpegCommandsOptions {
-  fps: number
-  ffmpegPattern: string
-  outputBaseName?: string
-}
-
-export interface FfmpegCommandSet {
-  mp4: string
-}
-
 const normalizeExtension = (extension: CaptureFrameSequenceExtension | undefined): CaptureFrameSequenceNormalizedExtension => {
   const normalized = String(extension ?? 'png').toLowerCase()
   if (normalized === 'png') return 'png'
@@ -1018,29 +1008,5 @@ export const captureHydraVideo = async (options: CaptureHydraVideoOptions): Prom
       activeRuntimeCaptures.delete(runtime)
     }
     if (!captureFailed && restoreError) throw restoreError
-  }
-}
-
-const resolveFfmpegFps = (fps: number): number => {
-  if (!Number.isFinite(fps) || fps <= 0) {
-    throw new Error('buildFfmpegCommands: fps must be a finite number greater than 0.')
-  }
-  return fps
-}
-
-const quote = (value: string): string => `"${value}"`
-
-export const buildFfmpegCommands = ({ fps, ffmpegPattern, outputBaseName = 'out' }: BuildFfmpegCommandsOptions): FfmpegCommandSet => {
-  const safeFps = resolveFfmpegFps(fps)
-  if (typeof ffmpegPattern !== 'string' || ffmpegPattern.trim().length <= 0) {
-    throw new Error('buildFfmpegCommands: ffmpegPattern must be a non-empty string.')
-  }
-  const safePattern = ffmpegPattern
-  const safeOutputBaseName = String(outputBaseName || 'out').trim() || 'out'
-  const pattern = quote(safePattern)
-  const mp4Name = quote(`${safeOutputBaseName}.mp4`)
-
-  return {
-    mp4: `ffmpeg -framerate ${safeFps} -start_number 0 -i ${pattern} -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" -c:v libx264 -preset slow -crf 12 -pix_fmt yuv420p -movflags +faststart ${mp4Name}`
   }
 }

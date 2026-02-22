@@ -349,23 +349,12 @@ export interface CaptureHydraVideoOptions extends Omit<CaptureVideoOptions, 'can
   height?: number
 }
 
-export interface BuildFfmpegCommandsOptions {
-  fps: number
-  ffmpegPattern: string
-  outputBaseName?: string
-}
-
-export interface FfmpegCommandSet {
-  mp4: string
-}
-
 export declare const captureFrameSequence: (options: CaptureFrameSequenceOptions) => Promise<CaptureFrameSequenceResult>
 export declare const captureHydraFrameSequence: (
   options: CaptureHydraFrameSequenceOptions
 ) => Promise<CaptureFrameSequenceResult>
 export declare const captureVideo: (options: CaptureVideoOptions) => Promise<Blob>
 export declare const captureHydraVideo: (options: CaptureHydraVideoOptions) => Promise<Blob>
-export declare const buildFfmpegCommands: (options: BuildFfmpegCommandsOptions) => FfmpegCommandSet
 
 export interface CreateHydraBrowserRuntimeOptions extends Omit<HydraBrowserRuntimeOptions, 'host' | 'renderer'> {
   host?: BrowserHost

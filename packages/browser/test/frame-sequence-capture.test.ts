@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest'
-import { buildFfmpegCommands, captureFrameSequence, captureHydraFrameSequence } from '../src/capture/frame-sequence.ts'
+import { captureFrameSequence, captureHydraFrameSequence } from '../src/capture/frame-sequence.ts'
 
 const createMockCanvas = (width = 320, height = 240): HTMLCanvasElement => {
   const canvas = {
@@ -245,21 +245,5 @@ describe('captureHydraFrameSequence', () => {
     expect(readbackData.length).toBe(2)
     expect(readbackData[0].frame).toBe(0)
     expect(readbackData[1].frame).toBe(1)
-  })
-})
-
-describe('buildFfmpegCommands', () => {
-  it('builds ffmpeg commands from capture metadata', () => {
-    const commands = buildFfmpegCommands({
-      fps: 60,
-      ffmpegPattern: 'frame-%04d.png',
-      outputBaseName: 'shot-a'
-    })
-
-    expect(commands.mp4).toContain('-framerate 60')
-    expect(commands.mp4).toContain('"frame-%04d.png"')
-    expect(commands.mp4).toContain('"shot-a.mp4"')
-    expect(commands.mp4).toContain('-movflags +faststart')
-    expect(Object.keys(commands)).toEqual(['mp4'])
   })
 })
