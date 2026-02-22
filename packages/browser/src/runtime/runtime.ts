@@ -23,9 +23,16 @@ import {
   type HydraAutotuneProfile,
   type HydraTuningPolicy
 } from './autotune.js'
+import {
+  createHydraMouseInput,
+  type HydraMouseController,
+  type HydraMouseInputOptions,
+  type HydraMouseState
+} from './mouse-input.js'
 import { buildProfilerSnapshot, type HydraProfilerSnapshot } from './profiler.js'
 import { HydraExecutor, type HydraExecutePlanOptions, type ExecutePlanResult } from './executor.js'
 import type { WebGPUCapabilities, WebGPURenderer } from '../webgpu/renderer.js'
+import { installArraySequenceExtensions } from './array-sequence.js'
 export type HydraRuntimeExecutionMode = 'fragment' | 'auto'
 
 export const normalizeRuntimeExecutionMode = (
@@ -56,6 +63,7 @@ export interface HydraBrowserRuntimeOptions {
   fps?: number
   speed?: number
   bpm?: number
+  mouse?: boolean | HydraMouseInputOptions
   executionMode?: HydraRuntimeExecutionMode
   errorPolicy?: HydraErrorPolicy
   onError?: (error: HydraEngineError) => void
@@ -69,11 +77,13 @@ export class HydraBrowserRuntime {
   readonly outputs: WebGPUOutputNode[]
   readonly sources: HydraSourceNode[]
   readonly synth: Record<string, unknown>
+  readonly mouse: HydraMouseState
   capabilities: WebGPUCapabilities | null = null
 
   private readonly onDebugCallback?: (event: HydraDebugEvent) => void
   private readonly registry: HydraTransformRegistry
   private readonly patchbay: PatchBayAdapter | null
+  private readonly mouseInput: HydraMouseController
   private activeOutput: WebGPUOutputNode
   private renderAll = false
   private initPromise: Promise<void> | null = null
@@ -97,16 +107,31 @@ export class HydraBrowserRuntime {
     fps,
     speed = 1,
     bpm = 30,
+    mouse = true,
     executionMode = 'auto',
     errorPolicy = 'emit',
     onError,
     onDebug
   }: HydraBrowserRuntimeOptions) {
+    installArraySequenceExtensions()
+
     this.host = host
     this.renderer = renderer
     this.patchbay = patchbay
     this.executionMode = normalizeRuntimeExecutionMode(executionMode, 'auto')
     this.onDebugCallback = onDebug
+    const normalizedMouseOptions = (
+      mouse === false
+        ? { enabled: false }
+        : mouse === true
+          ? {}
+          : (mouse ?? {})
+    )
+    this.mouseInput = createHydraMouseInput({
+      element: this.host.canvas,
+      ...normalizedMouseOptions
+    })
+    this.mouse = this.mouseInput.state
     this.routingDiagnostics = {
       configuredMode: this.executionMode,
       activeMode: 'fragment',
@@ -190,6 +215,7 @@ export class HydraBrowserRuntime {
     this.synth.dumpShaders = this.dumpShaders.bind(this)
     this.synth.setCanvasDisplay = this.setCanvasDisplay.bind(this)
     this.synth.resetCanvasDisplay = this.resetCanvasDisplay.bind(this)
+    this.synth.mouse = this.mouse
 
     this.outputs.forEach((output, index) => {
       this.synth[`o${index}`] = output
@@ -538,6 +564,7 @@ export class HydraBrowserRuntime {
     this.executor?.dispose()
     this.executor = null
     this.lastExecuteResult = null
+    this.mouseInput.dispose()
     this.engine.dispose()
     this.host.dispose()
   }

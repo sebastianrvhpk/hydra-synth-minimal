@@ -4,6 +4,7 @@ import type {
   HydraTypedArgument,
   HydraWgslType
 } from '../types.js'
+import { createArraySequenceUniformEvaluator, isArrayLikeSequenceInput } from './array-sequence.js'
 
 const WGSL_TYPES: Record<string, HydraWgslType> = {
   float: 'f32',
@@ -225,8 +226,11 @@ export const formatArguments = (
     }
 
     if (typedArg.type === 'float') {
-      if (Array.isArray(typedArg.value)) {
-        throw new Error(`Array input is not valid for float argument "${input.name}"`)
+      if (isArrayLikeSequenceInput(typedArg.value)) {
+        typedArg.isUniform = true
+        typedArg.uniformName = `${sanitizeName(input.name)}_${startIndex + index}`
+        typedArg.value = createArraySequenceUniformEvaluator(typedArg.value, input.default)
+        return typedArg
       }
       typedArg.literal = ensureFloatLiteral(Number(typedArg.value))
       return typedArg

@@ -40,6 +40,12 @@ import {
   type HydraBrowserRuntimeOptions,
   type HydraRuntimeExecutionMode
 } from './runtime/runtime.js'
+import type {
+  HydraMouseController,
+  HydraMouseInputOptions,
+  HydraMouseModifiers,
+  HydraMouseState
+} from './runtime/mouse-input.js'
 import {
   buildCandidateSignature,
   HydraAutotuner,
@@ -122,7 +128,11 @@ export type {
   HydraWorkloadClass,
   BuildBenchmarkReportOptions,
   ValidateBenchmarkReportResult,
-  HydraRuntimeExecutionMode
+  HydraRuntimeExecutionMode,
+  HydraMouseController,
+  HydraMouseInputOptions,
+  HydraMouseModifiers,
+  HydraMouseState
 }
 
 export {

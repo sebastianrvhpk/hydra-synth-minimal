@@ -259,6 +259,22 @@ describe('HydraTransformRegistry', () => {
     expect(output.passes[1].wgsl).toContain('fn invert')
   })
 
+  it('supports repeatX/repeatY coordinate transforms with Hydra defaults', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators
+      .osc(8, 0.1, 0)
+      .repeatX(3, 0.25)
+      .repeatY(2, 0.5)
+      .out()
+
+    expect(output.passes.length).toBe(1)
+    const wgsl = output.passes[0].wgsl
+    expect(wgsl).toContain('fn repeatX')
+    expect(wgsl).toContain('fn repeatY')
+  })
+
   it('tracks texture source references for downstream output dependency scheduling', () => {
     const output = new CaptureOutput()
     const registry = new HydraTransformRegistry({ defaultOutput: output })
@@ -433,6 +449,58 @@ describe('HydraTransformRegistry', () => {
     expect(reverseRate).toEqual({ everyNFrames: 5 })
   })
 
+  it('accepts float array inputs as sequenced dynamic uniforms', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+    const frequencySequence = [0.2, 0.8, 0.4]
+
+    registry.generators
+      .osc(frequencySequence, 0.1, 0)
+      .out()
+
+    expect(output.passes.length).toBe(1)
+    const frequencyUniform = output.passes[0].uniforms.find((uniform) => uniform.name.startsWith('frequency'))
+    if (!frequencyUniform) throw new Error('Expected frequency uniform to be present.')
+
+    const probe = { time: 1.25, bpm: 120, resolution: [640, 360] as [number, number], deltaMs: 16 }
+    expect(Number(frequencyUniform.value(probe))).toBeCloseTo(0.4, 5)
+  })
+
+  it('evaluates shared array sequences once per frame across uniforms', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+    let easeCallCount = 0
+    const sharedSequence = [0.2, 0.8, 0.4] as number[] & {
+      _smooth?: number
+      _ease?: (value: number) => number
+    }
+    sharedSequence._smooth = 1
+    sharedSequence._ease = (value: number) => {
+      easeCallCount += 1
+      return value
+    }
+
+    registry.generators
+      .osc(sharedSequence, 0.1, 0)
+      .rotate(sharedSequence)
+      .out()
+
+    expect(output.passes.length).toBe(1)
+    const frequencyUniform = output.passes[0].uniforms.find((uniform) => uniform.name.startsWith('frequency'))
+    const angleUniform = output.passes[0].uniforms.find((uniform) => uniform.name.startsWith('angle'))
+    if (!frequencyUniform || !angleUniform) throw new Error('Expected sequenced uniforms are missing.')
+
+    const frameA = { time: 2.5, bpm: 120, resolution: [640, 360] as [number, number], deltaMs: 16 }
+    Number(frequencyUniform.value(frameA))
+    Number(angleUniform.value(frameA))
+    expect(easeCallCount).toBe(1)
+
+    const frameB = { time: 2.75, bpm: 120, resolution: [640, 360] as [number, number], deltaMs: 16 }
+    Number(frequencyUniform.value(frameB))
+    Number(angleUniform.value(frameB))
+    expect(easeCallCount).toBe(2)
+  })
+
   it('supports vector dynamic uniforms and packs scalar lanes deterministically', () => {
     const output = new CaptureOutput()
     const registry = new HydraTransformRegistry({ defaultOutput: output })
@@ -496,10 +564,14 @@ describe('HydraTransformRegistry', () => {
 
   it('applies declared offset parameters in modulateRepeat variants', () => {
     const definitions = new Map(getDefaultTransforms().map((definition) => [definition.name, definition]))
+    const repeatX = definitions.get('repeatX')?.wgsl ?? ''
+    const repeatY = definitions.get('repeatY')?.wgsl ?? ''
     const modulateRepeat = definitions.get('modulateRepeat')?.wgsl ?? ''
     const modulateRepeatX = definitions.get('modulateRepeatX')?.wgsl ?? ''
     const modulateRepeatY = definitions.get('modulateRepeatY')?.wgsl ?? ''
 
+    expect(repeatX).toContain('st.y += step(1.0, hydraMod(st.x, 2.0)) * offset')
+    expect(repeatY).toContain('st.x += step(1.0, hydraMod(st.y, 2.0)) * offset')
     expect(modulateRepeat).toContain('step(1.0, hydraMod(st.y, 2.0)) * offsetX + _c0.x * offsetX')
     expect(modulateRepeat).toContain('step(1.0, hydraMod(st.x, 2.0)) * offsetY + _c0.y * offsetY')
     expect(modulateRepeatX).toContain('step(1.0, hydraMod(st.x, 2.0)) * offset + _c0.x * offset')

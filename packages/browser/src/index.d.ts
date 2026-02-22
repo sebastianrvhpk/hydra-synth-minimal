@@ -127,6 +127,44 @@ export interface PatchBayAdapter {
   off?: (event: string, callback: (nick: string, video: HTMLVideoElement) => void) => void
 }
 
+export interface HydraMouseModifiers {
+  shift: boolean
+  alt: boolean
+  control: boolean
+  meta: boolean
+}
+
+export interface HydraMouseState {
+  readonly element: EventTarget | null
+  enabled: boolean
+  readonly x: number
+  readonly y: number
+  readonly pixelX: number
+  readonly pixelY: number
+  readonly normX: number
+  readonly normY: number
+  readonly uvX: number
+  readonly uvY: number
+  readonly buttons: number
+  readonly down: boolean
+  readonly inside: boolean
+  readonly pressure: number
+  readonly pointerType: string
+  readonly mods: HydraMouseModifiers
+  reset: () => void
+}
+
+export interface HydraMouseInputOptions {
+  element?: EventTarget | null
+  rootTarget?: EventTarget | null
+  enabled?: boolean
+}
+
+export interface HydraMouseController {
+  readonly state: HydraMouseState
+  dispose: () => void
+}
+
 export declare class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
   readonly label: string
   constructor (options: { renderer: WebGPURenderer | null, pb: PatchBayAdapter | null, label?: string })
@@ -174,6 +212,7 @@ export interface HydraBrowserRuntimeOptions {
   fps?: number
   speed?: number
   bpm?: number
+  mouse?: boolean | HydraMouseInputOptions
   errorPolicy?: HydraErrorPolicy
   onError?: (error: HydraEngineError) => void
 }
@@ -185,6 +224,7 @@ export declare class HydraBrowserRuntime {
   readonly outputs: WebGPUOutputNode[]
   readonly sources: HydraSourceNode[]
   readonly synth: Record<string, unknown>
+  readonly mouse: HydraMouseState
   capabilities: WebGPUCapabilities | null
   constructor (options: HydraBrowserRuntimeOptions)
   get bindings (): Readonly<Record<string, unknown>>

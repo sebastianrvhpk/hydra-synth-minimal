@@ -181,6 +181,49 @@ describe('browser foundation', () => {
     runtime.dispose()
   })
 
+  it('exposes a mouse binding on the synth object for pointer-driven patches', () => {
+    const runtime = createRuntimeHarness()
+    const mouse = runtime.synth.mouse as {
+      x: number
+      y: number
+      buttons: number
+      enabled: boolean
+      mods: { shift: boolean, alt: boolean, control: boolean, meta: boolean }
+    }
+
+    expect(mouse).toBeDefined()
+    expect(mouse.x).toBe(0)
+    expect(mouse.y).toBe(0)
+    expect(mouse.buttons).toBe(0)
+    expect(typeof mouse.enabled).toBe('boolean')
+    expect(mouse.mods).toEqual({
+      shift: false,
+      alt: false,
+      control: false,
+      meta: false
+    })
+    runtime.dispose()
+  })
+
+  it('installs array sequence helpers for legacy DSL compatibility', () => {
+    const runtime = createRuntimeHarness()
+    const sequence = [0, 1, 2] as number[] & {
+      _speed?: number
+      _smooth?: number
+      _offset?: number
+      fast: (speed?: number) => number[]
+      smooth: (value?: number) => number[]
+      offset: (value?: number) => number[]
+    }
+
+    expect(typeof sequence.fast).toBe('function')
+    sequence.fast(2).smooth(0.5).offset(0.25)
+    expect(sequence._speed).toBe(2)
+    expect(sequence._smooth).toBe(0.5)
+    expect(sequence._offset).toBe(0.25)
+    runtime.dispose()
+  })
+
   it('routes graph rendering through fragment mode and reports active mode diagnostics', () => {
     const runtime = createRuntimeHarness('fragment')
     const executeCalls: HydraExecutionPlan[] = []

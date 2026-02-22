@@ -341,6 +341,19 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
 `
   },
   {
+    name: 'repeatX',
+    type: 'coord',
+    inputs: [
+      { type: 'float', name: 'reps', default: 3 },
+      { type: 'float', name: 'offset', default: 0 }
+    ],
+    wgsl: `
+  var st = _st * vec2f(reps, 1.0);
+  st.y += step(1.0, hydraMod(st.x, 2.0)) * offset;
+  return fract(st);
+`
+  },
+  {
     name: 'modulateRepeatX',
     type: 'combineCoord',
     inputs: [
@@ -350,6 +363,19 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     wgsl: `
   var st = _st * vec2f(reps, 1.0);
   st.y += step(1.0, hydraMod(st.x, 2.0)) * offset + _c0.x * offset;
+  return fract(st);
+`
+  },
+  {
+    name: 'repeatY',
+    type: 'coord',
+    inputs: [
+      { type: 'float', name: 'reps', default: 3 },
+      { type: 'float', name: 'offset', default: 0 }
+    ],
+    wgsl: `
+  var st = _st * vec2f(1.0, reps);
+  st.x += step(1.0, hydraMod(st.y, 2.0)) * offset;
   return fract(st);
 `
   },

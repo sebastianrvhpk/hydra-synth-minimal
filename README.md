@@ -40,6 +40,12 @@ runtime.tick(16)
 runtime.dispose()
 ```
 
+Pointer input is exposed as `runtime.synth.mouse`:
+
+- legacy-compatible fields: `x`, `y`, `buttons`, `mods`, `enabled`
+- normalized helpers: `normX`, `normY`, `uvX`, `uvY`
+- additional state: `down`, `inside`, `pressure`, `pointerType`
+
 `executionMode` values:
 
 - `auto` (default): fragment-plan routing with automatic policy selection.
