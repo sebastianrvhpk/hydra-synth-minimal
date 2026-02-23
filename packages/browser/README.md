@@ -21,7 +21,7 @@ Use `createHydraBrowserRuntime()` for default composition, or wire `BrowserHost`
 
 - `auto` (default): fragment-plan routing with automatic policy selection
 - `fragment`: force fragment-plan routing
-- pointer-driven input via `runtime.synth.mouse` (`x/y/buttons/mods` + normalized helpers)
+- pointer-driven input via `runtime.synth.mouse` (`x/y/speed/acceleration/jerk` + smoothed channels in `0..1`, plus distinct pixel/uv/derivative channels)
 
 ## Capture APIs
 

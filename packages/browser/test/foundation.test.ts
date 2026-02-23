@@ -181,6 +181,234 @@ describe('browser foundation', () => {
     output.dispose()
   })
 
+  it('allocates distinct dynamic uniform buffers for each pass slot', () => {
+    const createFakeBuffer = (label: string): GPUBuffer => {
+      const fakeBuffer = {
+        label,
+        destroy: () => {}
+      }
+      return fakeBuffer as unknown as GPUBuffer
+    }
+
+    const createdLabels: string[] = []
+    const renderer = {
+      ready: true,
+      createDynamicUniformBuffer: (label: string) => {
+        createdLabels.push(label)
+        return createFakeBuffer(label)
+      }
+    }
+
+    const makeUniformPass = (signature: string) => ({
+      signature,
+      wgsl: '',
+      uniforms: [{
+        name: 'amount_0',
+        index: 0,
+        size: 1,
+        type: 'float' as const,
+        value: () => 0
+      }],
+      textures: []
+    })
+
+    const output = new WebGPUOutputNode({
+      renderer: renderer as unknown as never,
+      width: 4,
+      height: 4,
+      label: 'dynamic-uniform-regression'
+    })
+
+    const nextSourcePasses = [makeUniformPass('shared-signature'), makeUniformPass('shared-signature')]
+    const restored = (output as unknown as {
+      restorePassDynamicUniformBuffers: (
+        previousSourcePasses: Array<{ signature: string }>,
+        previousBuffers: Array<GPUBuffer | null>,
+        nextSourcePasses: Array<{ signature: string, uniforms: unknown[] }>
+      ) => Array<GPUBuffer | null>
+    }).restorePassDynamicUniformBuffers([], [], nextSourcePasses)
+
+    expect(restored).toHaveLength(2)
+    expect(restored[0]).not.toBeNull()
+    expect(restored[1]).not.toBeNull()
+    expect(restored[0]).not.toBe(restored[1])
+    expect(createdLabels).toEqual([
+      'dynamic-uniform-regression-dynamic-uniforms-pass-0',
+      'dynamic-uniform-regression-dynamic-uniforms-pass-1'
+    ])
+
+    output.dispose()
+  })
+
+  it('resolves self output texture bindings against the frame input snapshot', () => {
+    const output = new WebGPUOutputNode({
+      renderer: null,
+      width: 4,
+      height: 4,
+      label: 'self-feedback-snapshot'
+    })
+    output.id = 0
+
+    const frameInputTexture = {} as GPUTexture
+    const currentFrameTexture = {} as GPUTexture
+    ;(output as unknown as {
+      frameInputTexture: GPUTexture | null
+      lastOutputTexture: GPUTexture | null
+    }).frameInputTexture = frameInputTexture
+    ;(output as unknown as {
+      frameInputTexture: GPUTexture | null
+      lastOutputTexture: GPUTexture | null
+    }).lastOutputTexture = currentFrameTexture
+
+    const textureBinding = {
+      name: 'tex_0',
+      variableName: 'hydraTexture0',
+      getTexture: () => currentFrameTexture,
+      isPrev: false,
+      sourceRef: { id: 0 },
+      binding: 3
+    }
+
+    const resolvedTexture = (output as unknown as {
+      resolveTextureBinding: (
+        textureBinding: {
+          name: string
+          variableName: string
+          getTexture: (() => GPUTexture | null) | null
+          isPrev: boolean
+          sourceRef?: unknown
+          binding: number
+        },
+        readTexture: GPUTexture
+      ) => GPUTexture | null
+    }).resolveTextureBinding(textureBinding, currentFrameTexture)
+
+    expect(resolvedTexture).toBe(frameInputTexture)
+    output.dispose()
+  })
+
+  it('prefers self history texture bindings over mutable frame texture pointers', () => {
+    const output = new WebGPUOutputNode({
+      renderer: null,
+      width: 4,
+      height: 4,
+      label: 'self-feedback-history'
+    })
+    output.id = 0
+
+    const historyTexture = {
+      destroy: () => {}
+    } as unknown as GPUTexture
+    const frameInputTexture = {} as GPUTexture
+    const currentFrameTexture = {} as GPUTexture
+
+    ;(output as unknown as {
+      historyTextures: Array<GPUTexture | null>
+      historyCursor: number
+      historyCount: number
+      frameInputTexture: GPUTexture | null
+      lastOutputTexture: GPUTexture | null
+    }).historyTextures = [historyTexture]
+    ;(output as unknown as {
+      historyTextures: Array<GPUTexture | null>
+      historyCursor: number
+      historyCount: number
+      frameInputTexture: GPUTexture | null
+      lastOutputTexture: GPUTexture | null
+    }).historyCursor = 0
+    ;(output as unknown as {
+      historyTextures: Array<GPUTexture | null>
+      historyCursor: number
+      historyCount: number
+      frameInputTexture: GPUTexture | null
+      lastOutputTexture: GPUTexture | null
+    }).historyCount = 1
+    ;(output as unknown as {
+      historyTextures: Array<GPUTexture | null>
+      historyCursor: number
+      historyCount: number
+      frameInputTexture: GPUTexture | null
+      lastOutputTexture: GPUTexture | null
+    }).frameInputTexture = frameInputTexture
+    ;(output as unknown as {
+      historyTextures: Array<GPUTexture | null>
+      historyCursor: number
+      historyCount: number
+      frameInputTexture: GPUTexture | null
+      lastOutputTexture: GPUTexture | null
+    }).lastOutputTexture = currentFrameTexture
+
+    const textureBinding = {
+      name: 'tex_0',
+      variableName: 'hydraTexture0',
+      getTexture: () => currentFrameTexture,
+      isPrev: false,
+      sourceRef: { id: 0 },
+      binding: 3
+    }
+
+    const resolvedTexture = (output as unknown as {
+      resolveTextureBinding: (
+        textureBinding: {
+          name: string
+          variableName: string
+          getTexture: (() => GPUTexture | null) | null
+          isPrev: boolean
+          sourceRef?: unknown
+          binding: number
+        },
+        readTexture: GPUTexture
+      ) => GPUTexture | null
+    }).resolveTextureBinding(textureBinding, currentFrameTexture)
+
+    expect(resolvedTexture).toBe(historyTexture)
+    output.dispose()
+  })
+
+  it('requests history depth when passes sample the same output id', () => {
+    const output = new WebGPUOutputNode({
+      renderer: null,
+      width: 4,
+      height: 4,
+      label: 'self-feedback-history-depth'
+    })
+    output.id = 2
+
+    const passes = [{
+      signature: 'self-feedback-pass',
+      wgsl: '',
+      uniforms: [],
+      textures: [{
+        name: 'tex_0',
+        variableName: 'hydraTexture0',
+        getTexture: () => null,
+        isPrev: false,
+        sourceRef: { id: 2 },
+        binding: 3
+      }]
+    }]
+
+    ;(output as unknown as {
+      updateRequiredHistoryDepth: (
+        passes: Array<{
+          signature: string
+          textures: Array<{
+            name: string
+            variableName: string
+            getTexture: (() => GPUTexture | null) | null
+            isPrev: boolean
+            sourceRef?: unknown
+            binding: number
+          }>
+        }>
+      ) => void
+      ownHistoryDepth: number
+    }).updateRequiredHistoryDepth(passes)
+
+    expect((output as unknown as { ownHistoryDepth: number }).ownHistoryDepth).toBe(1)
+    output.dispose()
+  })
+
   it('normalizes runtime execution mode values and defaults', () => {
     expect(normalizeRuntimeExecutionMode('deprecated-mode')).toBe('auto')
     expect(normalizeRuntimeExecutionMode('fragment')).toBe('fragment')
@@ -200,6 +428,10 @@ describe('browser foundation', () => {
     const mouse = runtime.synth.mouse as {
       x: number
       y: number
+      speed: number
+      acceleration: number
+      jerk: number
+      speedSmooth: number
       buttons: number
       enabled: boolean
       mods: { shift: boolean, alt: boolean, control: boolean, meta: boolean }
@@ -208,6 +440,10 @@ describe('browser foundation', () => {
     expect(mouse).toBeDefined()
     expect(mouse.x).toBe(0)
     expect(mouse.y).toBe(0)
+    expect(mouse.speed).toBe(0)
+    expect(mouse.acceleration).toBe(0)
+    expect(mouse.jerk).toBe(0)
+    expect(mouse.speedSmooth).toBe(0)
     expect(mouse.buttons).toBe(0)
     expect(typeof mouse.enabled).toBe('boolean')
     expect(mouse.mods).toEqual({

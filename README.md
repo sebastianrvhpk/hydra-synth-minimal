@@ -42,9 +42,19 @@ runtime.dispose()
 
 Pointer input is exposed as `runtime.synth.mouse`:
 
-- legacy-compatible fields: `x`, `y`, `buttons`, `mods`, `enabled`
-- normalized helpers: `normX`, `normY`, `uvX`, `uvY`
-- additional state: `down`, `inside`, `pressure`, `pointerType`
+- default `0..1` channels: `x`, `y`, `speed`, `acceleration`, `jerk`, `speedSmooth`, `accelerationSmooth`, `jerkSmooth`, `dragDistance`, `dragTravel`, `dragDuration`, `hold`, `pressure`, `inside`
+- additional channels with different math: `pixelX`, `pixelY`, `uvX`, `uvY`, `velocityX`, `velocityY`, `accelerationX`, `accelerationY`, `jerkX`, `jerkY`
+- pointer state: `buttons`, `down`, `dragActive`, `pointerType`, `mods`, `enabled`
+
+Example with only `0..1` channels:
+
+```ts
+osc(12, 0.08, 0)
+  .rotate(() => (mouse.x - 0.5) * 0.8)
+  .scale(() => 1 + mouse.speedSmooth * 4)
+  .color(() => 0.3 + mouse.dragDistance, 0.5, 1.0)
+  .out()
+```
 
 `executionMode` values:
 

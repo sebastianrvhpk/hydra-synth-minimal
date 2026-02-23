@@ -78,7 +78,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
   private height: number
   private pingPongIndex = 0
   private textures: Array<GPUTexture | null> = [null, null]
-  private dynamicUniformBuffer: GPUBuffer | null = null
+  private passDynamicUniformBuffers: Array<GPUBuffer | null> = []
   private readonly dynamicUniformData = new Float32Array(MAX_DYNAMIC_UNIFORMS)
 
   private activePasses: HydraCompiledPass[] = []
@@ -100,6 +100,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
   private historyDepth = DEFAULT_HISTORY_DEPTH
   private ownHistoryDepth = DEFAULT_HISTORY_DEPTH
   private outboundHistoryRequests = new Map<number, number>()
+  private frameInputTexture: GPUTexture | null = null
   private lastOutputTexture: GPUTexture | null = null
   private passOutputHistory: Array<GPUTexture | null> = []
   private frameCounter = 0
@@ -157,6 +158,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
   }
 
   attachRenderer (renderer: WebGPURenderer): void {
+    this.destroyPassDynamicUniformBuffers()
     this.renderer = renderer
     this.invalidateBindGroupCache()
     this.ensureResources()
@@ -164,9 +166,6 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
 
   private ensureResources (): void {
     if (!this.renderer || !this.renderer.ready) return
-    if (!this.dynamicUniformBuffer) {
-      this.dynamicUniformBuffer = this.renderer.createDynamicUniformBuffer(`${this.label}-dynamic-uniforms`)
-    }
     if (!this.textures[0] || !this.textures[1]) {
       this.createPingPongTextures()
     }
@@ -191,6 +190,54 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     this.resetHistoryTextures()
     this.ensureHistoryTextures()
     this.invalidateBindGroupCache()
+  }
+
+  private destroyPassDynamicUniformBuffers (): void {
+    this.passDynamicUniformBuffers.forEach((buffer) => {
+      if (buffer) buffer.destroy()
+    })
+    this.passDynamicUniformBuffers = []
+  }
+
+  private restorePassDynamicUniformBuffers (
+    previousSourcePasses: HydraCompiledPass[],
+    previousBuffers: Array<GPUBuffer | null>,
+    nextSourcePasses: HydraCompiledPass[]
+  ): Array<GPUBuffer | null> {
+    const restored: Array<GPUBuffer | null> = new Array(nextSourcePasses.length).fill(null)
+    const bufferBucketsBySignature = new Map<string, GPUBuffer[]>()
+
+    for (let index = 0; index < previousSourcePasses.length; index += 1) {
+      const previousPass = previousSourcePasses[index]
+      const previousBuffer = previousBuffers[index]
+      if (!previousPass || !previousBuffer) continue
+      const bucket = bufferBucketsBySignature.get(previousPass.signature)
+      if (bucket) bucket.push(previousBuffer)
+      else bufferBucketsBySignature.set(previousPass.signature, [previousBuffer])
+    }
+
+    for (let index = 0; index < nextSourcePasses.length; index += 1) {
+      const nextPass = nextSourcePasses[index]
+      if (!nextPass || nextPass.uniforms.length === 0) continue
+
+      const reusableBucket = bufferBucketsBySignature.get(nextPass.signature)
+      const reusableBuffer = reusableBucket?.shift() ?? null
+      if (reusableBuffer) {
+        restored[index] = reusableBuffer
+        continue
+      }
+
+      if (!this.renderer || !this.renderer.ready) continue
+      restored[index] = this.renderer.createDynamicUniformBuffer(`${this.label}-dynamic-uniforms-pass-${index}`)
+    }
+
+    for (const bucket of bufferBucketsBySignature.values()) {
+      for (const staleBuffer of bucket) {
+        staleBuffer.destroy()
+      }
+    }
+
+    return restored
   }
 
   private getScaleKey (width: number, height: number): string {
@@ -267,6 +314,19 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
       candidate.textures.forEach((textureBinding) => {
         const source = textureBinding.sourceRef
         if (!source || typeof source !== 'object') return
+
+        if ('id' in source) {
+          const targetId = (source as { id?: unknown }).id
+          if (
+            typeof targetId === 'number' &&
+            Number.isInteger(targetId) &&
+            targetId >= 0 &&
+            targetId === this.id
+          ) {
+            requiredDepth = Math.max(requiredDepth, 1)
+          }
+        }
+
         if (!('historyOffset' in source)) return
         const offset = (source as { historyOffset?: unknown }).historyOffset
         if (typeof offset !== 'number' || !Number.isFinite(offset)) return
@@ -630,6 +690,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     if (this.pendingPasses) {
       const previousSourcePasses = this.activeSourcePasses.slice()
       const previousHistory = this.passOutputHistory.slice()
+      const previousDynamicUniformBuffers = this.passDynamicUniformBuffers.slice()
       const nextPasses: HydraCompiledPass[] = []
       const nextSourcePasses: HydraCompiledPass[] = []
       const nextEntries: PipelineEntry[] = []
@@ -647,6 +708,11 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
       this.activePasses = nextPasses
       this.activePipelineEntries = nextEntries
       this.passOutputHistory = this.restorePassOutputHistory(previousSourcePasses, previousHistory, nextSourcePasses)
+      this.passDynamicUniformBuffers = this.restorePassDynamicUniformBuffers(
+        previousSourcePasses,
+        previousDynamicUniformBuffers,
+        nextSourcePasses
+      )
       this.pendingPasses = null
       this.invalidateBindGroupCache()
     }
@@ -668,8 +734,12 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     return resolved
   }
 
-  private updateDynamicUniforms (uniforms: HydraCompiledPass['uniforms'], props: HydraFrameState): void {
-    if (!this.renderer || !this.renderer.device || !this.dynamicUniformBuffer || uniforms.length === 0) return
+  private updateDynamicUniforms (
+    uniforms: HydraCompiledPass['uniforms'],
+    props: HydraFrameState,
+    dynamicUniformBuffer: GPUBuffer | null
+  ): void {
+    if (!this.renderer || !this.renderer.device || !dynamicUniformBuffer || uniforms.length === 0) return
 
     const writeScalar = (index: number, value: unknown): void => {
       const safe = typeof value === 'number' && Number.isFinite(value) ? value : 0
@@ -704,7 +774,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     if (maxIndex < 0) return
 
     const floatCount = maxIndex + 1
-    this.renderer.device.queue.writeBuffer(this.dynamicUniformBuffer, 0, this.dynamicUniformData, 0, floatCount)
+    this.renderer.device.queue.writeBuffer(dynamicUniformBuffer, 0, this.dynamicUniformData, 0, floatCount)
   }
 
   private resolveTextureProviderBinding (textureBinding: HydraCompiledPass['textures'][number]): GPUTexture | null {
@@ -737,6 +807,20 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
       }
     }
 
+    if (source && typeof source === 'object' && 'id' in source) {
+      const targetId = (source as { id?: unknown }).id
+      if (
+        typeof targetId === 'number' &&
+        Number.isInteger(targetId) &&
+        targetId >= 0 &&
+        targetId === this.id
+      ) {
+        const historyTexture = this.resolveHistoryTexture(1)
+        if (historyTexture) return historyTexture
+        return this.frameInputTexture ?? this.lastOutputTexture ?? this.textures[this.pingPongIndex] ?? readTexture
+      }
+    }
+
     return this.resolveTextureProviderBinding(textureBinding)
   }
 
@@ -766,7 +850,8 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     pipeline: GPURenderPipeline,
     pass: HydraCompiledPass,
     resolvedTextures: Array<GPUTexture | null>,
-    _writeTexture: GPUTexture | null
+    _writeTexture: GPUTexture | null,
+    dynamicUniformBuffer: GPUBuffer | null
   ): GPUBindGroup {
     if (
       !this.renderer ||
@@ -779,8 +864,8 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     const sampledTextures = pass.textures
     let cacheKey = `p${this.renderer.getObjectId(pipeline)}|g${this.renderer.getObjectId(this.renderer.globalUniformBuffer)}`
 
-    if (pass.uniforms.length > 0 && this.dynamicUniformBuffer) {
-      cacheKey += `|d${this.renderer.getObjectId(this.dynamicUniformBuffer)}`
+    if (pass.uniforms.length > 0 && dynamicUniformBuffer) {
+      cacheKey += `|d${this.renderer.getObjectId(dynamicUniformBuffer)}`
     }
     if (sampledTextures.length > 0 && this.renderer.linearSampler) {
       cacheKey += `|s${this.renderer.getObjectId(this.renderer.linearSampler)}`
@@ -803,10 +888,10 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     ]
 
     if (pass.uniforms.length > 0) {
-      if (!this.dynamicUniformBuffer) {
+      if (!dynamicUniformBuffer) {
         throw new Error('Dynamic uniform buffer is unavailable for pass uniforms.')
       }
-      entries.push({ binding: 1, resource: { buffer: this.dynamicUniformBuffer } })
+      entries.push({ binding: 1, resource: { buffer: dynamicUniformBuffer } })
     }
 
     if (sampledTextures.length > 0) {
@@ -845,9 +930,10 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
     const resolvedPasses = this.resolvePasses()
     if (!resolvedPasses) return
 
+    this.frameInputTexture = this.lastOutputTexture ?? this.textures[this.pingPongIndex] ?? this.renderer.getFallbackTexture()
     this.frameCounter += 1
     this.frameOrdinal += 1
-    let currentTexture = this.lastOutputTexture ?? this.textures[this.pingPongIndex] ?? this.renderer.getFallbackTexture()
+    let currentTexture = this.frameInputTexture
     let currentTextureWidth = this.width
     let currentTextureHeight = this.height
 
@@ -894,7 +980,8 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
         height: passHeight
       })
 
-      this.updateDynamicUniforms(pass.uniforms, props)
+      const dynamicUniformBuffer = this.passDynamicUniformBuffers[passIndex] ?? null
+      this.updateDynamicUniforms(pass.uniforms, props, dynamicUniformBuffer)
 
       for (let index = 0; index < pass.textures.length; index += 1) {
         const textureBinding = pass.textures[index]
@@ -906,7 +993,8 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
         pipeline,
         pass,
         this.resolvedTexturesScratch,
-        writeTexture
+        writeTexture,
+        dynamicUniformBuffer
       )
       const encodeStartMs = this.nowMs()
       // Each pass is rendered as a fullscreen triangle into a ping-pong target.
@@ -958,6 +1046,7 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
       height: this.height
     })
     this.frameEvents.clear()
+    this.frameInputTexture = null
   }
 
   dispose (): void {
@@ -982,14 +1071,14 @@ export class WebGPUOutputNode implements HydraOutputAdapter {
       if (texture) texture.destroy()
     })
     this.textures = [null, null]
+    this.frameInputTexture = null
     this.lastOutputTexture = null
     this.passOutputHistory = []
     this.resetHistoryTextures()
     this.destroyScaledTexturePairs()
     this.resolvedTexturesScratch.length = 0
 
-    if (this.dynamicUniformBuffer) this.dynamicUniformBuffer.destroy()
-    this.dynamicUniformBuffer = null
+    this.destroyPassDynamicUniformBuffers()
     this.renderer = null
   }
 }

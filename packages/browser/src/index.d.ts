@@ -139,16 +139,31 @@ export interface HydraMouseState {
   enabled: boolean
   readonly x: number
   readonly y: number
+  readonly speed: number
+  readonly acceleration: number
+  readonly jerk: number
+  readonly speedSmooth: number
+  readonly accelerationSmooth: number
+  readonly jerkSmooth: number
+  readonly dragDistance: number
+  readonly dragTravel: number
+  readonly dragDuration: number
+  readonly hold: number
+  readonly pressure: number
+  readonly inside: number
   readonly pixelX: number
   readonly pixelY: number
-  readonly normX: number
-  readonly normY: number
   readonly uvX: number
   readonly uvY: number
+  readonly velocityX: number
+  readonly velocityY: number
+  readonly accelerationX: number
+  readonly accelerationY: number
+  readonly jerkX: number
+  readonly jerkY: number
   readonly buttons: number
   readonly down: boolean
-  readonly inside: boolean
-  readonly pressure: number
+  readonly dragActive: boolean
   readonly pointerType: string
   readonly mods: HydraMouseModifiers
   reset: () => void
