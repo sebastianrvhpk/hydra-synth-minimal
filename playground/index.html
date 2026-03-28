@@ -9,6 +9,7 @@
       {
         "imports": {
           "hydra-synth-core": "../packages/core/dist/index.js",
+          "hydra-synth-core/compiler": "../packages/core/dist/compiler/index.js",
           "hydra-synth": "../packages/browser/dist/index.js",
           "hydra-synth-livecoding": "../packages/livecoding/dist/index.js"
         }
@@ -204,7 +205,7 @@
     <div>Try: <code>osc(10, 0.1, 0).out()</code></div>
     <div>Pointer state: <code>mouse.x</code>, <code>mouse.y</code>, <code>mouse.speedSmooth</code>, <code>mouse.accelerationSmooth</code>, <code>mouse.dragDistance</code>.</div>
     <div>Runtime is available as <code>hydra</code>.</div>
-    <div id="livecoding-note">Live editor: add <code>?livecoding=1</code>.</div>
+    <div id="livecoding-note">Live editor enabled by default. Add <code>?livecoding=0</code> to disable it.</div>
     <div id="capture-controls">
       <label id="capture-duration-label" for="capture-duration-input">Duration (s)</label>
       <input id="capture-duration-input" type="number" min="0.1" max="600" step="0.1" value="2" inputmode="decimal" />
@@ -315,7 +316,8 @@
     }
 
     const params = new URLSearchParams(window.location.search)
-    const enableLivecoding = params.get('livecoding') === '1'
+    const livecodingMode = (params.get('livecoding') ?? '').trim().toLowerCase()
+    const enableLivecoding = livecodingMode !== '0' && livecodingMode !== 'false' && livecodingMode !== 'off'
     const livePanel = document.getElementById('live-panel')
     const livecodingNote = document.getElementById('livecoding-note')
     const liveEditor = document.getElementById('live-editor')
@@ -781,7 +783,7 @@ speed = 0.75`
       console.info('[hydra] livecoding plugin attached')
       console.info('[hydra] live editor ready: use panel or livecoding.run(...)')
     } else if (livecodingNote) {
-      livecodingNote.innerHTML = 'Live editor disabled. Add <code>?livecoding=1</code>.'
+      livecodingNote.innerHTML = 'Live editor disabled. Remove <code>?livecoding=0</code> to enable it again.'
     }
 
     const originalDispose = runtime.dispose.bind(runtime)

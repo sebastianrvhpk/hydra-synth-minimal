@@ -8,7 +8,7 @@
     "build": "pnpm -r --workspace-concurrency=1 --filter ./packages/* run build",
     "build:dist": "pnpm --filter hydra-synth run build:dist",
     "dev": "pnpm build && node scripts/dev-server.mjs --open",
-    "dev:livecoding": "pnpm build && node scripts/dev-server.mjs --open --path=/playground/index.html?livecoding=1",
+    "dev:livecoding": "pnpm dev",
     "dev:no-open": "pnpm build && node scripts/dev-server.mjs",
     "lint": "node scripts/lint.mjs",
     "test": "pnpm test:unit && pnpm test:browser",

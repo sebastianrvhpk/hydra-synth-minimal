@@ -116,9 +116,16 @@ runtime.dispose()
 - `captureVideo(...)`
 - `captureHydraVideo(...)`
 
-Playground shortcut: `playground/index.html?livecoding=1`
+Playground shortcut: `playground/index.html`
 
-When `livecoding=1` is enabled, helpers are exposed in the live scope:
+VS Code shortcut:
+
+- open the workspace in VS Code
+- click `Go Live`
+- Live Server opens the repo root, which now redirects into the livecoding playground by default
+- add `?livecoding=0` if you want the plain non-livecoding playground view
+
+When livecoding is enabled, helpers are exposed in the live scope:
 
 - `captureFrames(options)` (wrapper over `captureHydraFrameSequence`)
 - `captureAndSaveVideo(options?)`
@@ -135,11 +142,23 @@ Current playground capture behavior:
 
 ```bash
 pnpm install
+pnpm build
+```
+
+For the default local playground loop in VS Code:
+
+```bash
+# after source edits that should be reflected in the browser
+pnpm build
+```
+
+Then click `Go Live` in VS Code.
+
+```bash
 pnpm lint
 pnpm typecheck
 pnpm test:unit
 pnpm test:browser
-pnpm build
 pnpm verify:pack
 pnpm bench:v3
 pnpm bench:v3:ci
