@@ -18,5 +18,6 @@ coverage/
 Thumbs.db
 .idea/
 .vscode/
+.desloppify/
 
 NUL

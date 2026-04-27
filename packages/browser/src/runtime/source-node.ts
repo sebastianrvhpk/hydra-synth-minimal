@@ -10,6 +10,9 @@ interface SourceInitOptions {
   dynamic?: boolean
 }
 
+export type HydraVideoSourceInput = string | Blob | MediaSource
+export type HydraImageSourceInput = string | Blob
+
 export interface PatchBayAdapter {
   initSource(name: string): void
   on(event: string, callback: (nick: string, video: HTMLVideoElement) => void): (() => void) | void
@@ -17,6 +20,40 @@ export interface PatchBayAdapter {
 }
 
 type Cleanup = () => void
+
+const isBlob = (value: unknown): value is Blob =>
+  typeof Blob !== 'undefined' && value instanceof Blob
+
+const isMediaSource = (value: unknown): value is MediaSource =>
+  typeof MediaSource !== 'undefined' && value instanceof MediaSource
+
+const createObjectUrl = (source: Blob | MediaSource): string => {
+  if (typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') {
+    throw new Error('Hydra: local File/Blob media sources require URL.createObjectURL support.')
+  }
+
+  return URL.createObjectURL(source)
+}
+
+const revokeObjectUrl = (url: string): void => {
+  if (typeof URL === 'undefined' || typeof URL.revokeObjectURL !== 'function') return
+  URL.revokeObjectURL(url)
+}
+
+const warnIfLocalDiskPath = (source: string, mediaType: 'image' | 'video'): void => {
+  const trimmed = source.trim()
+  const looksLikeLocalPath = (
+    /^file:/iu.test(trimmed) ||
+    /^[A-Za-z]:(?:[\\/]|[^/\\])/u.test(trimmed) ||
+    /^\\\\/u.test(trimmed)
+  )
+
+  if (!looksLikeLocalPath) return
+  console.warn(
+    `Hydra: browsers cannot load local disk ${mediaType} paths directly. ` +
+    'Use a URL served by the dev server or pass a File/Blob from a file picker.'
+  )
+}
 
 export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
   readonly label: string
@@ -59,7 +96,7 @@ export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
     }
   }
 
-  initVideo(url = '', params: StreamInitParams = {}): void {
+  initVideo(source: HydraVideoSourceInput = '', params: StreamInitParams = {}): void {
     if (this.disposed) return
     this.clearRegisteredCleanups()
     const video = document.createElement('video')
@@ -68,7 +105,16 @@ export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
     video.loop = true
     video.muted = true
     video.playsInline = true
-    video.src = url
+
+    let objectUrl: string | null = null
+    if (isBlob(source) || isMediaSource(source)) {
+      objectUrl = createObjectUrl(source)
+      video.src = objectUrl
+    } else {
+      const url = typeof source === 'string' ? source : ''
+      warnIfLocalDiskPath(url, 'video')
+      video.src = url
+    }
 
     const loaded = (): void => {
       if (this.disposed) return
@@ -84,15 +130,25 @@ export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
     this.registerCleanup(() => {
       video.pause()
       video.src = ''
+      video.load()
+      if (objectUrl) revokeObjectUrl(objectUrl)
     })
   }
 
-  initImage(url = '', params: StreamInitParams = {}): void {
+  initImage(source: HydraImageSourceInput = '', params: StreamInitParams = {}): void {
     if (this.disposed) return
     this.clearRegisteredCleanups()
     const image = document.createElement('img')
     image.crossOrigin = 'anonymous'
-    image.src = url
+    let objectUrl: string | null = null
+    if (isBlob(source)) {
+      objectUrl = createObjectUrl(source)
+      image.src = objectUrl
+    } else {
+      const url = typeof source === 'string' ? source : ''
+      warnIfLocalDiskPath(url, 'image')
+      image.src = url
+    }
     const loaded = (): void => {
       if (this.disposed) return
       this.src = image
@@ -102,6 +158,7 @@ export class HydraSourceNode implements SourceAdapter, HydraTextureProvider {
       this.uploadedStatic = false
     }
     this.listen(image, 'load', loaded)
+    if (objectUrl) this.registerCleanup(() => revokeObjectUrl(objectUrl))
   }
 
   initStream(streamName: string, params: StreamInitParams = {}): void {

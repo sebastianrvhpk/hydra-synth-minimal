@@ -23,6 +23,7 @@ const walk = (dir) => {
 }
 
 const sourceFiles = walk(srcDir).filter((filePath) => filePath.endsWith('.ts') && !filePath.endsWith('.d.ts'))
+const declarationFiles = walk(srcDir).filter((filePath) => filePath.endsWith('.d.ts'))
 const transformedFiles = []
 
 try {
@@ -52,12 +53,16 @@ for (const { relativePath, transformed } of transformedFiles) {
   writeFileSync(outputPath, transformed, 'utf8')
 }
 
-const declarationSource = path.join(srcDir, 'index.d.ts')
-const declarationTarget = path.join(distDir, 'index.d.ts')
-if (!existsSync(declarationSource)) {
-  console.error(`Missing declaration source: ${declarationSource}`)
+if (!declarationFiles.some((filePath) => path.relative(srcDir, filePath) === 'index.d.ts')) {
+  console.error(`Missing declaration source: ${path.join(srcDir, 'index.d.ts')}`)
   process.exit(1)
 }
-copyFileSync(declarationSource, declarationTarget)
+
+for (const declarationSource of declarationFiles) {
+  const relativePath = path.relative(srcDir, declarationSource)
+  const declarationTarget = path.join(distDir, relativePath)
+  mkdirSync(path.dirname(declarationTarget), { recursive: true })
+  copyFileSync(declarationSource, declarationTarget)
+}
 
 console.log(`Built ${path.basename(packageDir)} into dist/`)

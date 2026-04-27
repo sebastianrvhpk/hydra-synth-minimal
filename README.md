@@ -1,23 +1,21 @@
 # Hydra v2 Workspace
 
-Hydra v2 is a workspace-split rewrite with strict package boundaries and ESM-only publish artifacts.
+Hydra v2 centers on a single canonical engine package with ESM-only publish artifacts.
 
 ## Packages
 
-- `hydra-synth-core`: engine lifecycle, transform registry, WGSL pass compilation, DSL-to-IR lowering, execution-plan compilation/validation, and CPU reference utilities.
-- `hydra-synth`: browser host, WebGPU renderer, fragment-plan runtime execution, capture helpers, profiler/autotune helpers, benchmark corpus/report utilities.
-- `hydra-synth-livecoding`: optional plugin for explicit livecoding attach/run/dispose behavior and controlled global binding injection.
+- `hydra-synth-core`: internal engine/compiler substrate and lower-level utilities.
+- `hydra-synth`: canonical engine package with browser runtime, WebGPU, capture/recording, profiler/autotune, benchmark helpers, and livecoding exports.
+- `hydra-synth-livecoding`: compatibility wrapper for projects that still import the old standalone livecoding package.
 
 ## Architecture
 
 ```text
-hydra-synth-livecoding (optional)
-            |
-            v
-hydra-synth (browser host + WebGPU runtime + capture/benchmark tooling)
-            |
-            v
-hydra-synth-core (engine + transform graph + WGSL + plan compiler)
+hydra-synth (canonical engine package)
+      |      |      |
+      |      |      +-- livecoding mode / session helpers
+      |      +--------- browser runtime + WebGPU + capture
+      +---------------- internal core/compiler substrate via hydra-synth-core
 ```
 
 `hydra-synth-core` does not reference DOM globals or WebGPU APIs directly.
@@ -87,11 +85,11 @@ Detailed runtime/compiler notes for the fragment backend:
 
 - `docs/fragment-pipeline.md`
 
-## Optional Livecoding Plugin
+## Livecoding Mode
 
 ```ts
 import { createHydraBrowserRuntime } from 'hydra-synth'
-import { createLivecodingPlugin } from 'hydra-synth-livecoding'
+import { createLivecodingPlugin } from 'hydra-synth/livecoding'
 
 const runtime = createHydraBrowserRuntime({ autoLoop: true })
 await runtime.init()
@@ -106,6 +104,8 @@ plugin.run?.('speed = 2')
 detach()
 runtime.dispose()
 ```
+
+For backward compatibility, the same helpers are still published from `hydra-synth-livecoding`, but `hydra-synth` is now the canonical package boundary.
 
 ## Capture And Playground
 

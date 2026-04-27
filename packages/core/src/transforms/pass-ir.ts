@@ -33,7 +33,7 @@ const writeSetFrom = (values: HydraPassIRResourceRef[]): string[] => {
   return Array.from(writes)
 }
 
-const normalizeSet = (values: string[]): string[] => Array.from(new Set(values)).sort()
+const normalizeSet = (values: string[]): string[] => Array.from(new Set(values)).sort((left, right) => left.localeCompare(right))
 
 const resourceKey = (resource: HydraPassIRResourceRef): string =>
   `${resource.kind}|${resource.name}|${resource.binding}|${resource.intent ?? ''}|${resource.format ?? ''}`

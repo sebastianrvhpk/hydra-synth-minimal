@@ -272,7 +272,7 @@ const buildTransformCall = (
 }
 
 const buildNestedInputs = (inputs: HydraTypedArgument[], shaderParams: ShaderParams): ((cVar: string, stVar: string) => string) => {
-  let generator = (cVar: string, stVar: string): string => ''
+  let generator = (_cVar: string, _stVar: string): string => ''
 
   inputs.forEach((input, index) => {
     if (input.value && typeof input.value === 'object' && 'transforms' in input.value) {
@@ -293,7 +293,7 @@ const buildNestedInputs = (inputs: HydraTypedArgument[], shaderParams: ShaderPar
 }
 
 const generateWgslTransforms = (transforms: HydraTransformCall[], shaderParams: ShaderParams): ((cVar: string, stVar: string) => string) => {
-  let generator = (cVar: string, stVar: string): string => ''
+  let generator = (_cVar: string, _stVar: string): string => ''
 
   transforms.forEach((transform, index) => {
     const namespaceSeed = shaderParams.argumentNamespaceSeed

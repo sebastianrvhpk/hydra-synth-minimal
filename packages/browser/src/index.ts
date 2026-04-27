@@ -53,7 +53,12 @@ import {
 import { HydraExecutor, type ExecutePlanResult, type HydraExecutePlanOptions } from './runtime/executor.js'
 import { WebGPUOutputNode } from './runtime/output-node.js'
 import { buildProfilerSnapshot, type HydraProfilerSnapshot } from './runtime/profiler.js'
-import { HydraSourceNode, type PatchBayAdapter } from './runtime/source-node.js'
+import {
+  HydraSourceNode,
+  type HydraImageSourceInput,
+  type HydraVideoSourceInput,
+  type PatchBayAdapter
+} from './runtime/source-node.js'
 import {
   WEBGPU_UNAVAILABLE_MESSAGE,
   WebGPURenderer,
@@ -65,6 +70,12 @@ import {
   BENCHMARK_CORPUS,
   getBenchmarkSceneDefinition
 } from './benchmark/corpus.js'
+import {
+  attachLivecoding,
+  createLivecodingPlugin,
+  type AttachLivecodingOptions,
+  type LivecodingSession
+} from './livecoding.js'
 import {
   buildBenchmarkReport,
   validateBenchmarkReport,
@@ -127,7 +138,11 @@ export type {
   HydraMouseController,
   HydraMouseInputOptions,
   HydraMouseModifiers,
-  HydraMouseState
+  HydraMouseState,
+  AttachLivecodingOptions,
+  LivecodingSession,
+  HydraImageSourceInput,
+  HydraVideoSourceInput
 }
 
 export {
@@ -141,6 +156,8 @@ export {
   HydraAutotuner,
   buildCandidateSignature,
   buildProfilerSnapshot,
+  attachLivecoding,
+  createLivecodingPlugin,
   normalizeRuntimeExecutionMode,
   BENCHMARK_CORPUS,
   getBenchmarkSceneDefinition,

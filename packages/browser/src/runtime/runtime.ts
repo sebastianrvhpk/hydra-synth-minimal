@@ -267,7 +267,7 @@ export class HydraBrowserRuntime {
     return this.engine.getBindings()
   }
 
-  async init(): Promise<void> {
+  init(): Promise<void> {
     if (this.disposed) return
     if (this.initPromise) return this.initPromise
     this.initPromise = this.engine.init().then(() => {

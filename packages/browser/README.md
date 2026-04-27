@@ -1,6 +1,6 @@
 # hydra-synth
 
-Browser host/runtime package for Hydra v2.
+Canonical Hydra v2 engine package.
 
 ## Includes
 
@@ -12,6 +12,7 @@ Browser host/runtime package for Hydra v2.
 - fragment-plan execution route (`compileGraph` + `HydraExecutor`)
 - runtime profiler snapshots (`getProfilerSnapshot`) and autotune profile helpers
 - benchmark utilities (`BENCHMARK_CORPUS`, report build/validation helpers)
+- livecoding/session helpers (`attachLivecoding`, `createLivecodingPlugin`)
 
 Use `createHydraBrowserRuntime()` for default composition, or wire `BrowserHost` + `WebGPURenderer` manually.
 
@@ -53,3 +54,17 @@ console.log(videoBlob.type)
 ```
 
 `captureHydraFrameSequence` and `captureHydraVideo` stop the runtime loop, step deterministically, optionally wait for GPU work completion, and restore runtime state after capture.
+
+## Livecoding
+
+Top-level import:
+
+```ts
+import { attachLivecoding, createLivecodingPlugin } from 'hydra-synth'
+```
+
+Optional subpath import:
+
+```ts
+import { attachLivecoding, createLivecodingPlugin } from 'hydra-synth/livecoding'
+```

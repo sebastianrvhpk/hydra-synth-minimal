@@ -1,11 +1,15 @@
 import { HydraEngine } from 'hydra-synth-core'
 import type {
+  HydraAutotuneProfile,
+  HydraTuningPolicy,
   HydraCompiledPass,
+  HydraDebugEvent,
   HydraEngineBindingHost,
   HydraEngineError,
   HydraEngineErrorType,
   HydraEngineOptions,
   HydraErrorPolicy,
+  HydraExecutionPlan,
   HydraFrameState,
   HydraOutputAdapter,
   HydraPassIRNode,
@@ -13,6 +17,7 @@ import type {
   HydraPassUpdateRate,
   HydraResourceFormat,
   HydraTextureProvider,
+  HydraTransformCall,
   HydraTransformDefinition,
   RendererAdapter,
   ScriptPlugin,
@@ -21,12 +26,16 @@ import type {
 
 export { HydraEngine }
 export type {
+  HydraAutotuneProfile,
+  HydraTuningPolicy,
   HydraCompiledPass,
+  HydraDebugEvent,
   HydraEngineBindingHost,
   HydraEngineError,
   HydraEngineErrorType,
   HydraEngineOptions,
   HydraErrorPolicy,
+  HydraExecutionPlan,
   HydraFrameState,
   HydraOutputAdapter,
   HydraPassIRNode,
@@ -34,11 +43,14 @@ export type {
   HydraPassUpdateRate,
   HydraResourceFormat,
   HydraTextureProvider,
+  HydraTransformCall,
   HydraTransformDefinition,
   RendererAdapter,
   ScriptPlugin,
   SourceAdapter
 }
+
+export type HydraRuntimeExecutionMode = 'fragment' | 'auto'
 
 export interface BrowserHostOptions {
   canvas?: HTMLCanvasElement
@@ -46,6 +58,24 @@ export interface BrowserHostOptions {
   height?: number
   parent?: HTMLElement
   autoAppend?: boolean
+}
+
+export interface CanvasDisplayOptions {
+  nativeSize?: boolean
+}
+
+export interface AttachLivecodingOptions {
+  targetGlobal?: Record<string, unknown>
+  allowedBindings?: string[]
+  exposeHelpers?: boolean | Record<string, unknown>
+  evaluate?: (code: string, scope: Record<string, unknown>) => unknown
+}
+
+export interface LivecodingSession {
+  run (code: string): unknown
+  syncFromGlobal (): void
+  syncFromEngine (): void
+  dispose (): void
 }
 
 export declare class BrowserHost {
@@ -127,6 +157,9 @@ export interface PatchBayAdapter {
   off?: (event: string, callback: (nick: string, video: HTMLVideoElement) => void) => void
 }
 
+export type HydraVideoSourceInput = string | Blob | MediaSource
+export type HydraImageSourceInput = string | Blob
+
 export interface HydraMouseModifiers {
   shift: boolean
   alt: boolean
@@ -188,8 +221,8 @@ export declare class HydraSourceNode implements SourceAdapter, HydraTextureProvi
     opts?: { src?: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement, dynamic?: boolean },
     params?: { flipY?: boolean }
   ): void
-  initVideo (url?: string, params?: { flipY?: boolean }): void
-  initImage (url?: string, params?: { flipY?: boolean }): void
+  initVideo (source?: HydraVideoSourceInput, params?: { flipY?: boolean }): void
+  initImage (source?: HydraImageSourceInput, params?: { flipY?: boolean }): void
   initStream (streamName: string, params?: { flipY?: boolean }): void
   initCanvas (width?: number, height?: number): CanvasRenderingContext2D
   clear (): void
@@ -228,8 +261,10 @@ export interface HydraBrowserRuntimeOptions {
   speed?: number
   bpm?: number
   mouse?: boolean | HydraMouseInputOptions
+  executionMode?: HydraRuntimeExecutionMode
   errorPolicy?: HydraErrorPolicy
   onError?: (error: HydraEngineError) => void
+  onDebug?: (event: HydraDebugEvent) => void
 }
 
 export declare class HydraBrowserRuntime {
@@ -252,7 +287,28 @@ export declare class HydraBrowserRuntime {
   getActiveOutput (): WebGPUOutputNode
   isRenderAllEnabled (): boolean
   setResolution (width: number, height: number): void
+  setCanvasDisplay (width: number, height: number, options?: CanvasDisplayOptions): void
+  resetCanvasDisplay (): void
   createSource (): HydraSourceNode
+  getExecutionMode (): HydraRuntimeExecutionMode
+  setExecutionMode (mode: HydraRuntimeExecutionMode | string): HydraRuntimeExecutionMode
+  compilePlan (graphNode: { transforms?: HydraTransformCall[] } | null | undefined): HydraExecutionPlan | null
+  executePlan (
+    graphNode: { transforms?: HydraTransformCall[] } | null | undefined,
+    output?: WebGPUOutputNode,
+    options?: Record<string, unknown>
+  ): HydraExecutionPlan | null
+  getProfilerSnapshot (): unknown
+  autotune (options?: {
+    profileKey?: string,
+    policy?: HydraTuningPolicy,
+    candidateProfiles?: string[],
+    kernelSignature?: string
+  }): HydraAutotuneProfile
+  getAutotuneProfile (profileKey?: string): HydraAutotuneProfile | null
+  setTuningPolicy (policy: HydraTuningPolicy): void
+  clearAutotuneProfiles (profileKey?: string): void
+  dumpShaders (): string[]
   hush (): void
   attachPlugin (plugin: ScriptPlugin): () => void
   dispose (): void
@@ -325,6 +381,16 @@ export interface CaptureHydraFrameSequenceFrameInfo extends CaptureFrameSequence
   synth: Record<string, unknown>
 }
 
+export interface CaptureFrameSequenceBufferInfo {
+  frame: number
+  totalFrames: number
+  data: ArrayBuffer
+  width: number
+  height: number
+  format: 'rgba16float' | 'rgba8unorm'
+  bytesPerRow: number
+}
+
 export interface CaptureHydraFrameSequenceOptions extends Omit<CaptureFrameSequenceOptions, 'canvas' | 'step'> {
   runtime: HydraBrowserRuntime
   output?: WebGPUOutputNode
@@ -333,6 +399,9 @@ export interface CaptureHydraFrameSequenceOptions extends Omit<CaptureFrameSeque
   resumeAfterCapture?: boolean
   restoreResolution?: boolean
   ignoreEngineFpsGate?: boolean
+  gpuReadback?: boolean | 'auto'
+  readbackFormat?: 'rgba16float' | 'rgba8unorm'
+  onFrameBuffer?: (info: CaptureFrameSequenceBufferInfo) => void | Promise<void>
 }
 
 export interface VideoRecorderOptions {
@@ -384,3 +453,8 @@ export declare const createWebGPURenderer: (
   options?: Omit<WebGPURendererOptions, 'canvas'>
 ) => WebGPURenderer
 export declare const createHydraBrowserRuntime: (options?: CreateHydraBrowserRuntimeOptions) => HydraBrowserRuntime
+export declare const attachLivecoding: (
+  engine: HydraEngineBindingHost,
+  options?: AttachLivecodingOptions
+) => LivecodingSession
+export declare const createLivecodingPlugin: (options?: AttachLivecodingOptions) => ScriptPlugin

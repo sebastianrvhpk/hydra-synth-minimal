@@ -171,3 +171,75 @@ src(o0)
 render(o1)
 //STOPED AIRBURSH 1
 
+
+
+
+
+
+---
+
+fps=60,setCanvasDisplay(height/16*9,height)
+rn=()=>Math.random()
+//s0.initVideo("C:\Users\sebas\Downloads\WhatsApp Video 2026-04-20 at 1.02.27 PM_chr2.mp4")
+//loadVideoFile(s0).then(() => src(s0).out())
+src(s0)
+.diff(src(o0).edgeDetect(4).sharpen(6).thresh(.25,0))
+.blend(prevN(o0,35).edgeDetect(src(s0).add(1.5),4))
+.out()
+
+
+
+---
+
+
+fps=60,setCanvasDisplay(window.innerHeight/16*9,window.innerHeight)
+rn=()=>Math.random()
+//s0.initVideo("C:\Users\sebas\Downloads\WhatsApp Video 2026-04-20 at 1.02.27 PM_chr2.mp4")
+//loadVideoFile(s0).then(() => src(s0).out())
+src(s0)
+.diff(src(o0).edgeDetect(4).sharpen(6).thresh(.25,0))
+.blend(prevN(o0,35).edgeDetect(prevN(85).edgeDetect(1,0).add(1.5),4))
+.diff(src(s0).mask(noise(.5,.5).mult(.25)),1)
+.out()
+
+---
+
+
+fps=60,setCanvasDisplay(window.innerHeight/16*9,window.innerHeight)
+rn=()=>Math.random()
+//loadVideoFile(s0).then(() => src(s0).out())
+src(s0).dualKawaseBloom(-1)
+.modulateScale(src(s0).dualKawaseBloom(1))
+.edgeDetect(6)
+.layer(src(s0).mask(osc(Math.PI*8,.1).rotate(1).pixelate(4,4/width*height).thresh(.5,0)))
+.blend(prevN(o0,95))
+.out()
+render(o0)
+
+
+---
+
+
+fps=60,setCanvasDisplay(window.innerHeight/16*9,window.innerHeight)
+rn=()=>Math.random()
+//loadVideoFile(s0).then(() => src(s0).out())
+src(s0).invert(osc(Math.PI*2.5,.125).pixelate(2.5,1).thresh(.5,0)).dualKawaseBloom(-1).sharpen(2)
+.edgeDetect(4).blur(1).dualKawaseBlur(2)
+.blend(o0,.5)
+.out()
+src(o0).mult(s0)
+.layer(src(s0).mask(shape(400,1,0).invert().scrollY(-.5).repeat(2.5,2.5/width*height)))
+.out(o1)
+render(o1)
+
+
+---
+
+fps=60,setCanvasDisplay(window.innerHeight/16*9,window.innerHeight)
+rn=()=>Math.random()
+//loadVideoFile(s0).then(() => src(s0).out())
+src(s0).out(o0)
+src(o0).edgeDetect(40,.25)
+.add(prevN(o0,75).edgeDetect(4))
+.out(o1)
+render(o1)

@@ -17,9 +17,11 @@ const readArgValue = (prefix) => {
 
 const portArg = readArgValue('--port')
 const pathArg = readArgValue('--path')
+const hostArg = readArgValue('--host')
 const playgroundEntry = '/playground/index.html'
 const port = Number.parseInt(portArg ?? '8000', 10)
 const openPath = pathArg ?? playgroundEntry
+const host = hostArg ?? '127.0.0.1'
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const captureSessions = new Map()
@@ -76,6 +78,25 @@ const sendText = (response, status, message) => {
     'cache-control': 'no-store'
   })
   response.end(message)
+}
+
+const isLoopbackHost = (value) => (
+  value === '127.0.0.1' ||
+  value === '::1' ||
+  value === 'localhost'
+)
+
+const isLoopbackAddress = (value) => (
+  value === '127.0.0.1' ||
+  value === '::1' ||
+  value === '::ffff:127.0.0.1'
+)
+
+const isLocalRequest = (request) => {
+  const remoteAddress = request.socket.remoteAddress ?? ''
+  if (isLoopbackAddress(remoteAddress)) return true
+  if (!remoteAddress && isLoopbackHost(host)) return true
+  return false
 }
 
 const normalizeCaptureExtension = (value) => {
@@ -440,6 +461,13 @@ const handleStaticRoute = (request, response, pathname) => {
 }
 
 const handleRequest = async (request, response) => {
+  if (!isLocalRequest(request)) {
+    sendJson(response, 403, {
+      error: 'Dev server access is restricted to loopback clients. Pass --host=0.0.0.0 only when you explicitly want remote access.'
+    })
+    return
+  }
+
   const parsedUrl = new URL(request.url ?? '/', 'http://localhost')
   const pathname = normalizeRequestPath(request.url)
 
@@ -458,9 +486,10 @@ const server = http.createServer((request, response) => {
   })
 })
 
-server.listen(port, () => {
-  const playgroundUrl = `http://localhost:${port}${playgroundEntry}`
-  const openUrl = `http://localhost:${port}${openPath}`
+server.listen(port, host, () => {
+  const publicHost = isLoopbackHost(host) ? 'localhost' : host
+  const playgroundUrl = `http://${publicHost}:${port}${playgroundEntry}`
+  const openUrl = `http://${publicHost}:${port}${openPath}`
   console.log(`Hydra v2 playground: ${playgroundUrl}`)
 
   if (shouldOpen) {

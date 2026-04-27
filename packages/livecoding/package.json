@@ -1,7 +1,7 @@
 {
   "name": "hydra-synth-livecoding",
   "version": "2.0.0-alpha.0",
-  "description": "Optional livecoding plugin for Hydra v2",
+  "description": "Compatibility wrapper for the livecoding helpers now exported by hydra-synth",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

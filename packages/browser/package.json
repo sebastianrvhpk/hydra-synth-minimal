@@ -1,7 +1,7 @@
 {
   "name": "hydra-synth",
   "version": "2.0.0-alpha.0",
-  "description": "Hydra v2 browser host and WebGPU adapters",
+  "description": "Canonical Hydra v2 engine package with browser runtime, WebGPU, capture, and livecoding exports",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./livecoding": {
+      "types": "./dist/livecoding.d.ts",
+      "import": "./dist/livecoding.js"
     }
   },
   "files": [

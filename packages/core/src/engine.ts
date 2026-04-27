@@ -82,7 +82,6 @@ export class HydraEngine implements HydraEngineBindingHost {
   private updateCallback: (deltaMs: number) => void
   private afterUpdateCallback: (deltaMs: number) => void
   private readonly onErrorCallback
-  private readonly onDebugCallback
   private readonly errorPolicy
   private readonly bindings: Record<string, unknown>
   private readonly errorListeners = new Set<(error: HydraEngineError) => void>()
@@ -104,7 +103,6 @@ export class HydraEngine implements HydraEngineBindingHost {
     this.updateCallback = options.update ?? (() => { })
     this.afterUpdateCallback = options.afterUpdate ?? (() => { })
     this.onErrorCallback = options.onError
-    this.onDebugCallback = options.onDebug
     this.errorPolicy = options.errorPolicy ?? 'emit'
 
     const width = normalizePositiveInteger(options.width, DEFAULT_WIDTH, 'width')
@@ -151,7 +149,7 @@ export class HydraEngine implements HydraEngineBindingHost {
     return this.initialized
   }
 
-  async init(): Promise<void> {
+  init(): Promise<void> {
     if (this.disposed) return
     if (this.initialized) return
     if (this.initPromise) return this.initPromise

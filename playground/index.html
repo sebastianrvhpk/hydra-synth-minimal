@@ -460,6 +460,198 @@ speed = 0.75`
       }, 30_000)
     }
 
+    const videoFilePicker = {
+      accept: 'video/*',
+      types: [{
+        description: 'Video files',
+        accept: {
+          'video/*': ['.mp4', '.webm', '.mov', '.m4v', '.ogg', '.ogv']
+        }
+      }]
+    }
+
+    const isFilePickerAbort = (error) => (
+      error &&
+      typeof error === 'object' &&
+      'name' in error &&
+      error.name === 'AbortError'
+    )
+
+    const pickFilesWithInput = (accept, multiple = false) => new Promise((resolve) => {
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.accept = accept
+      input.multiple = Boolean(multiple)
+      input.style.display = 'none'
+
+      let settled = false
+      const settle = (files) => {
+        if (settled) return
+        settled = true
+        window.removeEventListener('focus', onFocus)
+        input.remove()
+        resolve(files)
+      }
+      const onFocus = () => {
+        window.setTimeout(() => {
+          if (!input.files || input.files.length === 0) settle([])
+        }, 500)
+      }
+
+      input.addEventListener('change', () => {
+        settle(Array.from(input.files ?? []))
+      }, { once: true })
+      window.addEventListener('focus', onFocus)
+      document.body.appendChild(input)
+      input.click()
+    })
+
+    const pickLocalFiles = async ({ accept, types }, { multiple = false } = {}) => {
+      if (typeof window.showOpenFilePicker === 'function') {
+        try {
+          const handles = await window.showOpenFilePicker({
+            multiple: Boolean(multiple),
+            types
+          })
+          return await Promise.all(handles.map((handle) => handle.getFile()))
+        } catch (error) {
+          if (isFilePickerAbort(error)) return []
+          throw error
+        }
+      }
+
+      return pickFilesWithInput(accept, multiple)
+    }
+
+    const pickLocalFile = async (picker) => {
+      const files = await pickLocalFiles(picker)
+      return files[0] ?? null
+    }
+
+    const pickVideoFile = () => pickLocalFile(videoFilePicker)
+    const pickVideoFiles = (options = {}) => pickLocalFiles(videoFilePicker, options)
+
+    const isHydraSource = (value) => value && typeof value === 'object' && typeof value.initVideo === 'function'
+
+    const getHydraSourceVideo = (source) => {
+      const media = source?.src
+      return media instanceof HTMLVideoElement ? media : null
+    }
+
+    const waitForHydraSourceVideo = (source, timeoutMs = 4000) => new Promise((resolve, reject) => {
+      const startedAt = performance.now()
+      const poll = () => {
+        const video = getHydraSourceVideo(source)
+        if (video && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+          resolve(video)
+          return
+        }
+        if (performance.now() - startedAt >= timeoutMs) {
+          reject(new Error('Timed out waiting for video source to become ready.'))
+          return
+        }
+        window.setTimeout(poll, 16)
+      }
+      poll()
+    })
+
+    const seekVideoToStart = (video) => new Promise((resolve) => {
+      if (!video || !Number.isFinite(video.duration)) {
+        resolve()
+        return
+      }
+      const finish = () => {
+        video.removeEventListener('seeked', finish)
+        video.removeEventListener('loadeddata', finish)
+        resolve()
+      }
+      video.pause()
+      if (Math.abs(video.currentTime) < 0.001) {
+        resolve()
+        return
+      }
+      video.addEventListener('seeked', finish, { once: true })
+      video.addEventListener('loadeddata', finish, { once: true })
+      try {
+        if (typeof video.fastSeek === 'function') video.fastSeek(0)
+        else video.currentTime = 0
+      } catch {
+        finish()
+      }
+    })
+
+    const restartVideoElements = async (videos) => {
+      const readyVideos = videos.filter(Boolean)
+      await Promise.all(readyVideos.map(seekVideoToStart))
+      await Promise.all(readyVideos.map((video) => video.play().catch(() => { })))
+      return readyVideos
+    }
+
+    const restartVideos = async (...sources) => {
+      const targets = sources.length > 0
+        ? sources.flat().filter(isHydraSource)
+        : ['s0', 's1', 's2', 's3'].map((name) => synth[name]).filter(isHydraSource)
+      const videos = targets.map(getHydraSourceVideo).filter(Boolean)
+      await restartVideoElements(videos)
+      return videos.length
+    }
+
+    const loadVideoFile = (source = synth.s0, params = {}) => {
+      const target = source ?? synth.s0
+      if (!target || typeof target.initVideo !== 'function') {
+        throw new Error('loadVideoFile: pass a Hydra source, for example loadVideoFile(s0).')
+      }
+
+      return pickVideoFile().then((file) => {
+        if (!file) {
+          setLiveStatus('Video selection cancelled.')
+          return null
+        }
+
+        target.initVideo(file, params)
+        setLiveStatus(`Loaded video: ${file.name || 'selected file'}.`, 'ok')
+        return file
+      }).catch((error) => {
+        const message = error instanceof Error ? error.message : String(error)
+        setLiveStatus(`Video load failed: ${message}`, 'error')
+        console.error('[hydra] video file load failed', error)
+        throw error
+      })
+    }
+
+    const loadVideoFiles = async (...args) => {
+      let params = {}
+      if (args.length > 0) {
+        const lastArg = args[args.length - 1]
+        if (!isHydraSource(lastArg) && !Array.isArray(lastArg) && lastArg && typeof lastArg === 'object') {
+          params = args.pop()
+        }
+      }
+
+      const targets = args.length > 0
+        ? args.flat().filter(isHydraSource)
+        : [synth.s0]
+
+      if (targets.length === 0) {
+        throw new Error('loadVideoFiles: pass Hydra sources, for example loadVideoFiles(s0, s1).')
+      }
+
+      const files = await pickVideoFiles({ multiple: targets.length > 1 })
+      if (files.length === 0) {
+        setLiveStatus('Video selection cancelled.')
+        return []
+      }
+
+      const loadedPairs = targets.slice(0, files.length).map((target, index) => {
+        target.initVideo(files[index], params)
+        return { target, file: files[index] }
+      })
+      const videos = await Promise.all(loadedPairs.map(({ target }) => waitForHydraSourceVideo(target)))
+      await restartVideoElements(videos)
+      setLiveStatus(`Loaded ${loadedPairs.length} video(s).`, 'ok')
+      return loadedPairs.map(({ file }) => file)
+    }
+
     let activeCaptureAbortController = null
     let detachLivecoding = null
     let livecodingPlugin = null
@@ -592,6 +784,11 @@ speed = 0.75`
     window.captureAndSaveWebm = captureAndSaveWebm
     window.toggleVideoCapture = toggleVideoCapture
     window.toggleMp4Capture = toggleVideoCapture
+    window.pickVideoFile = pickVideoFile
+    window.pickVideoFiles = pickVideoFiles
+    window.loadVideoFile = loadVideoFile
+    window.loadVideoFiles = loadVideoFiles
+    window.restartVideos = restartVideos
     setCaptureDurationSeconds(loadCaptureDurationSeconds())
     updateCaptureButtonState()
 
@@ -658,7 +855,7 @@ speed = 0.75`
       return blocks
     }
 
-    const runEditorSnippet = (scope = 'smart') => {
+    const runEditorSnippet = async (scope = 'smart') => {
       if (!liveEditor) return
       if (!livecodingPlugin || typeof livecodingPlugin.run !== 'function') {
         setLiveStatus('Livecoding plugin is not attached.', 'error')
@@ -684,6 +881,7 @@ speed = 0.75`
         let executeRemaining = false
 
         try {
+          await restartVideos()
           for (let index = 0; index < blocks.length; index += 1) {
             const block = blocks[index]
             if (!executeRemaining && previousBlocks[index] === block) {
@@ -693,7 +891,7 @@ speed = 0.75`
 
             executeRemaining = true
             try {
-              livecodingPlugin.run(block)
+              await Promise.resolve(livecodingPlugin.run(block))
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
               throw new Error(`Block ${index + 1}: ${message}`)
@@ -716,7 +914,7 @@ speed = 0.75`
 
       lastFullBufferBlocks = null
       try {
-        livecodingPlugin.run(code)
+        await Promise.resolve(livecodingPlugin.run(code))
         setLiveStatus(`Ran ${snippet.scopeLabel} at ${new Date().toLocaleTimeString()}.`, 'ok')
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
@@ -759,7 +957,12 @@ speed = 0.75`
           captureFrames,
           captureAndSaveVideo,
           captureAndSaveMp4,
-          toggleVideoCapture
+          toggleVideoCapture,
+          pickVideoFile,
+          pickVideoFiles,
+          loadVideoFile,
+          loadVideoFiles,
+          restartVideos
         },
         allowedBindings: [
           'speed',

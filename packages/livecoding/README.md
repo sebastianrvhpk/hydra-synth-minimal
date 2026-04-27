@@ -1,6 +1,18 @@
 # hydra-synth-livecoding
 
-Optional livecoding plugin for Hydra v2.
+Compatibility wrapper for the livecoding helpers now exported by `hydra-synth`.
+
+Prefer:
+
+```ts
+import { attachLivecoding, createLivecodingPlugin } from 'hydra-synth/livecoding'
+```
+
+or:
+
+```ts
+import { attachLivecoding, createLivecodingPlugin } from 'hydra-synth'
+```
 
 ## Features
 
@@ -22,4 +34,4 @@ Optional livecoding plugin for Hydra v2.
 - `exposeHelpers`: `true` or a helper object to expose convenience helpers
 - `evaluate`: custom evaluator override for code execution
 
-Core runtime behavior remains side-effect free unless this package is explicitly attached.
+This package remains available for backward compatibility. Core runtime behavior remains side-effect free unless livecoding is explicitly attached.

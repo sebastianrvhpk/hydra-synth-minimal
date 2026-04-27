@@ -8,6 +8,14 @@ export interface HydraEngineError<TContext extends Record<string, unknown> = Rec
   timestamp: number
 }
 
+export interface HydraDebugEvent {
+  type: 'shader-generated'
+  nodeId: string
+  signature: string
+  wgsl: string
+  timestamp: number
+}
+
 export interface HydraFrameState {
   time: number
   bpm: number
@@ -55,6 +63,7 @@ export interface HydraEngineOptions {
   initialBindings?: Record<string, unknown>
   errorPolicy?: HydraErrorPolicy
   onError?: (error: HydraEngineError) => void
+  onDebug?: (event: HydraDebugEvent) => void
 }
 
 export interface Disposable {
