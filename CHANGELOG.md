@@ -2,16 +2,29 @@
 
 ## [Unreleased]
 
+### Package Shape
+
+- [x] Collapse the publishable engine surface into `hydra-synth`; former core/compiler code now lives internally under `packages/synth/src/core`.
+- [x] Replace the standalone `hydra-synth-livecoding` package with the `hydra-synth/livecoding` subpath.
+- [x] Add `packages/hydra` as the livecoding interface package and redirect the old playground entry to it.
+- [x] Replace the textarea live editor with CodeMirror 6, Hydra completions, and evaluated-range flashing.
+- [x] Add a fullscreen Hydra-style editor overlay with compact icon dock, first-run welcome panel, record/options popovers, optional floating geometry, URL sketch snapshots, random sketch loading, dice-style numeric mutation helpers, and editor-as-texture `src(s3)` material to the `hydra` app.
+- [x] Add a public compatibility matrix and livecoding trust-boundary document.
+- [x] Require explicit `allowEval: true` for the default livecoding evaluator.
+- [x] Add modern audio analysis with legacy `a`/`a0..aN` helpers, Web Audio source connection, beat/volume/band/waveform metrics, and deterministic injected frequency-data updates.
+- [x] Add `HydraSourceNode.initScreen()` for browser display capture sources.
+- [x] Add a default-export `Hydra` compatibility facade with old constructor options plus `setFunction`, `screencap`, `getScreenImage`, `canvasToImage`, and `vidRecorder` aliases.
+
 ### Precision and Numerical Stability Audit
 
 - [x] Preserve FPS gate accumulator remainder in `HydraEngine.tick()` to avoid cadence drift from dropped sub-frame time.
 - [x] Stop synthesizing `gpuMs` pass metrics from CPU encode timings when GPU timestamp data is unavailable.
 - [x] Scope capture conversion pipeline caching per `GPUDevice` to prevent cross-device pipeline reuse.
 - [x] Add regression coverage for:
-  - FPS gate remainder behavior (`packages/core/test/engine.test.ts`)
-  - CPU/GPU timing source integrity (`packages/browser/test/foundation.test.ts`)
-  - Per-device readback conversion caching (`packages/browser/test/gpu-readback.test.ts`)
-- [ ] Align browser declaration surface with runtime capture/profiler APIs (`packages/browser/src/index.d.ts`).
+  - FPS gate remainder behavior (`packages/synth/test/core/engine.test.ts`)
+  - CPU/GPU timing source integrity (`packages/synth/test/foundation.test.ts`)
+  - Per-device readback conversion caching (`packages/synth/test/gpu-readback.test.ts`)
+- [ ] Align browser declaration surface with runtime capture/profiler APIs (`packages/synth/src/index.d.ts`).
 - [ ] Enforce a shared dynamic-uniform scalar ceiling between compile and runtime paths.
 - [ ] Add explicit alpha-preservation mode for GPU readback conversion (`rgba16float` -> `rgba8unorm`).
 - [ ] Tighten benchmark scripts to reject/flag invalid numeric samples instead of coercing to `0`.

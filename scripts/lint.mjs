@@ -7,7 +7,7 @@ const failures = []
 
 const fail = (message) => failures.push(message)
 
-const packageDirs = ['packages/core', 'packages/browser', 'packages/livecoding']
+const packageDirs = ['packages/synth', 'packages/hydra']
 for (const dir of packageDirs) {
   if (!existsSync(path.join(rootDir, dir))) {
     fail(`Missing required package directory: ${dir}`)
@@ -30,22 +30,42 @@ for (const pkgDir of packageDirs) {
 }
 
 const forbiddenPatterns = [
-  /\bmakeGlobal\b/u,
-  /\bloadScript\s*\(/u
+  {
+    pattern: /\bmakeGlobal\b/u,
+    allow: new Set([
+      'packages/synth/README.md',
+      'packages/synth/src/index.d.ts',
+      'packages/synth/src/legacy-hydra.ts',
+      'packages/synth/test/legacy-hydra.test.ts'
+    ])
+  },
+  {
+    pattern: /\bloadScript\s*\(/u,
+    allow: new Set([
+      'packages/synth/src/index.d.ts',
+      'packages/synth/src/legacy-hydra.ts'
+    ])
+  }
 ]
+const skippedDirectories = new Set(['node_modules', 'dist', '.npm-cache', '.vite', '.vite-temp'])
 
 const scan = (dir) => {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const fullPath = path.join(dir, entry.name)
-    if (entry.isDirectory()) scan(fullPath)
+    if (entry.isDirectory()) {
+      if (!skippedDirectories.has(entry.name)) scan(fullPath)
+      continue
+    }
     if (entry.isFile() && (entry.name.endsWith('.ts') || entry.name.endsWith('.js') || entry.name.endsWith('.md'))) {
       const relative = path.relative(rootDir, fullPath).replaceAll('\\', '/')
       const content = readFileSync(fullPath, 'utf8')
-      for (const pattern of forbiddenPatterns) {
-        if (pattern.test(content)) fail(`Forbidden deprecated API reference (${pattern}) found in ${relative}`)
+      for (const { pattern, allow } of forbiddenPatterns) {
+        if (pattern.test(content) && !allow.has(relative)) {
+          fail(`Forbidden deprecated API reference (${pattern}) found in ${relative}`)
+        }
       }
-      if (relative.startsWith('packages/core/') && /\beval\s*\(/u.test(content)) {
-        fail(`Core package cannot include eval() usage: ${relative}`)
+      if (relative.startsWith('packages/synth/src/core/') && /\beval\s*\(/u.test(content)) {
+        fail(`Synth core cannot include eval() usage: ${relative}`)
       }
     }
   }

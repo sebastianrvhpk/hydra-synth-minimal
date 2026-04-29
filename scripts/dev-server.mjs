@@ -18,7 +18,7 @@ const readArgValue = (prefix) => {
 const portArg = readArgValue('--port')
 const pathArg = readArgValue('--path')
 const hostArg = readArgValue('--host')
-const playgroundEntry = '/playground/index.html'
+const playgroundEntry = '/packages/hydra/index.html'
 const port = Number.parseInt(portArg ?? '8000', 10)
 const openPath = pathArg ?? playgroundEntry
 const host = hostArg ?? '127.0.0.1'
@@ -490,7 +490,7 @@ server.listen(port, host, () => {
   const publicHost = isLoopbackHost(host) ? 'localhost' : host
   const playgroundUrl = `http://${publicHost}:${port}${playgroundEntry}`
   const openUrl = `http://${publicHost}:${port}${openPath}`
-  console.log(`Hydra v2 playground: ${playgroundUrl}`)
+  console.log(`Hydra: ${playgroundUrl}`)
 
   if (shouldOpen) {
     try {

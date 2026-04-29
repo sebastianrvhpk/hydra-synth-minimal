@@ -43,6 +43,8 @@ for (const packageDir of packageDirs) {
   if (!existsSync(packageJsonPath)) continue
 
   const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'))
+  if (packageJson.private === true) continue
+
   const packageName = packageJson.name ?? path.basename(packageDir)
   const filesField = Array.isArray(packageJson.files) ? packageJson.files : []
   const normalizedFilesField = filesField.map((entry) => normalizePath(entry))

@@ -175,7 +175,7 @@ const main = async () => {
       : path.resolve('.tmp/bench/capture-parity-mp4')
   const headless = args.headful ? false : true
 
-  const configuredUrl = String(args.url ?? 'http://127.0.0.1:8000/playground/index.html')
+  const configuredUrl = String(args.url ?? 'http://127.0.0.1:8000/packages/hydra/index.html')
   const urlObject = new URL(configuredUrl)
   const port = Number.parseInt(urlObject.port || '80', 10)
 
@@ -214,8 +214,8 @@ const main = async () => {
         exportMp4Artifacts
       } = config
 
-      const { createHydraBrowserRuntime } = await import('/packages/browser/dist/index.js')
-      const { captureHydraFrameSequence, captureHydraVideo } = await import('/packages/browser/dist/capture/frame-sequence.js')
+      const { createHydraBrowserRuntime } = await import('/packages/synth/dist/index.js')
+      const { captureHydraFrameSequence, captureHydraVideo } = await import('/packages/synth/dist/capture/frame-sequence.js')
 
       const hasWebCodecs = typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined'
       if (!hasWebCodecs) {

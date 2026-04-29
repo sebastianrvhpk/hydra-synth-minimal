@@ -1,26 +1,21 @@
-# Hydra v2 Workspace
+# Hydra WebGPU Workspace
 
-Hydra v2 centers on a single canonical engine package with ESM-only publish artifacts.
+This is a modern WebGPU/TypeScript Hydra engine and livecoding environment. It keeps the Hydra patching workflow and DSL shape while rebuilding the renderer, compiler, capture path, and editor surface for current browsers.
 
 ## Packages
 
-- `hydra-synth-core`: internal engine/compiler substrate and lower-level utilities.
-- `hydra-synth`: canonical engine package with browser runtime, WebGPU, capture/recording, profiler/autotune, benchmark helpers, and livecoding exports.
-- `hydra-synth-livecoding`: compatibility wrapper for projects that still import the old standalone livecoding package.
+- `hydra-synth`: the graphics brain. It owns the Hydra-compatible DSL, WebGPU renderer, WGSL compiler, source/output buffers, capture APIs, profiler/autotune helpers, and the optional livecoding runtime bridge.
+- `hydra`: the livecoding interface. It owns the fullscreen canvas experience, editor overlay, local session helpers, source/capture controls, and user-facing workflow around a `hydra-synth` runtime.
 
-## Architecture
+Internal compiler/engine code lives inside `packages/synth/src/core`; it is not a separate npm package.
 
 ```text
-hydra-synth (canonical engine package)
-      |      |      |
-      |      |      +-- livecoding mode / session helpers
-      |      +--------- browser runtime + WebGPU + capture
-      +---------------- internal core/compiler substrate via hydra-synth-core
+hydra
+  -> hydra-synth
+       -> internal core/compiler/runtime modules
 ```
 
-`hydra-synth-core` does not reference DOM globals or WebGPU APIs directly.
-
-## Browser Runtime Usage
+## Engine Usage
 
 ```ts
 import { createHydraBrowserRuntime } from 'hydra-synth'
@@ -28,8 +23,7 @@ import { createHydraBrowserRuntime } from 'hydra-synth'
 const runtime = createHydraBrowserRuntime({
   autoLoop: false,
   numSources: 4,
-  numOutputs: 4,
-  executionMode: 'auto' // default
+  numOutputs: 4
 })
 
 await runtime.init()
@@ -38,54 +32,7 @@ runtime.tick(16)
 runtime.dispose()
 ```
 
-Pointer input is exposed as `runtime.synth.mouse`:
-
-- default `0..1` channels: `x`, `y`, `speed`, `acceleration`, `jerk`, `speedSmooth`, `accelerationSmooth`, `jerkSmooth`, `dragDistance`, `dragTravel`, `dragDuration`, `hold`, `pressure`, `inside`
-- additional channels with different math: `pixelX`, `pixelY`, `uvX`, `uvY`, `velocityX`, `velocityY`, `accelerationX`, `accelerationY`, `jerkX`, `jerkY`
-- pointer state: `buttons`, `down`, `dragActive`, `pointerType`, `mods`, `enabled`
-
-Example with only `0..1` channels:
-
-```ts
-osc(12, 0.08, 0)
-  .rotate(() => (mouse.x - 0.5) * 0.8)
-  .scale(() => 1 + mouse.speedSmooth * 4)
-  .color(() => 0.3 + mouse.dragDistance, 0.5, 1.0)
-  .out()
-```
-
-`executionMode` values:
-
-- `auto` (default): fragment-plan routing with automatic policy selection.
-- `fragment`: force fragment-plan routing.
-
-You can also wire components explicitly:
-
-```ts
-import { BrowserHost, HydraBrowserRuntime, WebGPURenderer } from 'hydra-synth'
-
-const host = new BrowserHost({ width: 1280, height: 720 })
-const renderer = new WebGPURenderer({ canvas: host.canvas })
-const runtime = new HydraBrowserRuntime({ host, renderer, autoLoop: true })
-```
-
-## Multipass And Renderpass Features
-
-Transform chains are split into sequential fragment passes when standalone renderpass transforms are present, with `prevBuffer` handoff where needed.
-
-Built-in coverage includes:
-
-- classic Hydra transforms (`osc`, `noise`, `shape`, coord/color/combine ops, `prev`, `prevN`)
-- low-level synthesis/operator extensions (`noiseLoop(scale, speed, radius)`, `fbm`, `ridged`, `turbulence`, `screen`, `overlay`, `softLight`, `hardLight`, `colorDodge`, `colorBurn`)
-- multipass/post-processing transforms (for example `blurX`, `blurY`, `blurFast`, `edgeDetect`, `edgeLaplacian`, `radialBlur`, `zoomBlur`, `dualKawaseBlur`, `dualKawaseBloom`, `toneMap`, `exposure`)
-
-For full built-in transform definitions, see `packages/core/src/transforms/default-transforms.ts`.
-
-Detailed runtime/compiler notes for the fragment backend:
-
-- `docs/fragment-pipeline.md`
-
-## Livecoding Mode
+Livecoding helpers are available from the engine package:
 
 ```ts
 import { createHydraBrowserRuntime } from 'hydra-synth'
@@ -95,6 +42,10 @@ const runtime = createHydraBrowserRuntime({ autoLoop: true })
 await runtime.init()
 
 const plugin = createLivecodingPlugin({
+  runCode: (code, scope) => {
+    const compileTrustedCode = globalThis.Function
+    return compileTrustedCode('scope', `with (scope) {\n${code}\n}`)(scope)
+  },
   allowedBindings: ['speed', 'bpm', 'update', 'afterUpdate'],
   exposeHelpers: true
 })
@@ -105,54 +56,78 @@ detach()
 runtime.dispose()
 ```
 
-For backward compatibility, the same helpers are still published from `hydra-synth-livecoding`, but `hydra-synth` is now the canonical package boundary.
+## Compatibility Direction
 
-## Capture And Playground
+The goal is Hydra patch compatibility, not exact legacy WebGL output parity. Existing patches should keep the familiar global livecoding shape: `osc`, `noise`, `shape`, `src`, `s0..s3`, `o0..o3`, `mouse`, `time`, `speed`, `bpm`, `update`, `afterUpdate`, and `out`.
 
-`hydra-synth` capture APIs:
+See the detailed compatibility matrix in `docs/hydra-compatibility.md`.
 
-- `captureFrameSequence(...)`
-- `captureHydraFrameSequence(...)`
-- `captureVideo(...)`
-- `captureHydraVideo(...)`
+Livecoding evaluates trusted local patch code. See `docs/livecoding-trust-boundary.md` before wiring remote gallery, URL, or collaboration inputs into `livecoding.run(...)`.
 
-Playground shortcut: `playground/index.html`
+Modern additions include:
 
-VS Code shortcut:
+- WebGPU/WGSL fragment pipeline
+- multipass/renderpass transforms
+- fullscreen Hydra-style CodeMirror code layer with compact icon dock
+- first-run welcome panel, record popover, and editor/runtime options
+- URL-encoded local sketch sharing
+- random sketch and dice-mutation helpers
+- modern audio analysis with legacy `a`/`a0..aN` helpers plus volume, RMS, peak, centroid, low/mid/high, waveform, and injectable frequency data
+- screen capture sources through `s0.initScreen()`
+- deterministic frame capture
+- WebCodecs MP4 capture with a 60fps default and 24-240fps recorder range
+- profiler snapshots and autotune helpers
+- typed ESM package surface
 
-- open the workspace in VS Code
-- click `Go Live`
-- Live Server opens the repo root, which now redirects into the livecoding playground by default
-- add `?livecoding=0` if you want the plain non-livecoding playground view
+## Compatibility Facade
 
-When livecoding is enabled, helpers are exposed in the live scope:
+The preferred API is the typed factory surface above. For old sketches, tutorials, and non-livecoding embeds that expect a constructor, `hydra-synth` also exports a thin Hydra facade:
 
-- `captureFrames(options)` (wrapper over `captureHydraFrameSequence`)
-- `captureAndSaveVideo(options?)`
-- `captureAndSaveMp4(options?)`
+```ts
+import Hydra from 'hydra-synth'
 
-Current playground capture behavior:
+const hydra = new Hydra({
+  canvas: document.querySelector('canvas'),
+  makeGlobal: true,
+  autoLoop: true,
+  detectAudio: true
+})
 
-- MP4 capture uses WebCodecs (`VideoEncoder`) directly in-browser via `captureHydraVideo`.
-- The playground no longer supports WebM capture (`captureAndSaveWebm` intentionally throws).
+osc(10, 0.1, () => a.fft[0]).out()
+s0.initScreen()
+```
 
-`ffmpeg` is only required for benchmark parity tooling.
+The facade wraps `createHydraBrowserRuntime()` and installs legacy names where they map cleanly:
 
-## Development
+- `setFunction(...)` -> typed `registerFunction(...)`
+- `screencap()`, `getScreenImage(...)`, and `canvasToImage(...)` -> PNG capture helpers
+- `vidRecorder.start()` / `vidRecorder.stop()` -> stream recording when available, WebCodecs capture fallback otherwise
+- `makeGlobal: true` -> live getters/setters for the synth bindings on the target global
+
+The facade is for compatibility. New integrations should prefer `createHydraBrowserRuntime()` and call through `runtime.synth`.
+
+## Local App
 
 ```bash
 pnpm install
 pnpm build
+pnpm dev
 ```
 
-For the default local playground loop in VS Code:
+The dev server opens `packages/hydra/index.html`. The legacy `playground/index.html` path redirects there.
 
-```bash
-# after source edits that should be reflected in the browser
-pnpm build
-```
+The app exposes helper globals for livecoding and console use:
 
-Then click `Go Live` in VS Code.
+- `saveSketchToUrl()` / `copySketchUrl()` for URL snapshots
+- `loadRandomSketch()` / `randomize()` for generated example patches
+- `mutateEditorCode()` for one-value dice mutations
+- `codeCanvas`, `attachCodeMaterial()`, and `syncCodeMaterial()` for sampling the editor as a live source texture, defaulting to `src(s3)`
+- `showCode()`, `hideCode()`, `toggleCode()`, and `fitEditorPanel()` for the fullscreen editor surface
+- `toggleRecordPanel()` and `toggleOptionsPanel()` for app controls
+- `saveCanvasFrame()`, `captureAndSaveMp4()`, and `captureFrames()` for output capture
+- `a`, `a0..aN`, and `s0.initScreen()` when audio/screen permissions are granted by the browser
+
+## Verification
 
 ```bash
 pnpm lint
@@ -160,18 +135,17 @@ pnpm typecheck
 pnpm test:unit
 pnpm test:browser
 pnpm verify:pack
-pnpm bench:v3
-pnpm bench:v3:ci
-pnpm bench:capture:parity
 ```
 
-## Publish Contract
+`pnpm verify:pack` checks publishable package contents for `hydra-synth`. The `hydra` interface is currently a private static app package.
 
-Each published package tarball includes only:
+## Package Contract
 
-- `dist/`
-- `README.md`
-- `LICENSE`
-- `package.json`
+`hydra-synth` publishes:
 
-`pnpm verify:pack` enforces this contract.
+- `hydra-synth`
+- `hydra-synth/livecoding`
+- `hydra-synth/core`
+- `hydra-synth/core/compiler`
+
+Each published tarball should include only `dist/`, `README.md`, `LICENSE`, and `package.json`.

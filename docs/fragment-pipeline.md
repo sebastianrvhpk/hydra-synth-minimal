@@ -169,10 +169,10 @@ needed.
 
 ## Key Files
 
-- `packages/core/src/transforms/compile-wgsl.ts`
-- `packages/core/src/transforms/split-passes.ts`
-- `packages/browser/src/runtime/runtime.ts`
-- `packages/browser/src/runtime/output-node.ts`
-- `packages/browser/src/webgpu/pipeline-cache.ts`
-- `packages/browser/src/webgpu/renderer.ts`
-- `packages/browser/src/capture/frame-sequence.ts`
+- `packages/synth/src/core/transforms/compile-wgsl.ts`
+- `packages/synth/src/core/transforms/split-passes.ts`
+- `packages/synth/src/runtime/runtime.ts`
+- `packages/synth/src/runtime/output-node.ts`
+- `packages/synth/src/webgpu/pipeline-cache.ts`
+- `packages/synth/src/webgpu/renderer.ts`
+- `packages/synth/src/capture/frame-sequence.ts`

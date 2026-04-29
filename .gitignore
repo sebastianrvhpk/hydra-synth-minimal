@@ -6,6 +6,7 @@ dist/
 coverage/
 *.tsbuildinfo
 
+.tmp/
 .tmp-packages/
 *.tgz
 
@@ -18,6 +19,4 @@ coverage/
 Thumbs.db
 .idea/
 .vscode/
-.desloppify/
-
 NUL
