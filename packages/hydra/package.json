@@ -1,0 +1,32 @@
+{
+  "name": "hydra",
+  "version": "2.0.0-alpha.0",
+  "private": true,
+  "description": "Modern Hydra livecoding interface for the WebGPU hydra-synth engine",
+  "type": "module",
+  "scripts": {
+    "build": "node ../../scripts/verify-static-app.mjs index.html",
+    "typecheck": "node ../../scripts/verify-static-app.mjs index.html"
+  },
+  "dependencies": {
+    "@codemirror/autocomplete": "6.20.1",
+    "@codemirror/commands": "6.10.3",
+    "@codemirror/lang-javascript": "6.2.5",
+    "@codemirror/language": "6.12.3",
+    "@codemirror/lint": "6.9.5",
+    "@codemirror/search": "6.7.0",
+    "@codemirror/state": "6.6.0",
+    "@codemirror/view": "6.41.1",
+    "@lezer/common": "1.5.2",
+    "@lezer/highlight": "1.2.3",
+    "@lezer/javascript": "1.5.4",
+    "@lezer/lr": "1.4.10",
+    "@marijn/find-cluster-break": "1.0.2",
+    "codemirror": "6.0.2",
+    "crelt": "1.0.6",
+    "hydra-synth": "workspace:*",
+    "style-mod": "4.1.3",
+    "w3c-keyname": "2.2.8"
+  },
+  "license": "AGPL-3.0-or-later"
+}

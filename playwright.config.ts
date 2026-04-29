@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
-  testDir: 'packages/browser/test/playwright',
+  testDir: 'packages/synth/test/playwright',
   timeout: 60_000,
   fullyParallel: false,
   workers: 1,

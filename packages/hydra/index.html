@@ -1,0 +1,5329 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hydra</title>
+  <script type="importmap">
+      {
+        "imports": {
+          "hydra-synth": "../synth/dist/index.js",
+          "hydra-synth/livecoding": "../synth/dist/livecoding.js",
+          "mp4box": "../../node_modules/mp4box/dist/mp4box.all.js",
+          "codemirror": "./node_modules/codemirror/dist/index.js",
+          "@codemirror/autocomplete": "./node_modules/@codemirror/autocomplete/dist/index.js",
+          "@codemirror/commands": "./node_modules/@codemirror/commands/dist/index.js",
+          "@codemirror/lang-javascript": "./node_modules/@codemirror/lang-javascript/dist/index.js",
+          "@codemirror/language": "./node_modules/@codemirror/language/dist/index.js",
+          "@codemirror/lint": "./node_modules/@codemirror/lint/dist/index.js",
+          "@codemirror/search": "./node_modules/@codemirror/search/dist/index.js",
+          "@codemirror/state": "./node_modules/@codemirror/state/dist/index.js",
+          "@codemirror/view": "./node_modules/@codemirror/view/dist/index.js",
+          "@lezer/common": "./node_modules/@lezer/common/dist/index.js",
+          "@lezer/highlight": "./node_modules/@lezer/highlight/dist/index.js",
+          "@lezer/javascript": "./node_modules/@lezer/javascript/dist/index.js",
+          "@lezer/lr": "./node_modules/@lezer/lr/dist/index.js",
+          "@marijn/find-cluster-break": "./node_modules/@marijn/find-cluster-break/src/index.js",
+          "crelt": "./node_modules/crelt/index.js",
+          "style-mod": "./node_modules/style-mod/src/style-mod.js",
+          "w3c-keyname": "./node_modules/w3c-keyname/index.js"
+        }
+      }
+    </script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #eef4ef;
+      --muted: #9aa69c;
+      --panel: rgba(6, 7, 8, 0.78);
+      --panel-strong: rgba(9, 10, 11, 0.9);
+      --line: rgba(238, 244, 239, 0.16);
+      --cyan: #75f7ff;
+      --magenta: #ff6bd6;
+      --amber: #ffcc66;
+      --ok: #9ff5b0;
+      --bad: #ff8d8d;
+      --editor-font-size: 14px;
+      --editor-opacity: 1;
+    }
+
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      background: #050505;
+      color: var(--ink);
+    }
+
+    .control-panel {
+      position: fixed;
+      z-index: 12;
+      width: min(360px, calc(100vw - 20px));
+      padding: 12px;
+      border: 1px solid rgba(117, 247, 255, 0.22);
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.76);
+      box-shadow: 0 18px 52px rgba(0, 0, 0, 0.42);
+      backdrop-filter: blur(14px);
+      box-sizing: border-box;
+      font-size: 11px;
+      line-height: 1.35;
+    }
+
+    .control-panel[hidden],
+    #welcome-modal[hidden] {
+      display: none;
+    }
+
+    #record-popover {
+      top: 54px;
+      right: 10px;
+    }
+
+    #options-panel {
+      top: 10px;
+      right: 10px;
+      max-height: calc(100vh - 20px);
+      overflow: auto;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .panel-title {
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0;
+      text-transform: lowercase;
+    }
+
+    .panel-close {
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      border: 1px solid rgba(238, 244, 239, 0.2);
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--ink);
+      cursor: pointer;
+      font: inherit;
+      line-height: 1;
+    }
+
+    .panel-close:hover {
+      background: rgba(255, 255, 255, 0.14);
+    }
+
+    .panel-section {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(238, 244, 239, 0.1);
+    }
+
+    .panel-section:first-of-type {
+      margin-top: 0;
+      padding-top: 0;
+      border-top: 0;
+    }
+
+    .panel-row {
+      display: grid;
+      grid-template-columns: minmax(92px, 1fr) minmax(0, 1.25fr);
+      gap: 8px;
+      align-items: center;
+      color: var(--muted);
+    }
+
+    .panel-row span {
+      color: var(--muted);
+    }
+
+    .panel-row input,
+    .panel-row select {
+      min-width: 0;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--ink);
+      border-radius: 4px;
+      padding: 6px 7px;
+      font: inherit;
+      font-size: 12px;
+    }
+
+    .panel-row input[type="range"] {
+      padding: 0;
+    }
+
+    .panel-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .panel-action {
+      border: 1px solid rgba(117, 247, 255, 0.42);
+      background: rgba(117, 247, 255, 0.12);
+      color: var(--ink);
+      border-radius: 4px;
+      padding: 6px 9px;
+      cursor: pointer;
+      font: inherit;
+      font-size: 12px;
+      line-height: 1;
+    }
+
+    .panel-action:hover {
+      background: rgba(117, 247, 255, 0.2);
+    }
+
+    .panel-action:disabled {
+      cursor: not-allowed;
+      opacity: 0.48;
+    }
+
+    .panel-action[data-tone="record"] {
+      border-color: rgba(255, 107, 214, 0.5);
+      background: rgba(255, 107, 214, 0.14);
+    }
+
+    .panel-action[data-tone="record"]:hover {
+      background: rgba(255, 107, 214, 0.24);
+    }
+
+    .panel-note {
+      color: var(--muted);
+      margin: 0;
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    #hud {
+      display: grid;
+      grid-template-columns: auto auto;
+      gap: 6px 10px;
+      align-items: center;
+      color: var(--muted);
+    }
+
+    #brand {
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    #runtime-chip,
+    #livecoding-note {
+      color: var(--muted);
+    }
+
+    #runtime-chip::before {
+      content: "";
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      margin-right: 6px;
+      border-radius: 50%;
+      background: var(--cyan);
+      box-shadow: 0 0 12px rgba(117, 247, 255, 0.75);
+    }
+
+    #capture-controls {
+      display: none;
+    }
+
+    #custom-resolution-row[hidden] {
+      display: none;
+    }
+
+    #capture-status {
+      margin-top: 8px;
+      min-height: 1em;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    #capture-status[data-state="ok"] {
+      color: var(--ok);
+    }
+
+    #capture-status[data-state="error"] {
+      color: var(--bad);
+    }
+
+    #capture-status:empty {
+      display: none;
+    }
+
+    #live-panel {
+      position: fixed;
+      box-sizing: border-box;
+      inset: 0;
+      z-index: 11;
+      width: 100vw;
+      height: 100vh;
+      min-width: 0;
+      min-height: 0;
+      max-width: 100vw;
+      max-height: 100vh;
+      display: block;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      box-shadow: none;
+      overflow: hidden;
+      pointer-events: none;
+      resize: none;
+    }
+
+    #live-panel[hidden] {
+      display: none;
+    }
+
+    #live-editor-shell {
+      position: absolute;
+      box-sizing: border-box;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      box-shadow: none;
+      overflow: hidden;
+      pointer-events: none;
+      resize: none;
+    }
+
+    #live-panel[data-layout="floating"] #live-editor-shell {
+      inset: auto;
+      width: min(680px, calc(100vw - 28px));
+      height: min(360px, calc(58vh - 28px));
+      min-width: min(360px, calc(100vw - 28px));
+      min-height: 240px;
+      max-width: calc(100vw - 16px);
+      max-height: calc(100vh - 16px);
+      gap: 7px;
+      padding: 14px;
+      border-radius: 6px;
+      border: 1px solid rgba(117, 247, 255, 0.28);
+      background: var(--panel);
+      box-shadow: 0 18px 52px rgba(0, 0, 0, 0.48);
+      backdrop-filter: blur(12px);
+      pointer-events: auto;
+      resize: none;
+    }
+
+    #live-panel-header {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 3;
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: lowercase;
+      cursor: default;
+      touch-action: none;
+      user-select: none;
+      pointer-events: auto;
+      padding: 4px;
+      border: 1px solid rgba(117, 247, 255, 0.18);
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.26);
+      backdrop-filter: blur(10px);
+      max-width: min(620px, calc(100vw - 20px));
+    }
+
+    #live-drag-handle {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+    }
+
+    #live-panel[data-layout="floating"] #live-drag-handle {
+      position: static;
+      display: inline-flex;
+      align-items: center;
+      width: 100%;
+      height: 36px;
+      overflow: visible;
+      clip: auto;
+      white-space: normal;
+      padding: 0 12px;
+      border: 1px solid rgba(117, 247, 255, 0.22);
+      border-radius: 4px;
+      background: rgba(117, 247, 255, 0.08);
+      color: var(--muted);
+      box-sizing: border-box;
+      cursor: move;
+      flex: 0 0 auto;
+      margin-bottom: 10px;
+    }
+
+    .live-drag-surface {
+      display: none;
+    }
+
+    #live-panel[data-layout="floating"] .live-drag-surface {
+      position: absolute;
+      z-index: 4;
+      display: block;
+      touch-action: none;
+      user-select: none;
+      pointer-events: auto;
+      cursor: move;
+    }
+
+    #live-panel[data-layout="floating"] .live-drag-surface[data-zone="left"],
+    #live-panel[data-layout="floating"] .live-drag-surface[data-zone="right"] {
+      top: 60px;
+      bottom: 24px;
+      width: 12px;
+    }
+
+    #live-panel[data-layout="floating"] .live-drag-surface[data-zone="left"] {
+      left: 9px;
+    }
+
+    #live-panel[data-layout="floating"] .live-drag-surface[data-zone="right"] {
+      right: 9px;
+    }
+
+    #live-panel[data-layout="floating"] .live-drag-surface[data-zone="bottom"] {
+      right: 24px;
+      bottom: 9px;
+      left: 24px;
+      height: 12px;
+    }
+
+    #live-panel[data-dragging="true"] #live-drag-handle,
+    #live-panel[data-dragging="true"] .live-drag-surface {
+      cursor: grabbing;
+    }
+
+    .live-resize-handle {
+      display: none;
+    }
+
+    #live-panel[data-layout="floating"] .live-resize-handle {
+      position: absolute;
+      z-index: 5;
+      display: block;
+      touch-action: none;
+      user-select: none;
+      pointer-events: auto;
+    }
+
+    #live-panel[data-layout="floating"] .live-resize-handle[data-edge="n"] {
+      top: 0;
+      left: 14px;
+      right: 14px;
+      height: 8px;
+      cursor: ns-resize;
+    }
+
+    #live-panel[data-layout="floating"] .live-resize-handle[data-edge="s"] {
+      right: 14px;
+      bottom: 0;
+      left: 14px;
+      height: 8px;
+      cursor: ns-resize;
+    }
+
+    #live-panel[data-layout="floating"] .live-resize-handle[data-edge="e"] {
+      top: 14px;
+      right: 0;
+      bottom: 14px;
+      width: 8px;
+      cursor: ew-resize;
+    }
+
+    #live-panel[data-layout="floating"] .live-resize-handle[data-edge="w"] {
+      top: 14px;
+      bottom: 14px;
+      left: 0;
+      width: 8px;
+      cursor: ew-resize;
+    }
+
+    #live-panel[data-layout="floating"] .live-resize-handle[data-edge="ne"],
+    #live-panel[data-layout="floating"] .live-resize-handle[data-edge="sw"] {
+      width: 16px;
+      height: 16px;
+      cursor: nesw-resize;
+    }
+
+    #live-panel[data-layout="floating"] .live-resize-handle[data-edge="nw"],
+    #live-panel[data-layout="floating"] .live-resize-handle[data-edge="se"] {
+      width: 16px;
+      height: 16px;
+      cursor: nwse-resize;
+    }
+
+    #live-panel[data-layout="floating"] .live-resize-handle[data-edge="ne"] {
+      top: 0;
+      right: 0;
+    }
+
+    #live-panel[data-layout="floating"] .live-resize-handle[data-edge="nw"] {
+      top: 0;
+      left: 0;
+    }
+
+    #live-panel[data-layout="floating"] .live-resize-handle[data-edge="se"] {
+      right: 0;
+      bottom: 0;
+    }
+
+    #live-panel[data-layout="floating"] .live-resize-handle[data-edge="sw"] {
+      bottom: 0;
+      left: 0;
+    }
+
+    #live-panel[data-layout="floating"] .live-resize-handle::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: rgba(117, 247, 255, 0.16);
+      opacity: 0;
+      transition: opacity 80ms linear;
+    }
+
+    #live-panel[data-layout="floating"] .live-resize-handle:hover::after,
+    #live-panel[data-resizing="true"] .live-resize-handle::after {
+      opacity: 1;
+    }
+
+    #live-tools {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 4px;
+    }
+
+    .live-tool {
+      border: 1px solid rgba(117, 247, 255, 0.42);
+      background: rgba(117, 247, 255, 0.12);
+      color: var(--ink);
+      border-radius: 4px;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      cursor: pointer;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Segoe UI Symbol", "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+      font-size: 14px;
+      line-height: 1;
+      display: inline-grid;
+      place-items: center;
+    }
+
+    .live-tool:hover {
+      background: rgba(117, 247, 255, 0.2);
+    }
+
+    .live-tool[data-state="active"],
+    .live-tool[aria-expanded="true"] {
+      border-color: rgba(255, 204, 102, 0.52);
+      background: rgba(255, 204, 102, 0.16);
+    }
+
+    #live-record-toggle[data-state="active"] {
+      border-color: rgba(255, 107, 214, 0.68);
+      color: var(--magenta);
+      background: rgba(255, 107, 214, 0.16);
+    }
+
+    #live-editor {
+      width: 100%;
+      height: 100%;
+      flex: 1;
+      min-height: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      overflow: hidden;
+      pointer-events: auto;
+    }
+
+    #live-editor:focus-within {
+      border-color: transparent;
+      box-shadow: none;
+    }
+
+    #live-panel[data-layout="floating"] #live-editor {
+      height: auto;
+      min-height: 180px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.52);
+    }
+
+    #live-panel[data-layout="floating"] #live-editor:focus-within {
+      border-color: rgba(255, 107, 214, 0.46);
+      box-shadow: inset 0 0 0 1px rgba(255, 107, 214, 0.18);
+    }
+
+    #live-editor .cm-editor {
+      height: 100%;
+      min-height: 0;
+      background: transparent;
+      color: var(--ink);
+      font: inherit;
+      font-size: var(--editor-font-size);
+      line-height: 1.5;
+      opacity: var(--editor-opacity);
+      text-shadow: 0 1px 8px rgba(0, 0, 0, 0.9);
+    }
+
+    #live-editor .cm-scroller {
+      font-family: inherit;
+      padding: 18px 18px 42px 14px;
+    }
+
+    #live-panel[data-layout="floating"] #live-editor .cm-scroller {
+      padding: 0;
+    }
+
+    #live-editor .cm-content {
+      caret-color: var(--magenta);
+      padding: 0;
+      max-width: min(900px, calc(100vw - 380px));
+    }
+
+    #live-panel[data-layout="floating"] #live-editor .cm-content {
+      padding: 11px 12px;
+      max-width: none;
+    }
+
+    #live-editor .cm-line {
+      padding: 0 2px;
+    }
+
+    #live-editor .cm-gutters {
+      background: rgba(0, 0, 0, 0.18);
+      border-right: 1px solid rgba(238, 244, 239, 0.09);
+      color: rgba(238, 244, 239, 0.34);
+    }
+
+    #live-panel:not([data-layout="floating"]) #live-editor .cm-gutters {
+      display: none;
+    }
+
+    #live-editor .cm-activeLine,
+    #live-editor .cm-activeLineGutter {
+      background: rgba(0, 0, 0, 0.26);
+    }
+
+    #live-panel[data-layout="floating"] #live-editor .cm-activeLine,
+    #live-panel[data-layout="floating"] #live-editor .cm-activeLineGutter {
+      background: rgba(117, 247, 255, 0.08);
+    }
+
+    #live-editor .cm-selectionBackground,
+    #live-editor .cm-focused .cm-selectionBackground {
+      background: rgba(255, 107, 214, 0.32);
+    }
+
+    #live-editor .cm-tooltip,
+    #live-editor .cm-tooltip-autocomplete,
+    .cm-tooltip-autocomplete,
+    .cm-tooltip.cm-tooltip-autocomplete,
+    .cm-tooltip.cm-completionInfo {
+      border: 1px solid rgba(117, 247, 255, 0.26);
+      background: var(--panel-strong);
+      color: var(--ink);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    #live-editor .cm-tooltip-autocomplete ul li[aria-selected],
+    .cm-tooltip-autocomplete ul li[aria-selected] {
+      background: rgba(255, 107, 214, 0.24);
+      color: var(--ink);
+    }
+
+    #live-editor .cm-run-flash {
+      background: rgba(117, 247, 255, 0.16);
+      outline: 1px solid rgba(117, 247, 255, 0.22);
+    }
+
+    #live-status {
+      position: absolute;
+      left: 14px;
+      bottom: 12px;
+      z-index: 3;
+      min-height: 1em;
+      font-size: 11px;
+      color: var(--muted);
+      pointer-events: none;
+      text-shadow: 0 1px 8px rgba(0, 0, 0, 0.9);
+    }
+
+    #live-status:empty {
+      display: none;
+    }
+
+    #welcome-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: rgba(0, 0, 0, 0.28);
+      backdrop-filter: blur(2px);
+      box-sizing: border-box;
+    }
+
+    #welcome-card {
+      width: min(420px, calc(100vw - 40px));
+      border: 1px solid rgba(117, 247, 255, 0.26);
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.78);
+      box-shadow: 0 18px 52px rgba(0, 0, 0, 0.52);
+      padding: 14px;
+      box-sizing: border-box;
+      backdrop-filter: blur(14px);
+    }
+
+    #welcome-card h1 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    #welcome-card p {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .shortcut-grid {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 5px 10px;
+      margin: 12px 0;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .shortcut-grid code {
+      color: var(--ink);
+    }
+
+    #live-panel[data-layout="floating"] #live-status {
+      position: static;
+      pointer-events: auto;
+      text-shadow: none;
+    }
+
+    #live-status[data-state="ok"] {
+      color: var(--ok);
+    }
+
+    #live-status[data-state="error"] {
+      color: var(--bad);
+    }
+
+    code {
+      color: var(--cyan);
+    }
+
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #code-material-canvas {
+      display: none !important;
+    }
+
+    @media (max-width: 900px) {
+      #hud {
+        grid-template-columns: 1fr;
+      }
+
+      #live-panel[data-layout="floating"] #live-editor-shell {
+        left: 8px;
+        right: 8px;
+        bottom: 8px;
+        width: auto;
+        height: min(320px, calc(46vh - 8px));
+        min-width: 0;
+      }
+
+      #live-panel-header {
+        align-items: flex-start;
+        top: 8px;
+        right: 8px;
+        left: auto;
+        max-width: none;
+      }
+
+      #live-tools {
+        max-width: min(420px, 76vw);
+        justify-content: flex-end;
+      }
+
+      #record-popover,
+      #options-panel {
+        top: 88px;
+        right: 8px;
+        left: 8px;
+        width: auto;
+        max-height: calc(100vh - 96px);
+      }
+
+      #live-status {
+        top: auto;
+        right: auto;
+        left: 12px;
+        bottom: 12px;
+        max-width: calc(100vw - 24px);
+        text-align: left;
+      }
+
+      #live-editor .cm-scroller {
+        padding: 92px 14px 120px 12px;
+      }
+
+      #live-editor .cm-content {
+        max-width: none;
+      }
+
+      #live-panel[data-layout="floating"] #live-editor .cm-scroller {
+        padding: 0;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div id="live-panel" data-layout="fullscreen" hidden>
+    <div id="live-panel-header">
+      <div id="live-tools">
+        <button id="live-run" class="live-tool" type="button" title="Run selection or current line" aria-label="Run selection or current line">▶</button>
+        <button id="live-run-all" class="live-tool" type="button" title="Run full buffer" aria-label="Run full buffer">▶▶</button>
+        <button id="live-share" class="live-tool" type="button" title="Save sketch to URL and copy it" aria-label="Save sketch to URL">🔗</button>
+        <button id="live-random" class="live-tool" type="button" title="Load a random sketch" aria-label="Load a random sketch">⚄</button>
+        <button id="live-dice" class="live-tool" type="button" title="Mutate one number in the editor" aria-label="Mutate one number">±</button>
+        <button id="live-clear" class="live-tool" type="button" title="Clear the editor" aria-label="Clear the editor">⌫</button>
+        <button id="live-record-toggle" class="live-tool" type="button" title="Record MP4" aria-label="Record MP4" aria-expanded="false">●</button>
+        <button id="live-options-toggle" class="live-tool" type="button" title="Options" aria-label="Options" aria-expanded="false">⚙</button>
+        <button id="live-info-toggle" class="live-tool" type="button" title="Info" aria-label="Info">ⓘ</button>
+        <button id="live-fit" class="live-tool" type="button" title="Fullscreen code layer" aria-label="Fullscreen code layer">⛶</button>
+      </div>
+    </div>
+    <div id="live-editor-shell">
+      <strong id="live-drag-handle">code</strong>
+      <div id="live-editor"></div>
+      <div id="live-status"></div>
+      <div class="live-drag-surface" data-zone="left" aria-hidden="true"></div>
+      <div class="live-drag-surface" data-zone="right" aria-hidden="true"></div>
+      <div class="live-drag-surface" data-zone="bottom" aria-hidden="true"></div>
+      <div class="live-resize-handle" data-edge="n" aria-hidden="true"></div>
+      <div class="live-resize-handle" data-edge="e" aria-hidden="true"></div>
+      <div class="live-resize-handle" data-edge="s" aria-hidden="true"></div>
+      <div class="live-resize-handle" data-edge="w" aria-hidden="true"></div>
+      <div class="live-resize-handle" data-edge="ne" aria-hidden="true"></div>
+      <div class="live-resize-handle" data-edge="se" aria-hidden="true"></div>
+      <div class="live-resize-handle" data-edge="sw" aria-hidden="true"></div>
+      <div class="live-resize-handle" data-edge="nw" aria-hidden="true"></div>
+    </div>
+  </div>
+
+  <div id="record-popover" class="control-panel" hidden>
+    <div class="panel-header">
+      <div class="panel-title">record</div>
+      <button id="record-close" class="panel-close" type="button" aria-label="Close record settings">×</button>
+    </div>
+    <div class="panel-section">
+      <label class="panel-row" for="capture-duration-input">
+        <span>duration</span>
+        <input id="capture-duration-input" type="number" min="0.1" max="600" step="0.1" value="2" inputmode="decimal" />
+      </label>
+      <label class="panel-row" for="capture-fps-input">
+        <span>fps</span>
+        <input id="capture-fps-input" type="number" min="24" max="240" step="1" value="60" inputmode="numeric" />
+      </label>
+      <label class="panel-row" for="capture-resolution-select">
+        <span>resolution</span>
+        <select id="capture-resolution-select">
+          <option value="canvas">canvas</option>
+          <option value="720p">1280 x 720</option>
+          <option value="1080p">1920 x 1080</option>
+          <option value="custom">custom</option>
+        </select>
+      </label>
+      <div id="custom-resolution-row" class="panel-section" hidden>
+        <label class="panel-row" for="capture-width-input">
+          <span>width</span>
+          <input id="capture-width-input" type="number" min="16" max="7680" step="2" value="1280" inputmode="numeric" />
+        </label>
+        <label class="panel-row" for="capture-height-input">
+          <span>height</span>
+          <input id="capture-height-input" type="number" min="16" max="4320" step="2" value="720" inputmode="numeric" />
+        </label>
+      </div>
+    </div>
+    <div class="panel-actions">
+      <button id="capture-video-toggle" class="panel-action" data-tone="record" type="button" title="Capture MP4">record mp4</button>
+      <button id="capture-frame-button" class="panel-action" type="button" title="Save one PNG frame">save frame</button>
+    </div>
+    <div class="panel-section">
+      <p class="panel-note">Record the interface as a timed performance score.</p>
+      <div class="panel-actions">
+        <button id="interface-record-toggle" class="panel-action" data-tone="record" type="button" title="Record interface performance">record interface</button>
+        <button id="interface-playback-button" class="panel-action" type="button" title="Play last interface score" disabled>play interface</button>
+      </div>
+      <div id="interface-record-status" class="panel-note"></div>
+    </div>
+    <div id="capture-status"></div>
+  </div>
+
+  <div id="options-panel" class="control-panel" hidden>
+    <div class="panel-header">
+      <div class="panel-title">options</div>
+      <button id="options-close" class="panel-close" type="button" aria-label="Close options">×</button>
+    </div>
+    <div class="panel-section">
+      <label class="panel-row" for="editor-font-size-input">
+        <span>font</span>
+        <input id="editor-font-size-input" type="number" min="10" max="24" step="1" value="14" inputmode="numeric" />
+      </label>
+      <label class="panel-row" for="editor-opacity-input">
+        <span>code opacity</span>
+        <input id="editor-opacity-input" type="range" min="0.35" max="1" step="0.05" value="1" />
+      </label>
+      <label class="panel-row" for="editor-layout-select">
+        <span>layout</span>
+        <select id="editor-layout-select">
+          <option value="fullscreen">fullscreen</option>
+          <option value="floating">floating</option>
+        </select>
+      </label>
+      <label class="panel-row" for="code-material-source-select">
+        <span>code texture</span>
+        <select id="code-material-source-select">
+          <option value="s3">src(s3)</option>
+          <option value="s2">src(s2)</option>
+          <option value="s1">src(s1)</option>
+          <option value="s0">src(s0)</option>
+          <option value="off">off</option>
+        </select>
+      </label>
+      <div id="code-material-status" class="panel-note">src(s3)</div>
+    </div>
+    <div class="panel-section">
+      <div id="hud">
+        <div id="brand">hydra</div>
+        <div id="runtime-chip">webgpu</div>
+        <div id="livecoding-note">live</div>
+        <div id="runtime-diagnostics"></div>
+      </div>
+    </div>
+    <div class="panel-section">
+      <p class="panel-note">URL sketches load into the editor only. Run them locally when you trust the code.</p>
+      <div class="panel-actions">
+        <button id="options-reset" class="panel-action" type="button">reset ui</button>
+        <button id="options-open-record" class="panel-action" type="button">record settings</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="welcome-modal" hidden>
+    <div id="welcome-card">
+      <div class="panel-header">
+        <div class="panel-title">hydra webgpu</div>
+        <button id="welcome-close" class="panel-close" type="button" aria-label="Close welcome">×</button>
+      </div>
+      <h1>livecode the canvas</h1>
+      <p>Code stays on the visual field. Utilities live in the small dock. URL sketches are loaded into the editor, but never run automatically.</p>
+      <div class="shortcut-grid">
+        <code>ctrl enter</code><span>run line or selection</span>
+        <code>shift ctrl enter</code><span>run full buffer</span>
+        <code>shift ctrl h</code><span>hide or show code</span>
+        <code>shift ctrl s</code><span>save frame</span>
+      </div>
+      <div class="panel-actions">
+        <button id="welcome-start" class="panel-action" type="button">start</button>
+        <button id="welcome-random" class="panel-action" type="button">random sketch</button>
+      </div>
+    </div>
+  </div>
+
+  <canvas id="code-material-canvas" hidden></canvas>
+
+  <script type="module">
+    import { basicSetup, EditorView } from 'codemirror'
+    import { EditorSelection, EditorState, Prec, StateEffect, StateField } from '@codemirror/state'
+    import { autocompletion, startCompletion } from '@codemirror/autocomplete'
+    import { javascript } from '@codemirror/lang-javascript'
+    import { Decoration, keymap, repositionTooltips, tooltips, ViewPlugin } from '@codemirror/view'
+    import { captureHydraFrameSequence, captureHydraVideo, createHydraBrowserRuntime } from 'hydra-synth'
+    import { createLivecodingPlugin } from 'hydra-synth/livecoding'
+
+    const createTrustedLocalCodeRunner = () => {
+      const TrustedCodeCompiler = globalThis.Function
+      return (code, scope) => {
+        const runTrustedPatch = TrustedCodeCompiler('scope', `with (scope) {\n${code}\n}`)
+        return runTrustedPatch(scope)
+      }
+    }
+
+    const runtime = createHydraBrowserRuntime({
+      autoLoop: true,
+      numSources: 4,
+      numOutputs: 4
+    })
+
+    const describeInitError = () => {
+      const canvas = runtime.host?.canvas ?? document.querySelector('canvas')
+      let hasCanvasWebGpuContext = false
+      let contextProbeError = null
+
+      if (canvas) {
+        try {
+          hasCanvasWebGpuContext = Boolean(canvas.getContext('webgpu'))
+        } catch (error) {
+          contextProbeError = error instanceof Error ? error.message : String(error)
+        }
+      }
+
+      return {
+        secureContext: typeof window !== 'undefined' ? window.isSecureContext : false,
+        hasNavigatorGpu: typeof navigator !== 'undefined' && Boolean(navigator.gpu),
+        hasCanvasWebGpuContext,
+        contextProbeError,
+        url: typeof location !== 'undefined' ? location.href : '',
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : ''
+      }
+    }
+
+    let runtimeReady = false
+    let runtimeInitErrorMessage = ''
+
+    try {
+      await runtime.init()
+      runtimeReady = true
+    } catch (error) {
+      const diagnostics = describeInitError()
+      const summary = [
+        'WebGPU init failed.',
+        `secureContext=${diagnostics.secureContext}`,
+        `navigator.gpu=${diagnostics.hasNavigatorGpu}`,
+        `canvas.getContext("webgpu")=${diagnostics.hasCanvasWebGpuContext}`
+      ].join(' ')
+
+      const diagnosticsNode = document.getElementById('runtime-diagnostics') ?? document.getElementById('hud')
+      if (diagnosticsNode) {
+        const message = document.createElement('div')
+        message.style.marginTop = '8px'
+        message.style.color = '#ff9494'
+        message.textContent = `${summary} Open console for diagnostics.`
+        diagnosticsNode.appendChild(message)
+      }
+
+      console.error('[hydra] runtime init failed', { diagnostics, error })
+      console.info('[hydra] WebGPU checks: verify hardware acceleration, chrome://gpu, and run from https:// or localhost.')
+      runtimeInitErrorMessage = summary
+    }
+
+    const synth = runtime.synth
+    const nativeSetCanvasDisplay = typeof synth.setCanvasDisplay === 'function'
+      ? synth.setCanvasDisplay.bind(synth)
+      : null
+    const nativeResetCanvasDisplay = typeof synth.resetCanvasDisplay === 'function'
+      ? synth.resetCanvasDisplay.bind(synth)
+      : null
+    const nativeSetResolution = typeof synth.setResolution === 'function'
+      ? synth.setResolution.bind(synth)
+      : null
+    let canvasDisplayMode = 'auto'
+    let recordCanvasDisplayChange = () => {}
+
+    const readWindowCanvasDimensions = () => ({
+      width: Math.max(2, Math.floor(window.innerWidth || runtime.host?.canvas?.width || 1280)),
+      height: Math.max(2, Math.floor(window.innerHeight || runtime.host?.canvas?.height || 720))
+    })
+
+    const forceCanvasViewportStyle = () => {
+      const canvas = runtime.host?.canvas
+      if (!canvas) return
+      const style = canvas.style
+      style.display = 'block'
+      style.position = 'fixed'
+      style.top = '0'
+      style.left = '0'
+      style.transform = 'none'
+      style.margin = '0'
+      style.width = '100vw'
+      style.height = '100vh'
+      style.maxWidth = '100vw'
+      style.maxHeight = '100vh'
+      style.objectFit = 'fill'
+      style.imageRendering = 'pixelated'
+    }
+
+    const getCanvasDisplay = () => {
+      const canvas = runtime.host?.canvas
+      const rect = canvas?.getBoundingClientRect?.()
+      return {
+        mode: canvasDisplayMode,
+        width: canvas?.width ?? 0,
+        height: canvas?.height ?? 0,
+        displayWidth: rect?.width ?? 0,
+        displayHeight: rect?.height ?? 0
+      }
+    }
+
+    const setCanvasDisplay = (width = window.innerWidth, height = window.innerHeight, options = {}) => {
+      if (!nativeSetCanvasDisplay) return getCanvasDisplay()
+      canvasDisplayMode = 'manual'
+      nativeSetCanvasDisplay(width, height, options)
+      recordCanvasDisplayChange('setCanvasDisplay')
+      return getCanvasDisplay()
+    }
+
+    const setCanvasFullscreen = (options = {}) => {
+      if (!nativeSetCanvasDisplay) return getCanvasDisplay()
+      const dimensions = readWindowCanvasDimensions()
+      canvasDisplayMode = options.followResize === false ? 'manual' : 'auto'
+      nativeSetCanvasDisplay(dimensions.width, dimensions.height, {
+        ...options,
+        nativeSize: true
+      })
+      forceCanvasViewportStyle()
+      recordCanvasDisplayChange('setCanvasFullscreen')
+      return getCanvasDisplay()
+    }
+
+    const resetCanvasDisplay = () => {
+      if (nativeResetCanvasDisplay) nativeResetCanvasDisplay()
+      return setCanvasFullscreen()
+    }
+
+    const setResolution = (width, height) => {
+      if (!nativeSetResolution) return getCanvasDisplay()
+      canvasDisplayMode = 'manual-resolution'
+      nativeSetResolution(width, height)
+      recordCanvasDisplayChange('setResolution')
+      return getCanvasDisplay()
+    }
+
+    synth.setCanvasDisplay = setCanvasDisplay
+    synth.setCanvasFullscreen = setCanvasFullscreen
+    synth.fitCanvasToWindow = setCanvasFullscreen
+    synth.resetCanvasDisplay = resetCanvasDisplay
+    synth.getCanvasDisplay = getCanvasDisplay
+    synth.setResolution = setResolution
+
+    const attachBinding = (name) => {
+      Object.defineProperty(window, name, {
+        configurable: true,
+        enumerable: true,
+        get() {
+          return synth[name]
+        },
+        set(value) {
+          synth[name] = value
+        }
+      })
+    }
+
+    // Expose all synth entries with live getters/setters for console-driven coding.
+    for (const name of Object.keys(synth)) {
+      attachBinding(name)
+    }
+
+    window.hydra = runtime
+    window.synth = synth
+    setCanvasFullscreen()
+    const captureFrames = async (options = {}) => captureHydraFrameSequence({
+      runtime,
+      ...options
+    })
+    window.captureFrames = captureFrames
+    window.captureHydraFrameSequence = captureFrames
+
+    // Default scene so users immediately see output.
+    if (runtimeReady && typeof synth.osc === 'function') {
+      synth.osc(12, 0.08, 0).out()
+    }
+
+    const params = new URLSearchParams(window.location.search)
+    const livecodingMode = (params.get('livecoding') ?? '').trim().toLowerCase()
+    const enableLivecoding = livecodingMode !== '0' && livecodingMode !== 'false' && livecodingMode !== 'off'
+    const livePanel = document.getElementById('live-panel')
+    const livecodingNote = document.getElementById('livecoding-note')
+    const liveEditorShell = document.getElementById('live-editor-shell')
+    const liveEditor = document.getElementById('live-editor')
+    const liveDragHandle = document.getElementById('live-drag-handle')
+    const liveDragSurfaces = Array.from(document.querySelectorAll('.live-drag-surface'))
+    const liveResizeHandles = Array.from(document.querySelectorAll('.live-resize-handle'))
+    const liveRunButton = document.getElementById('live-run')
+    const liveRunAllButton = document.getElementById('live-run-all')
+    const liveShareButton = document.getElementById('live-share')
+    const liveRandomButton = document.getElementById('live-random')
+    const liveDiceButton = document.getElementById('live-dice')
+    const liveClearButton = document.getElementById('live-clear')
+    const liveRecordToggle = document.getElementById('live-record-toggle')
+    const liveOptionsToggle = document.getElementById('live-options-toggle')
+    const liveInfoToggle = document.getElementById('live-info-toggle')
+    const liveFitButton = document.getElementById('live-fit')
+    const liveStatus = document.getElementById('live-status')
+    const recordPopover = document.getElementById('record-popover')
+    const recordCloseButton = document.getElementById('record-close')
+    const optionsPanel = document.getElementById('options-panel')
+    const optionsCloseButton = document.getElementById('options-close')
+    const optionsOpenRecordButton = document.getElementById('options-open-record')
+    const optionsResetButton = document.getElementById('options-reset')
+    const welcomeModal = document.getElementById('welcome-modal')
+    const welcomeCloseButton = document.getElementById('welcome-close')
+    const welcomeStartButton = document.getElementById('welcome-start')
+    const welcomeRandomButton = document.getElementById('welcome-random')
+    const captureDurationInput = document.getElementById('capture-duration-input')
+    const captureFpsInput = document.getElementById('capture-fps-input')
+    const captureResolutionSelect = document.getElementById('capture-resolution-select')
+    const customResolutionRow = document.getElementById('custom-resolution-row')
+    const captureWidthInput = document.getElementById('capture-width-input')
+    const captureHeightInput = document.getElementById('capture-height-input')
+    const captureVideoToggle = document.getElementById('capture-video-toggle')
+    const captureFrameButton = document.getElementById('capture-frame-button')
+    const captureStatus = document.getElementById('capture-status')
+    const interfaceRecordToggle = document.getElementById('interface-record-toggle')
+    const interfacePlaybackButton = document.getElementById('interface-playback-button')
+    const interfaceRecordStatus = document.getElementById('interface-record-status')
+    const runtimeChip = document.getElementById('runtime-chip')
+    const editorFontSizeInput = document.getElementById('editor-font-size-input')
+    const editorOpacityInput = document.getElementById('editor-opacity-input')
+    const editorLayoutSelect = document.getElementById('editor-layout-select')
+    const codeMaterialSourceSelect = document.getElementById('code-material-source-select')
+    const codeMaterialStatus = document.getElementById('code-material-status')
+    const codeMaterialCanvas = document.getElementById('code-material-canvas')
+    const liveEditorStorageKey = 'hydra-livecode'
+    const livePanelGeometryStorageKey = 'hydra-live-panel-geometry'
+    const uiSettingsStorageKey = 'hydra-ui-settings'
+    const welcomeDismissedStorageKey = 'hydra-welcome-dismissed'
+    const codeMaterialSourceStorageKey = 'hydra-code-material-source'
+    const captureBaseNameStorageKey = 'hydra-capture-base-name'
+    const captureDurationStorageKey = 'hydra-capture-duration-seconds'
+    const captureFpsStorageKey = 'hydra-capture-fps'
+    const captureResolutionStorageKey = 'hydra-capture-resolution'
+    const captureWidthStorageKey = 'hydra-capture-width'
+    const captureHeightStorageKey = 'hydra-capture-height'
+    const urlSketchParam = 'code'
+    const urlSketchHashParam = 'code'
+    const defaultCaptureDurationSeconds = 2
+    const minCaptureDurationSeconds = 0.1
+    const maxCaptureDurationSeconds = 600
+    const defaultCaptureFps = 60
+    const minCaptureFps = 24
+    const maxCaptureFps = 240
+    const defaultCodeMaterialSourceName = 's3'
+    const codeMaterialSourceNames = ['s0', 's1', 's2', 's3']
+    const resolutionPresets = {
+      canvas: {},
+      '720p': { width: 1280, height: 720 },
+      '1080p': { width: 1920, height: 1080 }
+    }
+    const defaultLiveSnippet = `osc(18, 0.05, 0)
+  .rotate(() => time * 0.08)
+  .out()
+
+speed = 0.75`
+    let liveEditorView = null
+
+    const hydraCompletionNames = [
+      'osc',
+      'noise',
+      'voronoi',
+      'shape',
+      'gradient',
+      'solid',
+      'src',
+      'prev',
+      'prevN',
+      'out',
+      'render',
+      'hush',
+      'rotate',
+      'scale',
+      'scrollX',
+      'scrollY',
+      'kaleid',
+      'pixelate',
+      'repeat',
+      'modulate',
+      'modulateScale',
+      'modulateRotate',
+      'modulatePixelate',
+      'blend',
+      'add',
+      'sub',
+      'mult',
+      'diff',
+      'mask',
+      'color',
+      'colorama',
+      'luma',
+      'thresh',
+      'invert',
+      'posterize',
+      'contrast',
+      'brightness',
+      'saturate',
+      'hue',
+      'blur',
+      'blurX',
+      'blurY',
+      'bloom',
+      'edgeDetect',
+      'toneMap',
+      'captureFrames',
+      'captureAndSaveVideo',
+      'captureAndSaveMp4',
+      'saveCanvasFrame',
+      'setCanvasDisplay',
+      'setCanvasFullscreen',
+      'fitCanvasToWindow',
+      'resetCanvasDisplay',
+      'getCanvasDisplay',
+      'setResolution',
+      'startInterfaceRecording',
+      'stopInterfaceRecording',
+      'toggleInterfaceRecording',
+      'playInterfacePerformance',
+      'loadInterfacePerformance',
+      'saveSketchToUrl',
+      'copySketchUrl',
+      'loadSketchFromUrl',
+      'loadRandomSketch',
+      'randomize',
+      'mutateEditorCode',
+      'clearEditor',
+      'codeCanvas',
+      'renderCodeToCanvas',
+      'attachCodeMaterial',
+      'syncCodeMaterial',
+      'detachCodeMaterial',
+      'fitEditorPanel',
+      'showCode',
+      'hideCode',
+      'toggleCode',
+      'toggleRecordPanel',
+      'toggleOptionsPanel',
+      'loadVideoFile',
+      'loadVideoFiles',
+      'restartVideos',
+      's0',
+      's1',
+      's2',
+      's3',
+      'o0',
+      'o1',
+      'o2',
+      'o3',
+      'mouse',
+      'time',
+      'speed',
+      'bpm',
+      'fps',
+      'update',
+      'afterUpdate'
+    ]
+
+    const hydraCompletions = hydraCompletionNames.map((label) => ({
+      label,
+      type: /^[os][0-3]$/.test(label) ? 'variable' : 'function'
+    }))
+
+    const hydraCompletionSource = (context) => {
+      const word = context.matchBefore(/[A-Za-z_$][\w$]*/)
+      if (!word || (!context.explicit && word.from === word.to)) return null
+      return {
+        from: word.from,
+        options: hydraCompletions,
+        validFor: /^[A-Za-z_$][\w$]*$/
+      }
+    }
+
+    const flashEffect = StateEffect.define()
+    const clearFlashEffect = StateEffect.define()
+    const flashMark = Decoration.mark({ class: 'cm-run-flash' })
+    const flashField = StateField.define({
+      create() {
+        return Decoration.none
+      },
+      update(value, transaction) {
+        let decorations = value.map(transaction.changes)
+        for (const effect of transaction.effects) {
+          if (effect.is(clearFlashEffect)) {
+            decorations = Decoration.none
+          } else if (effect.is(flashEffect)) {
+            const { from, to } = effect.value
+            decorations = Decoration.set([flashMark.range(from, Math.max(from + 1, to))])
+          }
+        }
+        return decorations
+      },
+      provide: (field) => EditorView.decorations.from(field)
+    })
+
+    const readEditorCode = () => liveEditorView?.state.doc.toString() ?? ''
+
+    const readEditorSelection = () => {
+      if (!liveEditorView) return null
+      const selection = liveEditorView.state.selection.main
+      return {
+        from: selection.from,
+        to: selection.to,
+        anchor: selection.anchor,
+        head: selection.head
+      }
+    }
+
+    const clampNumber = (value, min, max, fallback) => {
+      const numeric = Number(value)
+      if (!Number.isFinite(numeric)) return fallback
+      return Math.min(max, Math.max(min, numeric))
+    }
+
+    const clampInteger = (value, min, max, fallback) => Math.round(clampNumber(value, min, max, fallback))
+
+    const loadUiSettings = () => {
+      try {
+        const raw = window.localStorage.getItem(uiSettingsStorageKey)
+        if (!raw) return {}
+        const parsed = JSON.parse(raw)
+        return parsed && typeof parsed === 'object' ? parsed : {}
+      } catch {
+        return {}
+      }
+    }
+
+    const writeUiSettings = (settings) => {
+      try {
+        window.localStorage.setItem(uiSettingsStorageKey, JSON.stringify(settings))
+      } catch {
+        // Ignore local storage failures in restricted contexts.
+      }
+    }
+
+    const readUiSettingsFromControls = () => ({
+      editorFontSize: clampInteger(editorFontSizeInput?.value, 10, 24, 14),
+      editorOpacity: clampNumber(editorOpacityInput?.value, 0.35, 1, 1)
+    })
+
+    const applyUiSettings = (settings = {}) => {
+      const editorFontSize = clampInteger(settings.editorFontSize, 10, 24, 14)
+      const editorOpacity = clampNumber(settings.editorOpacity, 0.35, 1, 1)
+      document.documentElement.style.setProperty('--editor-font-size', `${editorFontSize}px`)
+      document.documentElement.style.setProperty('--editor-opacity', String(editorOpacity))
+      if (editorFontSizeInput) editorFontSizeInput.value = String(editorFontSize)
+      if (editorOpacityInput) editorOpacityInput.value = String(editorOpacity)
+      return { editorFontSize, editorOpacity }
+    }
+
+    const persistUiSettings = () => writeUiSettings(applyUiSettings(readUiSettingsFromControls()))
+
+    applyUiSettings(loadUiSettings())
+
+    const setEditorCode = (code, { persist = true, focus = false } = {}) => {
+      const normalized = String(code ?? '')
+      if (!liveEditorView) return normalized
+      const current = readEditorCode()
+      if (current !== normalized) {
+        liveEditorView.dispatch({
+          changes: {
+            from: 0,
+            to: liveEditorView.state.doc.length,
+            insert: normalized
+          }
+        })
+      }
+      if (persist) persistLiveSnippet()
+      if (focus) liveEditorView.focus()
+      return normalized
+    }
+
+    const bytesToBase64Url = (bytes) => {
+      let binary = ''
+      const chunkSize = 0x8000
+      for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+        const chunk = bytes.subarray(offset, offset + chunkSize)
+        binary += String.fromCharCode(...chunk)
+      }
+      return btoa(binary)
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/g, '')
+    }
+
+    const base64UrlToBytes = (value) => {
+      const normalized = String(value ?? '').trim().replace(/-/g, '+').replace(/_/g, '/')
+      const padded = `${normalized}${'='.repeat((4 - (normalized.length % 4)) % 4)}`
+      const binary = atob(padded)
+      const bytes = new Uint8Array(binary.length)
+      for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index)
+      }
+      return bytes
+    }
+
+    const encodeSketchCode = (code) => bytesToBase64Url(new TextEncoder().encode(String(code ?? '')))
+
+    const decodeSketchCode = (encoded) => new TextDecoder().decode(base64UrlToBytes(encoded))
+
+    const readSketchCodeFromUrl = () => {
+      const searchCode = new URLSearchParams(window.location.search).get(urlSketchParam)
+      const hash = window.location.hash.startsWith('#')
+        ? window.location.hash.slice(1)
+        : window.location.hash
+      const hashParams = new URLSearchParams(hash)
+      const hashCode = hashParams.get(urlSketchHashParam)
+      const encoded = hashCode || searchCode
+      if (!encoded) return null
+
+      try {
+        return decodeSketchCode(encoded)
+      } catch (error) {
+        console.warn('[hydra] failed to decode sketch URL', error)
+        return null
+      }
+    }
+
+    const buildSketchUrl = (code = readEditorCode()) => {
+      const url = new URL(window.location.href)
+      url.searchParams.delete(urlSketchParam)
+      url.hash = `${urlSketchHashParam}=${encodeSketchCode(code)}`
+      return url.toString()
+    }
+
+    const saveSketchToUrl = (options = {}) => {
+      const historyMode = options.historyMode ?? options.mode ?? 'replace'
+      const url = buildSketchUrl(options.code ?? readEditorCode())
+      if (historyMode === 'push') {
+        window.history.pushState({ hydraSketch: true }, '', url)
+      } else {
+        window.history.replaceState({ hydraSketch: true }, '', url)
+      }
+      return url
+    }
+
+    const copySketchUrl = async (options = {}) => {
+      const url = saveSketchToUrl(options)
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        try {
+          await navigator.clipboard.writeText(url)
+          setLiveStatus('Sketch URL copied.', 'ok')
+          return url
+        } catch {
+          // Clipboard permission is often unavailable in local/headless contexts.
+        }
+      }
+      setLiveStatus('Sketch URL saved in address bar.', 'ok')
+      return url
+    }
+
+    const loadSketchFromUrl = ({ run = false } = {}) => {
+      const code = readSketchCodeFromUrl()
+      if (code === null) {
+        setLiveStatus('No sketch code found in the URL.', 'error')
+        return null
+      }
+      setEditorCode(code, { focus: true })
+      setLiveStatus('Loaded sketch from URL.', 'ok')
+      if (run) void runEditorSnippet('all')
+      return code
+    }
+
+    const flashEditorRange = (range) => {
+      if (!liveEditorView || !range) return
+      const max = liveEditorView.state.doc.length
+      const from = Math.max(0, Math.min(max, range.from ?? 0))
+      const to = Math.max(from, Math.min(max, range.to ?? from + 1))
+      liveEditorView.dispatch({ effects: flashEffect.of({ from, to }) })
+      window.setTimeout(() => {
+        if (liveEditorView) liveEditorView.dispatch({ effects: clearFlashEffect.of(null) })
+      }, 180)
+    }
+
+    const setLiveStatus = (message, state = '') => {
+      if (!liveStatus) return
+      liveStatus.textContent = message
+      liveStatus.hidden = !message
+      if (state) liveStatus.dataset.state = state
+      else delete liveStatus.dataset.state
+    }
+
+    const setCaptureStatus = (message, state = '') => {
+      if (!captureStatus) return
+      captureStatus.textContent = message
+      captureStatus.hidden = !message
+      if (state) captureStatus.dataset.state = state
+      else delete captureStatus.dataset.state
+    }
+
+    let activeCodeMaterialSource = null
+    let activeCodeMaterialSourceName = null
+    let codeMaterialRenderFrame = 0
+    let codeMaterialPaintVersion = 0
+    let codeMaterialPluginInstance = null
+
+    const normalizeCodeMaterialSourceName = (value, fallback = defaultCodeMaterialSourceName) => {
+      const sourceName = String(value ?? '').trim()
+      if (sourceName === 'off') return 'off'
+      if (codeMaterialSourceNames.includes(sourceName) && synth[sourceName]) return sourceName
+      return fallback
+    }
+
+    const readStoredCodeMaterialSourceName = () => {
+      try {
+        const saved = window.localStorage.getItem(codeMaterialSourceStorageKey)
+        if (!saved) return defaultCodeMaterialSourceName
+        return normalizeCodeMaterialSourceName(saved)
+      } catch {
+        return defaultCodeMaterialSourceName
+      }
+    }
+
+    const writeCodeMaterialSourceName = (sourceName) => {
+      try {
+        window.localStorage.setItem(codeMaterialSourceStorageKey, sourceName)
+      } catch {
+        // Ignore local storage failures in restricted contexts.
+      }
+    }
+
+    const setCodeMaterialControl = (sourceName) => {
+      const normalized = normalizeCodeMaterialSourceName(sourceName)
+      if (codeMaterialSourceSelect) codeMaterialSourceSelect.value = normalized
+      if (codeMaterialStatus) codeMaterialStatus.textContent = normalized === 'off' ? 'off' : `src(${normalized})`
+    }
+
+    const resolveCodeMaterialSource = (source = defaultCodeMaterialSourceName) => {
+      if (typeof source === 'string') {
+        const sourceName = normalizeCodeMaterialSourceName(source)
+        if (sourceName === 'off') return { sourceName, source: null }
+        const sourceNode = synth[sourceName]
+        return sourceNode && typeof sourceNode.init === 'function'
+          ? { sourceName, source: sourceNode }
+          : { sourceName: 'off', source: null }
+      }
+
+      if (source && typeof source === 'object' && typeof source.init === 'function') {
+        const index = Array.isArray(runtime.sources) ? runtime.sources.indexOf(source) : -1
+        return { sourceName: index >= 0 ? `s${index}` : 'custom', source }
+      }
+
+      return { sourceName: 'off', source: null }
+    }
+
+    const getCodeMaterialMapping = (options = {}) => {
+      const hostCanvas = runtime.host?.canvas
+      const hostRect = hostCanvas?.getBoundingClientRect?.()
+      const fallbackRect = {
+        left: 0,
+        top: 0,
+        right: window.innerWidth,
+        bottom: window.innerHeight,
+        width: window.innerWidth,
+        height: window.innerHeight
+      }
+      const canvasRect = hostRect && hostRect.width > 0 && hostRect.height > 0 ? hostRect : fallbackRect
+      const fallbackWidth = Math.round(canvasRect.width) || hostCanvas?.width || 512
+      const fallbackHeight = Math.round(canvasRect.height) || hostCanvas?.height || 512
+      const width = clampInteger(options.width, 16, 7680, hostCanvas?.width || fallbackWidth)
+      const height = clampInteger(options.height, 16, 4320, hostCanvas?.height || fallbackHeight)
+      return {
+        width,
+        height,
+        canvasRect,
+        scaleX: width / canvasRect.width,
+        scaleY: height / canvasRect.height
+      }
+    }
+
+    const getCodeMaterialSize = (options = {}) => {
+      const { width, height } = getCodeMaterialMapping(options)
+      return { width, height }
+    }
+
+    const codeMaterialKeywords = new Set([
+      'osc',
+      'noise',
+      'voronoi',
+      'shape',
+      'gradient',
+      'solid',
+      'src',
+      'prev',
+      'prevN',
+      'render',
+      'out',
+      'modulate',
+      'blend',
+      'diff',
+      'mask',
+      'color',
+      'scale',
+      'rotate',
+      'scrollX',
+      'scrollY',
+      'pixelate',
+      'toneMap',
+      'blur',
+      'dualKawaseBloom',
+      'dualKawaseBlur',
+      'bloomUpsample',
+      'sharpen'
+    ])
+
+    const colorForCodeToken = (token) => {
+      if (/^\s+$/u.test(token)) return '#eef4ef'
+      if (/^\/\//u.test(token)) return 'rgba(238, 244, 239, 0.45)'
+      if (/^['"`]/u.test(token)) return '#ffcc66'
+      if (/^[+-]?(?:\d+\.?\d*|\.\d+)/u.test(token)) return '#8affb6'
+      if (/^(?:s|o)[0-3]$/u.test(token)) return '#ff6bd6'
+      if (codeMaterialKeywords.has(token)) return '#75f7ff'
+      if (/^[A-Za-z_$][\w$]*$/u.test(token)) return '#eef4ef'
+      return 'rgba(238, 244, 239, 0.82)'
+    }
+
+    const tokenizeCodeLine = (line) => {
+      const tokens = []
+      const pattern = /(\/\/.*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|[A-Za-z_$][\w$]*|[+-]?(?:\d+\.?\d*|\.\d+)|\s+|.)/gu
+      let match = pattern.exec(line)
+      while (match) {
+        tokens.push(match[0])
+        match = pattern.exec(line)
+      }
+      return tokens
+    }
+
+    const drawCodeMaterialLine = (context, line, layout) => {
+      const tokens = tokenizeCodeLine(line.replace(/\t/gu, '  '))
+      let x = layout.x
+      let y = layout.y
+      const maxX = layout.width - layout.padding
+
+      for (const token of tokens) {
+        const tokenWidth = context.measureText(token).width
+        if (!/^\s+$/u.test(token) && x > layout.x && x + tokenWidth > maxX) {
+          x = layout.x
+          y += layout.lineHeight
+          if (y + layout.lineHeight > layout.height - layout.padding) break
+        }
+        context.fillStyle = colorForCodeToken(token)
+        context.fillText(token, x, y)
+        x += tokenWidth
+      }
+
+      return y + layout.lineHeight
+    }
+
+    const buildCanvasFont = (style) => {
+      if (style.font) return style.font
+      return [
+        style.fontStyle,
+        style.fontWeight,
+        style.fontSize,
+        style.fontFamily
+      ].filter(Boolean).join(' ')
+    }
+
+    const applyTextShadow = (context, textShadow) => {
+      context.shadowColor = 'transparent'
+      context.shadowBlur = 0
+      context.shadowOffsetX = 0
+      context.shadowOffsetY = 0
+
+      const shadow = String(textShadow ?? '').trim()
+      if (!shadow || shadow === 'none') return
+      const colorMatch = shadow.match(/rgba?\([^)]+\)|#[0-9a-fA-F]{3,8}|[a-zA-Z]+/u)
+      const numberMatches = shadow.match(/-?\d*\.?\d+px/gu) ?? []
+      context.shadowColor = colorMatch?.[0] ?? 'rgba(0, 0, 0, 0.85)'
+      context.shadowOffsetX = Number.parseFloat(numberMatches[0] ?? '0') || 0
+      context.shadowOffsetY = Number.parseFloat(numberMatches[1] ?? '1') || 0
+      context.shadowBlur = Number.parseFloat(numberMatches[2] ?? '0') || 0
+    }
+
+    const setCanvasTextProperty = (context, property, value) => {
+      if (!(property in context) || value === undefined || value === null || value === '') return
+      try {
+        context[property] = value
+      } catch {
+        // Some browser versions expose experimental canvas text properties read-only.
+      }
+    }
+
+    const mapCodeMaterialRect = (rect, mapping) => {
+      const left = (rect.left - mapping.canvasRect.left) * mapping.scaleX
+      const top = (rect.top - mapping.canvasRect.top) * mapping.scaleY
+      const right = (rect.right - mapping.canvasRect.left) * mapping.scaleX
+      const bottom = (rect.bottom - mapping.canvasRect.top) * mapping.scaleY
+      return {
+        left,
+        top,
+        right,
+        bottom,
+        width: right - left,
+        height: bottom - top
+      }
+    }
+
+    const clipCodeMaterialRectToViewport = (rect, mapping) => {
+      if (!rect) return null
+      const left = Math.max(rect.left, mapping.canvasRect.left)
+      const top = Math.max(rect.top, mapping.canvasRect.top)
+      const right = Math.min(rect.right, mapping.canvasRect.right)
+      const bottom = Math.min(rect.bottom, mapping.canvasRect.bottom)
+      if (right <= left || bottom <= top) return null
+      return {
+        left,
+        top,
+        right,
+        bottom,
+        width: right - left,
+        height: bottom - top
+      }
+    }
+
+    const mapCodeMaterialViewportClip = (rect, mapping) => {
+      const clipped = clipCodeMaterialRectToViewport(rect, mapping)
+      return clipped ? mapCodeMaterialRect(clipped, mapping) : null
+    }
+
+    const colorLooksVisible = (color) => {
+      const normalized = String(color ?? '').trim().toLowerCase()
+      if (!normalized || normalized === 'transparent') return false
+      if (normalized === 'rgba(0, 0, 0, 0)' || normalized === 'rgba(0,0,0,0)') return false
+      const alpha = normalized.match(/rgba\([^,]+,[^,]+,[^,]+,\s*([0-9.]+)\s*\)/u)?.[1]
+      return alpha === undefined || Number(alpha) > 0
+    }
+
+    const createCodeMaterialSnapshot = (mapping) => ({
+      width: mapping.width,
+      height: mapping.height,
+      renderedDom: false,
+      hidden: false,
+      textSegments: [],
+      chromeRects: []
+    })
+
+    const readCodeMaterialTextStyle = (element, rootOpacity = 1) => {
+      const style = window.getComputedStyle(element)
+      const opacity = rootOpacity * clampNumber(style.opacity, 0, 1, 1)
+      if (
+        style.display === 'none' ||
+        style.visibility === 'hidden' ||
+        opacity <= 0 ||
+        !colorLooksVisible(style.color)
+      ) {
+        return null
+      }
+
+      return {
+        font: buildCanvasFont(style),
+        fillStyle: style.color,
+        alpha: opacity,
+        direction: style.direction,
+        fontKerning: style.fontKerning,
+        fontStretch: style.fontStretch,
+        fontVariantCaps: style.fontVariantCaps,
+        letterSpacing: style.letterSpacing,
+        wordSpacing: style.wordSpacing,
+        textShadow: style.textShadow
+      }
+    }
+
+    const pushCodeTextSegment = (snapshot, text, rect, mapping, textStyle) => {
+      if (!text || !textStyle || !rect) return
+      const viewportClip = mapCodeMaterialViewportClip(rect, mapping)
+      if (!viewportClip) return
+      const mapped = mapCodeMaterialRect(rect, mapping)
+      snapshot.textSegments.push({
+        ...textStyle,
+        text,
+        left: mapped.left,
+        top: mapped.top,
+        viewportClip
+      })
+    }
+
+    const readWrappedTextNodeSegments = (snapshot, textNode, text, mapping, textStyle) => {
+      const range = document.createRange()
+      let segment = ''
+      let segmentRect = null
+      let segmentTop = null
+
+      const flush = () => {
+        if (segment && segmentRect) pushCodeTextSegment(snapshot, segment, segmentRect, mapping, textStyle)
+        segment = ''
+        segmentRect = null
+        segmentTop = null
+      }
+
+      for (let index = 0; index < text.length; index += 1) {
+        range.setStart(textNode, index)
+        range.setEnd(textNode, index + 1)
+        const rect = Array.from(range.getClientRects()).find((entry) => entry.width > 0 || entry.height > 0)
+        if (!rect) {
+          segment += text[index]
+          continue
+        }
+
+        const top = Math.round(rect.top)
+        if (segmentTop !== null && Math.abs(top - segmentTop) > 1) flush()
+        if (!segmentRect) segmentRect = rect
+        segmentTop = top
+        segment += text[index]
+      }
+
+      flush()
+      range.detach()
+    }
+
+    const readCodeTextNodeSegments = (snapshot, textNode, mapping, rootOpacity = 1) => {
+      const text = textNode.nodeValue ?? ''
+      if (!text) return
+      const parent = textNode.parentElement
+      if (!parent) return
+
+      const textStyle = readCodeMaterialTextStyle(parent, rootOpacity)
+      if (!textStyle) return
+
+      const range = document.createRange()
+      range.selectNodeContents(textNode)
+      const rects = Array.from(range.getClientRects()).filter((rect) => rect.width > 0 || rect.height > 0)
+      range.detach()
+
+      if (rects.length <= 1) {
+        if (rects[0]) pushCodeTextSegment(snapshot, text, rects[0], mapping, textStyle)
+        return
+      }
+
+      readWrappedTextNodeSegments(snapshot, textNode, text, mapping, textStyle)
+    }
+
+    const readCodeElementTextNodes = (snapshot, element, mapping, rootOpacity = 1) => {
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+      let node = walker.nextNode()
+      while (node) {
+        readCodeTextNodeSegments(snapshot, node, mapping, rootOpacity)
+        node = walker.nextNode()
+      }
+    }
+
+    const codeMaterialChromeSelector = [
+      '.cm-activeLine',
+      '.cm-selectionBackground',
+      '.cm-run-flash'
+    ].join(',')
+
+    const codeMaterialOverlayChromeSelector = [
+      '.cm-tooltip',
+      '.cm-tooltip-autocomplete',
+      '.cm-tooltip-autocomplete > ul',
+      '.cm-tooltip-autocomplete ul li[aria-selected]',
+      '.cm-completionInfo'
+    ].join(',')
+
+    const codeMaterialOverlaySelector = [
+      '.cm-tooltip',
+      '.cm-tooltip-autocomplete',
+      '.cm-completionInfo'
+    ].join(',')
+
+    const codeMaterialChromeKind = (element) => {
+      if (element.classList.contains('cm-selectionBackground')) return 'selection'
+      if (element.classList.contains('cm-run-flash')) return 'flash'
+      if (element.matches?.('.cm-tooltip-autocomplete ul li[aria-selected]')) return 'completion-selection'
+      if (
+        element.classList.contains('cm-tooltip') ||
+        element.classList.contains('cm-tooltip-autocomplete') ||
+        element.classList.contains('cm-completionInfo') ||
+        element.matches?.('.cm-tooltip-autocomplete > ul')
+      ) return 'tooltip'
+      return 'active-line'
+    }
+
+    const pushCodeMaterialChromeRect = (snapshot, rect, mapping, backgroundColor, alpha = 1, kind = 'chrome') => {
+      if (!rect || !colorLooksVisible(backgroundColor) || alpha <= 0) return
+      const mapped = mapCodeMaterialViewportClip(rect, mapping)
+      if (!mapped) return
+      snapshot.chromeRects.push({
+        kind,
+        backgroundColor,
+        alpha,
+        left: mapped.left,
+        top: mapped.top,
+        width: mapped.width,
+        height: mapped.height
+      })
+    }
+
+    const readCodeMaterialChromeElement = (snapshot, element, mapping, rootOpacity = 1) => {
+      const style = window.getComputedStyle(element)
+      if (style.display === 'none' || style.visibility === 'hidden') return
+      pushCodeMaterialChromeRect(
+        snapshot,
+        element.getBoundingClientRect(),
+        mapping,
+        style.backgroundColor,
+        rootOpacity * clampNumber(style.opacity, 0, 1, 1),
+        codeMaterialChromeKind(element)
+      )
+    }
+
+    const readCodeMaterialChromeTree = (
+      snapshot,
+      element,
+      mapping,
+      rootOpacity = 1,
+      selector = codeMaterialChromeSelector
+    ) => {
+      if (element.matches?.(selector)) {
+        readCodeMaterialChromeElement(snapshot, element, mapping, rootOpacity)
+      }
+      element.querySelectorAll(selector).forEach((child) => {
+        readCodeMaterialChromeElement(snapshot, child, mapping, rootOpacity)
+      })
+    }
+
+    const readCodeMaterialOverlayElement = (snapshot, element, mapping, rootOpacity = 1) => {
+      const style = window.getComputedStyle(element)
+      const opacity = rootOpacity * clampNumber(style.opacity, 0, 1, 1)
+      if (
+        style.display === 'none' ||
+        style.visibility === 'hidden' ||
+        opacity <= 0
+      ) {
+        return
+      }
+
+      readCodeMaterialChromeTree(snapshot, element, mapping, opacity, codeMaterialOverlayChromeSelector)
+      readCodeElementTextNodes(snapshot, element, mapping, opacity)
+    }
+
+    const readCodeMaterialOverlayElements = (snapshot, mapping, rootOpacity = 1) => {
+      const overlays = new Set()
+      document.querySelectorAll(codeMaterialOverlaySelector).forEach((element) => {
+        if (element instanceof Element) overlays.add(element)
+      })
+
+      for (const element of overlays) {
+        if ([...overlays].some((other) => other !== element && other.contains(element))) continue
+        readCodeMaterialOverlayElement(snapshot, element, mapping, rootOpacity)
+      }
+    }
+
+    const readEditorCoords = (view, position, side) => {
+      try {
+        return view.coordsAtPos(position, side)
+      } catch {
+        return null
+      }
+    }
+
+    const createRectFromEdges = (left, top, right, bottom) => ({
+      left,
+      top,
+      right,
+      bottom,
+      width: right - left,
+      height: bottom - top
+    })
+
+    const readSelectionFallbackChrome = (snapshot, view, mapping, rootOpacity = 1) => {
+      if (snapshot.chromeRects.some((rect) => rect.kind === 'selection')) return
+
+      for (const selectionRange of view.state.selection.ranges) {
+        if (selectionRange.empty) continue
+        const from = Math.max(0, Math.min(view.state.doc.length, selectionRange.from))
+        const to = Math.max(from, Math.min(view.state.doc.length, selectionRange.to))
+        let line = view.state.doc.lineAt(from)
+
+        while (line.from <= to) {
+          const lineFrom = Math.max(from, line.from)
+          const lineTo = Math.min(to, line.to)
+          const startCoords = readEditorCoords(view, lineFrom, 1)
+          const endCoords = readEditorCoords(view, lineTo, -1) ?? readEditorCoords(view, lineTo, 1)
+
+          if (startCoords && endCoords && (lineTo > lineFrom || to > line.to)) {
+            const left = Math.min(startCoords.left, endCoords.left)
+            const right = Math.max(startCoords.left + 1, endCoords.left)
+            const top = Math.min(startCoords.top, endCoords.top)
+            const bottom = Math.max(startCoords.bottom, endCoords.bottom)
+            pushCodeMaterialChromeRect(
+              snapshot,
+              createRectFromEdges(left, top, right, bottom),
+              mapping,
+              'rgba(255, 107, 214, 0.32)',
+              rootOpacity,
+              'selection'
+            )
+          }
+
+          if (line.to >= to || line.number >= view.state.doc.lines) break
+          line = view.state.doc.line(line.number + 1)
+        }
+      }
+    }
+
+    const readCodeMaterialSnapshot = (view, options = {}) => {
+      const mapping = getCodeMaterialMapping(options)
+      const snapshot = createCodeMaterialSnapshot(mapping)
+      const editorRoot = view?.dom ?? liveEditor?.querySelector?.('.cm-editor')
+      const content = view?.contentDOM ?? liveEditor?.querySelector?.('.cm-content')
+      if (!editorRoot || !content) return snapshot
+
+      snapshot.renderedDom = true
+      if (!livePanel || livePanel.hidden) {
+        snapshot.hidden = true
+        return snapshot
+      }
+
+      const panelStyle = window.getComputedStyle(livePanel)
+      const shellStyle = liveEditorShell ? window.getComputedStyle(liveEditorShell) : null
+      const editorStyle = window.getComputedStyle(editorRoot)
+      const panelOpacity = clampNumber(panelStyle.opacity, 0, 1, 1)
+      const shellOpacity = shellStyle ? clampNumber(shellStyle.opacity, 0, 1, 1) : 1
+      const editorOpacity = clampNumber(editorStyle.opacity, 0, 1, 1)
+      const rootOpacity = panelOpacity * shellOpacity * editorOpacity
+      if (
+        panelStyle.display === 'none' ||
+        panelStyle.visibility === 'hidden' ||
+        shellStyle?.display === 'none' ||
+        shellStyle?.visibility === 'hidden' ||
+        editorStyle.display === 'none' ||
+        editorStyle.visibility === 'hidden' ||
+        rootOpacity <= 0
+      ) {
+        snapshot.hidden = true
+        return snapshot
+      }
+
+      readCodeMaterialChromeTree(snapshot, editorRoot, mapping, rootOpacity)
+      if (view) readSelectionFallbackChrome(snapshot, view, mapping, rootOpacity)
+      readCodeElementTextNodes(snapshot, content, mapping, rootOpacity)
+      readCodeMaterialOverlayElements(snapshot, mapping, rootOpacity)
+      return snapshot
+    }
+
+    const paintCodeMaterialTextSegment = (context, segment) => {
+      const clip = segment.viewportClip
+      if (clip) {
+        context.beginPath()
+        context.rect(clip.left, clip.top, clip.width, clip.height)
+        context.clip()
+      }
+      context.font = segment.font
+      context.fillStyle = segment.fillStyle
+      context.globalAlpha = segment.alpha
+      context.textBaseline = 'top'
+      context.textAlign = 'left'
+      setCanvasTextProperty(context, 'direction', segment.direction)
+      setCanvasTextProperty(context, 'fontKerning', segment.fontKerning)
+      setCanvasTextProperty(context, 'fontStretch', segment.fontStretch)
+      setCanvasTextProperty(context, 'fontVariantCaps', segment.fontVariantCaps)
+      setCanvasTextProperty(context, 'letterSpacing', segment.letterSpacing)
+      setCanvasTextProperty(context, 'wordSpacing', segment.wordSpacing)
+      applyTextShadow(context, segment.textShadow)
+      context.fillText(segment.text, segment.left, segment.top)
+    }
+
+    const paintCodeMaterialSnapshot = (snapshot, options = {}) => {
+      if (!(codeMaterialCanvas instanceof HTMLCanvasElement)) return null
+      const context = codeMaterialCanvas.getContext('2d')
+      if (!context) return null
+
+      const width = clampInteger(snapshot?.width, 16, 7680, 512)
+      const height = clampInteger(snapshot?.height, 16, 4320, 512)
+      if (codeMaterialCanvas.width !== width || codeMaterialCanvas.height !== height) {
+        codeMaterialCanvas.width = width
+        codeMaterialCanvas.height = height
+      }
+
+      context.clearRect(0, 0, width, height)
+      if (!snapshot?.renderedDom && options.fallback !== false) {
+        renderSyntheticCodeMaterial(context, { ...options, width, height })
+        return codeMaterialCanvas
+      }
+
+      if (snapshot.hidden) return codeMaterialCanvas
+
+      context.save()
+      context.beginPath()
+      context.rect(0, 0, width, height)
+      context.clip()
+      for (const rect of snapshot.chromeRects) {
+        context.save()
+        context.globalAlpha = rect.alpha
+        context.fillStyle = rect.backgroundColor
+        context.fillRect(rect.left, rect.top, rect.width, rect.height)
+        context.restore()
+      }
+      for (const segment of snapshot.textSegments) {
+        context.save()
+        paintCodeMaterialTextSegment(context, segment)
+        context.restore()
+      }
+      context.restore()
+      return codeMaterialCanvas
+    }
+
+    const renderSyntheticCodeMaterial = (context, options = {}) => {
+      const { width, height } = getCodeMaterialSize(options)
+      context.save()
+      context.textBaseline = 'top'
+      context.shadowColor = 'rgba(0, 0, 0, 0.85)'
+      context.shadowBlur = Math.max(3, Math.round(width / 180))
+
+      const editorSize = clampInteger(editorFontSizeInput?.value, 10, 24, 14)
+      const fontScale = clampNumber(height / 720, 0.9, 1.8, 1)
+      const fontSize = Math.round(clampNumber(editorSize * fontScale, 12, 34, editorSize))
+      const lineHeight = Math.round(fontSize * 1.45)
+      const padding = Math.max(12, Math.round(Math.min(width, height) * 0.028))
+
+      context.font = `${fontSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace`
+
+      const code = String(options.code ?? readEditorCode())
+      const lines = code.split(/\r?\n/u)
+      let y = padding
+      for (const line of lines) {
+        if (y + lineHeight > height - padding) break
+        y = line.length > 0
+          ? drawCodeMaterialLine(context, line, { x: padding, y, width, height, padding, lineHeight })
+          : y + lineHeight
+      }
+
+      context.restore()
+    }
+
+    const renderCodeToCanvas = (options = {}) => {
+      const snapshot = readCodeMaterialSnapshot(liveEditorView, options)
+      return paintCodeMaterialSnapshot(snapshot, options)
+    }
+
+    const codeMaterialViewPlugin = ViewPlugin.fromClass(class {
+      constructor(view) {
+        this.view = view
+        this.destroyed = false
+        this.disposers = []
+        codeMaterialPluginInstance = this
+        this.installObservers()
+        this.schedule({ force: true })
+      }
+
+      update(update) {
+        if (update.docChanged || update.selectionSet || update.viewportChanged || update.focusChanged || update.geometryChanged) {
+          this.schedule()
+        }
+      }
+
+      installObservers() {
+        const schedule = () => this.schedule()
+        if (typeof ResizeObserver !== 'undefined') {
+          const resizeObserver = new ResizeObserver(schedule)
+          for (const target of [runtime.host?.canvas, livePanel, liveEditorShell, liveEditor]) {
+            if (target instanceof Element) resizeObserver.observe(target)
+          }
+          this.disposers.push(() => resizeObserver.disconnect())
+        }
+
+        if (typeof MutationObserver !== 'undefined') {
+          const mutationObserver = new MutationObserver(schedule)
+          if (livePanel) {
+            mutationObserver.observe(livePanel, {
+              attributes: true,
+              attributeFilter: ['hidden', 'style', 'class', 'data-layout']
+            })
+          }
+          if (liveEditorShell) {
+            mutationObserver.observe(liveEditorShell, {
+              attributes: true,
+              attributeFilter: ['style', 'class']
+            })
+          }
+          mutationObserver.observe(this.view.dom, {
+            attributes: true,
+            attributeFilter: ['style', 'class']
+          })
+          if (document.body) {
+            mutationObserver.observe(document.body, {
+              childList: true,
+              subtree: true,
+              attributes: true,
+              attributeFilter: ['style', 'class', 'aria-selected', 'hidden']
+            })
+          }
+          this.disposers.push(() => mutationObserver.disconnect())
+        }
+      }
+
+      schedule(options = {}) {
+        if (this.destroyed || (!activeCodeMaterialSource && !options.force)) return null
+        const paintVersion = ++codeMaterialPaintVersion
+        const requestOptions = { ...options }
+        this.view.requestMeasure({
+          key: this,
+          read: () => readCodeMaterialSnapshot(this.view, requestOptions),
+          write: (snapshot) => {
+            if (this.destroyed || paintVersion !== codeMaterialPaintVersion) return
+            paintCodeMaterialSnapshot(snapshot, requestOptions)
+          }
+        })
+        return codeMaterialCanvas
+      }
+
+      renderNow(options = {}) {
+        if (this.destroyed) return null
+        codeMaterialPaintVersion += 1
+        return paintCodeMaterialSnapshot(readCodeMaterialSnapshot(this.view, options), options)
+      }
+
+      destroy() {
+        this.destroyed = true
+        for (const dispose of this.disposers) dispose()
+        this.disposers = []
+        if (codeMaterialPluginInstance === this) codeMaterialPluginInstance = null
+      }
+    })
+
+    const syncCodeMaterial = (options = {}) => {
+      const canvas = codeMaterialPluginInstance?.renderNow(options) ?? renderCodeToCanvas(options)
+      if (!canvas) return null
+      return canvas
+    }
+
+    const scheduleCodeMaterialRender = (options = {}) => {
+      if (codeMaterialPluginInstance) return codeMaterialPluginInstance.schedule(options)
+      if ((!activeCodeMaterialSource && !options.force) || codeMaterialRenderFrame) return null
+      codeMaterialRenderFrame = window.requestAnimationFrame(() => {
+        codeMaterialRenderFrame = 0
+        syncCodeMaterial(options)
+      })
+      return codeMaterialCanvas
+    }
+
+    const detachCodeMaterial = (options = {}) => {
+      if (codeMaterialRenderFrame) {
+        window.cancelAnimationFrame(codeMaterialRenderFrame)
+        codeMaterialRenderFrame = 0
+      }
+      codeMaterialPaintVersion += 1
+      const previousSource = activeCodeMaterialSource
+      activeCodeMaterialSource = null
+      activeCodeMaterialSourceName = null
+      if (codeMaterialCanvas instanceof HTMLCanvasElement) {
+        const context = codeMaterialCanvas.getContext('2d')
+        if (context) context.clearRect(0, 0, codeMaterialCanvas.width, codeMaterialCanvas.height)
+      }
+      if (options.clearSource && previousSource && typeof previousSource.clear === 'function') previousSource.clear()
+      setCodeMaterialControl('off')
+      if (options.persist !== false) writeCodeMaterialSourceName('off')
+      if (!options.silent) setLiveStatus('Code texture off.', 'ok')
+      return null
+    }
+
+    const attachCodeMaterial = (source = readStoredCodeMaterialSourceName(), options = {}) => {
+      const { sourceName, source: sourceNode } = resolveCodeMaterialSource(source)
+      if (sourceName === 'off' || !sourceNode) return detachCodeMaterial(options)
+      const canvas = syncCodeMaterial(options)
+      if (!canvas) return null
+      sourceNode.init({ src: canvas, dynamic: true })
+      activeCodeMaterialSource = sourceNode
+      activeCodeMaterialSourceName = sourceName
+      setCodeMaterialControl(sourceName)
+      if (options.persist !== false) writeCodeMaterialSourceName(sourceName)
+      if (!options.silent) setLiveStatus(`Code texture -> src(${sourceName}).`, 'ok')
+      scheduleCodeMaterialRender({ force: true })
+      return canvas
+    }
+
+    const getCodeMaterialInfo = () => ({
+      active: Boolean(activeCodeMaterialSource),
+      sourceName: activeCodeMaterialSourceName,
+      width: codeMaterialCanvas instanceof HTMLCanvasElement ? codeMaterialCanvas.width : 0,
+      height: codeMaterialCanvas instanceof HTMLCanvasElement ? codeMaterialCanvas.height : 0,
+      canvas: codeMaterialCanvas instanceof HTMLCanvasElement ? codeMaterialCanvas : null,
+      renderer: codeMaterialPluginInstance ? 'codemirror-measured' : 'fallback'
+    })
+
+    const installCodeMaterialLayoutHooks = () => {
+      for (const name of ['setCanvasDisplay', 'setCanvasFullscreen', 'fitCanvasToWindow', 'resetCanvasDisplay', 'setResolution']) {
+        const original = synth[name]
+        if (typeof original !== 'function' || original.__codeMaterialHooked) continue
+        const wrapped = (...args) => {
+          const result = original(...args)
+          scheduleCodeMaterialRender()
+          return result
+        }
+        Object.defineProperty(wrapped, '__codeMaterialHooked', { value: true })
+        synth[name] = wrapped
+      }
+    }
+
+    installCodeMaterialLayoutHooks()
+
+    const selectEditorRange = (range = {}, options = {}) => {
+      if (!liveEditorView) return null
+      const focus = options.focus !== false
+      const max = liveEditorView.state.doc.length
+      const clampPosition = (value, fallback) => {
+        const numeric = Number(value)
+        return Math.max(0, Math.min(max, Number.isFinite(numeric) ? numeric : fallback))
+      }
+      const from = clampPosition(range.from ?? range.anchor, 0)
+      const to = clampPosition(range.to ?? range.head, from)
+      liveEditorView.dispatch({
+        selection: EditorSelection.single(from, to),
+        scrollIntoView: true
+      })
+      if (focus) liveEditorView.focus()
+      scheduleCodeMaterialRender({ force: true })
+      return {
+        from: Math.min(from, to),
+        to: Math.max(from, to),
+        anchor: from,
+        head: to
+      }
+    }
+
+    const showEditorCompletions = () => {
+      if (!liveEditorView) return false
+      liveEditorView.focus()
+      const started = startCompletion(liveEditorView)
+      scheduleCodeMaterialRender({ force: true })
+      return started
+    }
+
+    const loadLiveSnippet = () => {
+      const urlCode = readSketchCodeFromUrl()
+      if (urlCode !== null && urlCode.trim().length > 0) return urlCode
+      try {
+        const saved = window.localStorage.getItem(liveEditorStorageKey)
+        return saved && saved.trim().length > 0 ? saved : defaultLiveSnippet
+      } catch {
+        return defaultLiveSnippet
+      }
+    }
+
+    const persistLiveSnippet = () => {
+      try {
+        window.localStorage.setItem(liveEditorStorageKey, readEditorCode())
+      } catch {
+        // Ignore local storage failures in restricted contexts.
+      }
+    }
+
+    let lastFloatingPanelGeometry = null
+
+    const parseFloatingPanelGeometry = (value) => {
+      if (!value || typeof value !== 'object' || value.mode !== 'floating') return null
+      return {
+        mode: 'floating',
+        left: Number(value.left),
+        top: Number(value.top),
+        width: Number(value.width),
+        height: Number(value.height)
+      }
+    }
+
+    const readStoredPanelGeometry = () => {
+      try {
+        const raw = window.localStorage.getItem(livePanelGeometryStorageKey)
+        if (!raw) return null
+        const parsed = JSON.parse(raw)
+        if (!parsed || typeof parsed !== 'object') return null
+        if (parsed.mode === 'fullscreen') {
+          const previousFloating = parseFloatingPanelGeometry(parsed.previousFloating)
+          return previousFloating ? { mode: 'fullscreen', previousFloating } : { mode: 'fullscreen' }
+        }
+        if (parsed.mode !== 'floating') return null
+        return parseFloatingPanelGeometry(parsed)
+      } catch {
+        return null
+      }
+    }
+
+    const defaultFloatingPanelGeometry = () => {
+      const viewportWidth = Math.max(320, window.innerWidth || 1280)
+      const viewportHeight = Math.max(320, window.innerHeight || 720)
+      const width = Math.min(680, viewportWidth - 28)
+      const height = Math.min(360, Math.max(240, viewportHeight * 0.58 - 28))
+      return {
+        mode: 'floating',
+        left: 14,
+        top: viewportHeight - height - 14,
+        width,
+        height
+      }
+    }
+
+    const getPanelGeometryConstraints = () => {
+      const viewportWidth = Math.max(320, window.innerWidth || 1280)
+      const viewportHeight = Math.max(320, window.innerHeight || 720)
+      const minWidth = Math.min(360, viewportWidth - 16)
+      const minHeight = Math.min(240, viewportHeight - 16)
+      const maxWidth = Math.max(minWidth, viewportWidth - 16)
+      const maxHeight = Math.max(minHeight, viewportHeight - 16)
+      return { viewportWidth, viewportHeight, minWidth, minHeight, maxWidth, maxHeight }
+    }
+
+    const clampPanelGeometry = (geometry) => {
+      const { viewportWidth, viewportHeight, minWidth, minHeight, maxWidth, maxHeight } = getPanelGeometryConstraints()
+      const width = Math.min(maxWidth, Math.max(minWidth, Number(geometry.width) || minWidth))
+      const height = Math.min(maxHeight, Math.max(minHeight, Number(geometry.height) || minHeight))
+      const left = Math.min(viewportWidth - width - 8, Math.max(8, Number(geometry.left) || 8))
+      const top = Math.min(viewportHeight - height - 8, Math.max(8, Number(geometry.top) || 8))
+      return { mode: 'floating', left, top, width, height }
+    }
+
+    const writePanelGeometry = (geometry) => {
+      try {
+        const stored = geometry?.mode === 'fullscreen' && lastFloatingPanelGeometry
+          ? { mode: 'fullscreen', previousFloating: lastFloatingPanelGeometry }
+          : geometry
+        window.localStorage.setItem(livePanelGeometryStorageKey, JSON.stringify(stored))
+      } catch {
+        // Ignore local storage failures in restricted contexts.
+      }
+    }
+
+    const updateFitButtonState = (mode) => {
+      if (!liveFitButton) return
+      const isFullscreen = mode === 'fullscreen'
+      liveFitButton.title = isFullscreen ? 'Window code layer' : 'Fullscreen code layer'
+      liveFitButton.setAttribute('aria-label', liveFitButton.title)
+      if (isFullscreen) liveFitButton.dataset.state = 'active'
+      else delete liveFitButton.dataset.state
+    }
+
+    const applyPanelGeometry = (geometry, { persist = false, realtime = false } = {}) => {
+      if (!livePanel || !liveEditorShell) return null
+      const clamped = clampPanelGeometry(geometry)
+      lastFloatingPanelGeometry = clamped
+      livePanel.dataset.layout = 'floating'
+      if (editorLayoutSelect) editorLayoutSelect.value = 'floating'
+      updateFitButtonState('floating')
+      liveEditorShell.style.left = `${clamped.left}px`
+      liveEditorShell.style.top = `${clamped.top}px`
+      liveEditorShell.style.right = 'auto'
+      liveEditorShell.style.bottom = 'auto'
+      liveEditorShell.style.width = `${clamped.width}px`
+      liveEditorShell.style.height = `${clamped.height}px`
+      if (liveEditorView) repositionTooltips(liveEditorView)
+      if (realtime) syncCodeMaterial({ force: true })
+      else scheduleCodeMaterialRender()
+      if (persist) writePanelGeometry(clamped)
+      recordInterfaceEvent('panel-geometry', {
+        geometry: { mode: 'floating', ...clamped },
+        realtime: Boolean(realtime)
+      })
+      return clamped
+    }
+
+    const readCurrentPanelGeometry = () => {
+      if (!livePanel || !liveEditorShell) return null
+      if (livePanel.dataset.layout !== 'floating') return { mode: 'fullscreen' }
+      const rect = liveEditorShell.getBoundingClientRect()
+      return clampPanelGeometry({
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height
+      })
+    }
+
+    const persistCurrentPanelGeometry = () => {
+      const geometry = readCurrentPanelGeometry()
+      if (geometry) writePanelGeometry(geometry)
+      return geometry
+    }
+
+    const applyFullscreenPanelGeometry = ({ persist = false } = {}) => {
+      if (!livePanel || !liveEditorShell) return null
+      const current = readCurrentPanelGeometry()
+      if (current?.mode === 'floating') lastFloatingPanelGeometry = current
+      livePanel.dataset.layout = 'fullscreen'
+      if (editorLayoutSelect) editorLayoutSelect.value = 'fullscreen'
+      updateFitButtonState('fullscreen')
+      liveEditorShell.style.left = ''
+      liveEditorShell.style.top = ''
+      liveEditorShell.style.right = ''
+      liveEditorShell.style.bottom = ''
+      liveEditorShell.style.width = ''
+      liveEditorShell.style.height = ''
+      const geometry = { mode: 'fullscreen' }
+      if (liveEditorView) repositionTooltips(liveEditorView)
+      scheduleCodeMaterialRender()
+      if (persist) writePanelGeometry(geometry)
+      recordInterfaceEvent('panel-geometry', { geometry })
+      return geometry
+    }
+
+    const fitEditorPanel = () => applyFullscreenPanelGeometry({ persist: true })
+
+    const preferredFloatingPanelGeometry = () => {
+      if (lastFloatingPanelGeometry) return lastFloatingPanelGeometry
+      const stored = readStoredPanelGeometry()
+      if (stored?.mode === 'floating') return stored
+      if (stored?.previousFloating) return stored.previousFloating
+      return defaultFloatingPanelGeometry()
+    }
+
+    const floatEditorPanel = () => applyPanelGeometry(preferredFloatingPanelGeometry(), { persist: true })
+
+    const toggleEditorPanelFit = () => {
+      if (livePanel?.dataset.layout === 'fullscreen') return floatEditorPanel()
+      return fitEditorPanel()
+    }
+
+    const restoreEditorPanelGeometry = () => {
+      const stored = readStoredPanelGeometry()
+      if (stored?.mode === 'floating') return applyPanelGeometry(stored, { persist: true })
+      if (stored?.previousFloating) lastFloatingPanelGeometry = stored.previousFloating
+      return applyFullscreenPanelGeometry({ persist: Boolean(stored) })
+    }
+
+    const toggleCode = (forceVisible) => {
+      if (!livePanel) return false
+      const shouldShow = typeof forceVisible === 'boolean' ? forceVisible : livePanel.hidden
+      livePanel.hidden = !shouldShow
+      if (shouldShow) {
+        restoreEditorPanelGeometry()
+        liveEditorView?.focus()
+      }
+      scheduleCodeMaterialRender()
+      recordInterfaceEvent('code-visible', { visible: shouldShow })
+      return shouldShow
+    }
+
+    const showCode = () => toggleCode(true)
+    const hideCode = () => toggleCode(false)
+
+    const setDisclosure = (button, expanded) => {
+      if (!button) return
+      button.setAttribute('aria-expanded', expanded ? 'true' : 'false')
+      if (expanded) button.dataset.state = 'active'
+      else delete button.dataset.state
+    }
+
+    const toggleRecordPopover = (forceVisible) => {
+      if (!recordPopover) return false
+      const shouldShow = typeof forceVisible === 'boolean' ? forceVisible : recordPopover.hidden
+      recordPopover.hidden = !shouldShow
+      setDisclosure(liveRecordToggle, shouldShow)
+      if (shouldShow) {
+        if (optionsPanel) optionsPanel.hidden = true
+        setDisclosure(liveOptionsToggle, false)
+      }
+      recordInterfaceEvent('action', {
+        action: shouldShow ? 'open-record-panel' : 'close-record-panel'
+      })
+      return shouldShow
+    }
+
+    const toggleOptionsPanel = (forceVisible) => {
+      if (!optionsPanel) return false
+      const shouldShow = typeof forceVisible === 'boolean' ? forceVisible : optionsPanel.hidden
+      optionsPanel.hidden = !shouldShow
+      setDisclosure(liveOptionsToggle, shouldShow)
+      if (shouldShow) {
+        if (recordPopover) recordPopover.hidden = true
+        setDisclosure(liveRecordToggle, false)
+      }
+      recordInterfaceEvent('action', {
+        action: shouldShow ? 'open-options-panel' : 'close-options-panel'
+      })
+      return shouldShow
+    }
+
+    const dismissWelcome = ({ persist = true } = {}) => {
+      if (welcomeModal) welcomeModal.hidden = true
+      if (persist) {
+        try {
+          window.localStorage.setItem(welcomeDismissedStorageKey, '1')
+        } catch {
+          // Ignore local storage failures in restricted contexts.
+        }
+      }
+    }
+
+    const showWelcome = ({ force = false } = {}) => {
+      if (!welcomeModal) return false
+      if (!force) {
+        try {
+          if (window.localStorage.getItem(welcomeDismissedStorageKey) === '1') return false
+        } catch {
+          // Show the welcome panel when storage cannot be read.
+        }
+      }
+      welcomeModal.hidden = false
+      return true
+    }
+
+    const resetUiPreferences = () => {
+      try {
+        window.localStorage.removeItem(uiSettingsStorageKey)
+        window.localStorage.removeItem(livePanelGeometryStorageKey)
+        window.localStorage.removeItem(codeMaterialSourceStorageKey)
+      } catch {
+        // Ignore local storage failures in restricted contexts.
+      }
+      applyUiSettings({})
+      fitEditorPanel()
+      attachCodeMaterial(defaultCodeMaterialSourceName, { silent: true, persist: false })
+      setLiveStatus('UI reset.', 'ok')
+      recordInterfaceEvent('action', { action: 'reset-ui' })
+    }
+
+    let panelDrag = null
+    let panelResize = null
+    let panelResizeSaveTimer = 0
+
+    const dragTargets = [liveDragHandle, ...liveDragSurfaces].filter(Boolean)
+
+    if (dragTargets.length > 0 && livePanel && liveEditorShell) {
+      const startPanelDrag = (event, target) => {
+        if (event.button !== 0) return
+        const rect = liveEditorShell.getBoundingClientRect()
+        panelDrag = {
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height
+        }
+        livePanel.dataset.dragging = 'true'
+        target.setPointerCapture(event.pointerId)
+        recordInterfaceEvent('panel-drag-start', {
+          geometry: { mode: 'floating', left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+          pointer: { x: event.clientX, y: event.clientY }
+        })
+        event.preventDefault()
+      }
+
+      const movePanelDrag = (event) => {
+        if (!panelDrag || panelDrag.pointerId !== event.pointerId) return
+        applyPanelGeometry({
+          left: panelDrag.left + event.clientX - panelDrag.startX,
+          top: panelDrag.top + event.clientY - panelDrag.startY,
+          width: panelDrag.width,
+          height: panelDrag.height
+        }, { realtime: true })
+      }
+
+      const finishPanelDrag = (event) => {
+        if (!panelDrag || panelDrag.pointerId !== event.pointerId) return
+        panelDrag = null
+        delete livePanel.dataset.dragging
+        syncCodeMaterial({ force: true })
+        const geometry = persistCurrentPanelGeometry()
+        recordInterfaceEvent('panel-drag-end', { geometry })
+      }
+
+      dragTargets.forEach((target) => {
+        target.addEventListener('pointerdown', (event) => startPanelDrag(event, target))
+        target.addEventListener('pointermove', movePanelDrag)
+        target.addEventListener('pointerup', finishPanelDrag)
+        target.addEventListener('pointercancel', finishPanelDrag)
+      })
+    }
+
+    const geometryFromResizeGesture = (gesture, event) => {
+      const edge = String(gesture.edge ?? '')
+      const dx = event.clientX - gesture.startX
+      const dy = event.clientY - gesture.startY
+      const { viewportWidth, viewportHeight, minWidth, minHeight, maxWidth, maxHeight } = getPanelGeometryConstraints()
+      const right = gesture.left + gesture.width
+      const bottom = gesture.top + gesture.height
+      let left = gesture.left
+      let top = gesture.top
+      let width = gesture.width
+      let height = gesture.height
+
+      if (edge.includes('e')) {
+        const maxWidthAtLeft = Math.max(minWidth, Math.min(maxWidth, viewportWidth - gesture.left - 8))
+        width = Math.min(maxWidthAtLeft, Math.max(minWidth, gesture.width + dx))
+      }
+
+      if (edge.includes('w')) {
+        const maxWidthAtRight = Math.max(minWidth, Math.min(maxWidth, right - 8))
+        width = Math.min(maxWidthAtRight, Math.max(minWidth, gesture.width - dx))
+        left = right - width
+      }
+
+      if (edge.includes('s')) {
+        const maxHeightAtTop = Math.max(minHeight, Math.min(maxHeight, viewportHeight - gesture.top - 8))
+        height = Math.min(maxHeightAtTop, Math.max(minHeight, gesture.height + dy))
+      }
+
+      if (edge.includes('n')) {
+        const maxHeightAtBottom = Math.max(minHeight, Math.min(maxHeight, bottom - 8))
+        height = Math.min(maxHeightAtBottom, Math.max(minHeight, gesture.height - dy))
+        top = bottom - height
+      }
+
+      return { left, top, width, height }
+    }
+
+    if (livePanel && liveEditorShell && liveResizeHandles.length > 0) {
+      const finishPanelResize = (event) => {
+        if (!panelResize || panelResize.pointerId !== event.pointerId) return
+        panelResize = null
+        delete livePanel.dataset.resizing
+        syncCodeMaterial({ force: true })
+        const geometry = persistCurrentPanelGeometry()
+        recordInterfaceEvent('panel-resize-end', { geometry })
+      }
+
+      liveResizeHandles.forEach((handle) => {
+        handle.addEventListener('pointerdown', (event) => {
+          if (event.button !== 0) return
+          if (livePanel.dataset.layout !== 'floating') return
+          const rect = liveEditorShell.getBoundingClientRect()
+          panelResize = {
+            pointerId: event.pointerId,
+            edge: handle.dataset.edge,
+            startX: event.clientX,
+            startY: event.clientY,
+            left: rect.left,
+            top: rect.top,
+            width: rect.width,
+            height: rect.height
+          }
+          livePanel.dataset.resizing = 'true'
+          handle.setPointerCapture(event.pointerId)
+          recordInterfaceEvent('panel-resize-start', {
+            edge: handle.dataset.edge,
+            geometry: { mode: 'floating', left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+            pointer: { x: event.clientX, y: event.clientY }
+          })
+          event.preventDefault()
+        })
+
+        handle.addEventListener('pointermove', (event) => {
+          if (!panelResize || panelResize.pointerId !== event.pointerId) return
+          applyPanelGeometry(geometryFromResizeGesture(panelResize, event), { realtime: true })
+        })
+
+        handle.addEventListener('pointerup', finishPanelResize)
+        handle.addEventListener('pointercancel', finishPanelResize)
+      })
+    }
+
+    if (livePanel && liveEditorShell && typeof ResizeObserver !== 'undefined') {
+      const livePanelResizeObserver = new ResizeObserver(() => {
+        if (livePanel.hidden || panelDrag || panelResize) return
+        window.clearTimeout(panelResizeSaveTimer)
+        panelResizeSaveTimer = window.setTimeout(() => {
+          persistCurrentPanelGeometry()
+        }, 120)
+      })
+      livePanelResizeObserver.observe(liveEditorShell)
+    }
+
+    window.addEventListener('resize', () => {
+      if (canvasDisplayMode === 'auto') {
+        synth.setCanvasFullscreen()
+      }
+      if (!livePanel || livePanel.hidden) return
+      const geometry = readCurrentPanelGeometry()
+      if (!geometry) return
+      if (geometry.mode === 'fullscreen') applyFullscreenPanelGeometry({ persist: true })
+      else applyPanelGeometry(geometry, { persist: true })
+    })
+
+    const sanitizeOutputBaseName = (value) => String(value ?? '')
+      .replace(/[^A-Za-z0-9._-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+
+    const defaultOutputBaseName = () => {
+      const now = new Date()
+      const pad = (n) => String(n).padStart(2, '0')
+      const base = [
+        now.getFullYear(),
+        pad(now.getMonth() + 1),
+        pad(now.getDate()),
+        '-',
+        pad(now.getHours()),
+        pad(now.getMinutes()),
+        pad(now.getSeconds())
+      ].join('')
+      return `hydra-capture-${base}`
+    }
+
+    const loadCaptureBaseName = () => {
+      try {
+        const saved = window.localStorage.getItem(captureBaseNameStorageKey)
+        const normalized = sanitizeOutputBaseName(saved)
+        return normalized || defaultOutputBaseName()
+      } catch {
+        return defaultOutputBaseName()
+      }
+    }
+
+    const saveCaptureBaseName = (value) => {
+      try {
+        window.localStorage.setItem(captureBaseNameStorageKey, value)
+      } catch {
+        // Ignore local storage failures in restricted contexts.
+      }
+    }
+
+    const clampCaptureDurationSeconds = (value) => Math.min(maxCaptureDurationSeconds, Math.max(minCaptureDurationSeconds, value))
+
+    const formatDurationSeconds = (value) => Number.parseFloat(value.toFixed(2)).toString()
+
+    const normalizeCaptureDurationSeconds = (value, fallback = defaultCaptureDurationSeconds) => {
+      if (!Number.isFinite(value) || value <= 0) return fallback
+      return clampCaptureDurationSeconds(value)
+    }
+
+    const readCaptureDurationSeconds = () => {
+      if (!captureDurationInput) return defaultCaptureDurationSeconds
+      const numeric = Number(captureDurationInput.value)
+      return normalizeCaptureDurationSeconds(numeric)
+    }
+
+    const setCaptureDurationSeconds = (value) => {
+      const normalized = normalizeCaptureDurationSeconds(value)
+      if (captureDurationInput) {
+        captureDurationInput.value = formatDurationSeconds(normalized)
+      }
+      try {
+        window.localStorage.setItem(captureDurationStorageKey, String(normalized))
+      } catch {
+        // Ignore local storage failures in restricted contexts.
+      }
+      return normalized
+    }
+
+    const loadCaptureDurationSeconds = () => {
+      try {
+        const saved = window.localStorage.getItem(captureDurationStorageKey)
+        const parsed = Number(saved)
+        return normalizeCaptureDurationSeconds(parsed)
+      } catch {
+        return defaultCaptureDurationSeconds
+      }
+    }
+
+    const normalizeCaptureFps = (value, fallback = defaultCaptureFps) => {
+      if (value === null || value === undefined || String(value).trim() === '') return fallback
+      return clampInteger(value, minCaptureFps, maxCaptureFps, fallback)
+    }
+
+    const readCaptureFps = () => normalizeCaptureFps(captureFpsInput?.value)
+
+    const setCaptureFps = (value) => {
+      const normalized = normalizeCaptureFps(value)
+      if (captureFpsInput) captureFpsInput.value = String(normalized)
+      try {
+        window.localStorage.setItem(captureFpsStorageKey, String(normalized))
+      } catch {
+        // Ignore local storage failures in restricted contexts.
+      }
+      return normalized
+    }
+
+    const loadCaptureFps = () => {
+      try {
+        const saved = window.localStorage.getItem(captureFpsStorageKey)
+        if (saved !== null && Number(saved) < minCaptureFps) return defaultCaptureFps
+        return normalizeCaptureFps(saved)
+      } catch {
+        return defaultCaptureFps
+      }
+    }
+
+    const normalizeResolutionMode = (value) => {
+      const mode = String(value ?? 'canvas')
+      return mode === '720p' || mode === '1080p' || mode === 'custom' ? mode : 'canvas'
+    }
+
+    const setCustomResolutionVisible = () => {
+      if (!customResolutionRow || !captureResolutionSelect) return
+      customResolutionRow.hidden = normalizeResolutionMode(captureResolutionSelect.value) !== 'custom'
+    }
+
+    const setCaptureResolutionMode = (value) => {
+      const mode = normalizeResolutionMode(value)
+      if (captureResolutionSelect) captureResolutionSelect.value = mode
+      setCustomResolutionVisible()
+      try {
+        window.localStorage.setItem(captureResolutionStorageKey, mode)
+      } catch {
+        // Ignore local storage failures in restricted contexts.
+      }
+      return mode
+    }
+
+    const loadCaptureResolutionMode = () => {
+      try {
+        return normalizeResolutionMode(window.localStorage.getItem(captureResolutionStorageKey))
+      } catch {
+        return 'canvas'
+      }
+    }
+
+    const normalizeCaptureDimension = (value, fallback, max = 7680) => {
+      const normalized = clampInteger(value, 16, max, fallback)
+      return Math.max(16, normalized % 2 === 0 ? normalized : normalized - 1)
+    }
+
+    const setCaptureCustomSize = ({ width, height }) => {
+      const normalizedWidth = normalizeCaptureDimension(width, 1280)
+      const normalizedHeight = normalizeCaptureDimension(height, 720, 4320)
+      if (captureWidthInput) captureWidthInput.value = String(normalizedWidth)
+      if (captureHeightInput) captureHeightInput.value = String(normalizedHeight)
+      try {
+        window.localStorage.setItem(captureWidthStorageKey, String(normalizedWidth))
+        window.localStorage.setItem(captureHeightStorageKey, String(normalizedHeight))
+      } catch {
+        // Ignore local storage failures in restricted contexts.
+      }
+      return { width: normalizedWidth, height: normalizedHeight }
+    }
+
+    const loadCaptureCustomSize = () => {
+      try {
+        return setCaptureCustomSize({
+          width: window.localStorage.getItem(captureWidthStorageKey),
+          height: window.localStorage.getItem(captureHeightStorageKey)
+        })
+      } catch {
+        return setCaptureCustomSize({ width: 1280, height: 720 })
+      }
+    }
+
+    const readCaptureDimensions = () => {
+      const mode = normalizeResolutionMode(captureResolutionSelect?.value)
+      if (mode === 'custom') {
+        return setCaptureCustomSize({
+          width: captureWidthInput?.value,
+          height: captureHeightInput?.value
+        })
+      }
+      return resolutionPresets[mode] ?? {}
+    }
+
+    const downloadBlob = ({ blob, fileName }) => {
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = fileName
+      link.style.display = 'none'
+      document.body.appendChild(link)
+      link.click()
+      // Revoke asynchronously to avoid truncating downloads in some Chromium builds.
+      window.setTimeout(() => {
+        URL.revokeObjectURL(url)
+        link.remove()
+      }, 30_000)
+    }
+
+    const interfaceRecordingKind = 'hydra-interface-score'
+    const interfaceRecordingVersion = 2
+    const legacyInterfaceRecordingKind = 'hydra-interface-performance'
+    const interfacePointerSampleMs = 24
+    const interfaceCodeKeyframeIntervalMs = 10_000
+    let interfaceRecording = null
+    let lastInterfaceRecording = null
+    let interfacePlaybackActive = false
+    let interfacePlaybackToken = 0
+    let lastInterfacePointerSampleAt = -Infinity
+    let lastInterfaceStatusAt = -Infinity
+    const interfacePlaybackTimers = new Set()
+
+    const roundInterfaceMetric = (value) => {
+      const numeric = Number(value)
+      return Math.round(Number.isFinite(numeric) ? numeric : 0)
+    }
+
+    const compactInterfaceFloat = (value, precision = 3) => {
+      const numeric = Number(value)
+      if (!Number.isFinite(numeric)) return 0
+      return Number.parseFloat(numeric.toFixed(precision))
+    }
+
+    const cloneInterfaceValue = (value) => {
+      if (value === undefined) return undefined
+      return JSON.parse(JSON.stringify(value))
+    }
+
+    const setInterfaceRecordStatus = (message, state = '') => {
+      if (!interfaceRecordStatus) return
+      interfaceRecordStatus.textContent = message
+      interfaceRecordStatus.hidden = !message
+      if (state) interfaceRecordStatus.dataset.state = state
+      else delete interfaceRecordStatus.dataset.state
+    }
+
+    const readCanvasState = () => {
+      const canvas = runtime.host?.canvas ?? document.querySelector('canvas')
+      if (!(canvas instanceof HTMLCanvasElement)) return null
+      const rect = canvas.getBoundingClientRect()
+      const display = getCanvasDisplay()
+      return {
+        mode: display.mode,
+        width: display.width,
+        height: display.height,
+        left: roundInterfaceMetric(rect.left),
+        top: roundInterfaceMetric(rect.top),
+        displayWidth: roundInterfaceMetric(display.displayWidth),
+        displayHeight: roundInterfaceMetric(display.displayHeight)
+      }
+    }
+
+    const readInterfaceState = () => ({
+      code: readEditorCode(),
+      selection: readEditorSelection(),
+      panel: readCurrentPanelGeometry(),
+      codeVisible: livePanel ? !livePanel.hidden : false,
+      ui: readUiSettingsFromControls(),
+      codeMaterial: {
+        sourceName: activeCodeMaterialSourceName
+      },
+      capture: {
+        duration: readCaptureDurationSeconds(),
+        fps: readCaptureFps(),
+        resolution: normalizeResolutionMode(captureResolutionSelect?.value),
+        dimensions: readCaptureDimensions()
+      },
+      viewport: {
+        width: window.innerWidth,
+        height: window.innerHeight,
+        devicePixelRatio: window.devicePixelRatio || 1
+      },
+      canvas: readCanvasState()
+    })
+
+    const createInterfaceDictionaries = () => ({
+      actions: [],
+      targets: [],
+      pointerTypes: [],
+      phases: ['down', 'move', 'up', 'cancel'],
+      canvasModes: [],
+      runScopes: [],
+      runLabels: [],
+      statuses: [],
+      codeMaterialSources: [],
+      resolutionModes: []
+    })
+
+    const createInterfaceTracks = () => ({
+      code: [],
+      canvas: [],
+      selection: [],
+      pointer: {
+        origin: null,
+        samples: []
+      },
+      panel: [],
+      visibility: [],
+      ui: [],
+      codeMaterial: [],
+      capture: [],
+      actions: [],
+      runs: []
+    })
+
+    const internInterfaceValue = (recording, dictionaryName, value) => {
+      const dictionary = recording?.dictionaries?.[dictionaryName]
+      if (!Array.isArray(dictionary)) return -1
+      const normalized = String(value ?? '')
+      let index = dictionary.indexOf(normalized)
+      if (index === -1) {
+        dictionary.push(normalized)
+        index = dictionary.length - 1
+      }
+      return index
+    }
+
+    const lookupInterfaceDictionary = (recording, dictionaryName, index, fallback = '') => {
+      const dictionary = recording?.dictionaries?.[dictionaryName]
+      if (!Array.isArray(dictionary)) return fallback
+      return dictionary[Number(index)] ?? fallback
+    }
+
+    const compactInterfaceSelection = (selection) => {
+      if (Array.isArray(selection)) {
+        return [
+          roundInterfaceMetric(selection[0]),
+          roundInterfaceMetric(selection[1] ?? selection[0])
+        ]
+      }
+      if (!selection || typeof selection !== 'object') return [0, 0]
+      const anchor = selection.anchor ?? selection.from ?? 0
+      const head = selection.head ?? selection.to ?? anchor
+      return [roundInterfaceMetric(anchor), roundInterfaceMetric(head)]
+    }
+
+    const expandInterfaceSelection = (selection) => {
+      const compact = compactInterfaceSelection(selection)
+      return {
+        anchor: compact[0],
+        head: compact[1],
+        from: Math.min(compact[0], compact[1]),
+        to: Math.max(compact[0], compact[1])
+      }
+    }
+
+    const compactInterfacePanel = (geometry) => {
+      if (!geometry || geometry.mode === 'fullscreen') return [0]
+      return [
+        1,
+        roundInterfaceMetric(geometry.left),
+        roundInterfaceMetric(geometry.top),
+        roundInterfaceMetric(geometry.width),
+        roundInterfaceMetric(geometry.height)
+      ]
+    }
+
+    const expandInterfacePanel = (panel) => {
+      if (!Array.isArray(panel)) {
+        if (panel?.mode === 'floating') return panel
+        return { mode: 'fullscreen' }
+      }
+      if (Number(panel[0]) !== 1) return { mode: 'fullscreen' }
+      return {
+        mode: 'floating',
+        left: Number(panel[1]) || 0,
+        top: Number(panel[2]) || 0,
+        width: Number(panel[3]) || 0,
+        height: Number(panel[4]) || 0
+      }
+    }
+
+    const compactInterfaceUi = (settings = {}) => [
+      clampInteger(settings.editorFontSize, 10, 24, 14),
+      compactInterfaceFloat(clampNumber(settings.editorOpacity, 0.35, 1, 1), 2)
+    ]
+
+    const expandInterfaceUi = (settings) => {
+      if (!Array.isArray(settings)) return settings && typeof settings === 'object' ? settings : {}
+      return {
+        editorFontSize: settings[0],
+        editorOpacity: settings[1]
+      }
+    }
+
+    const compactInterfaceCapture = (capture = {}, recording = null) => {
+      const dimensions = capture.dimensions ?? {}
+      const resolution = normalizeResolutionMode(capture.resolution)
+      const resolutionId = recording ? internInterfaceValue(recording, 'resolutionModes', resolution) : resolution
+      return [
+        compactInterfaceFloat(capture.duration ?? defaultCaptureDurationSeconds, 2),
+        normalizeCaptureFps(capture.fps),
+        resolutionId,
+        roundInterfaceMetric(dimensions.width ?? 0),
+        roundInterfaceMetric(dimensions.height ?? 0)
+      ]
+    }
+
+    const expandInterfaceCapture = (capture, recording = null) => {
+      if (!Array.isArray(capture)) return capture && typeof capture === 'object' ? capture : null
+      const rawResolution = typeof capture[2] === 'number'
+        ? lookupInterfaceDictionary(recording, 'resolutionModes', capture[2], 'canvas')
+        : capture[2]
+      return {
+        duration: Number(capture[0]) || defaultCaptureDurationSeconds,
+        fps: normalizeCaptureFps(capture[1]),
+        resolution: normalizeResolutionMode(rawResolution),
+        dimensions: {
+          width: Number(capture[3]) || undefined,
+          height: Number(capture[4]) || undefined
+        }
+      }
+    }
+
+    const compactInterfaceViewport = (viewport = {}) => [
+      roundInterfaceMetric(viewport.width ?? window.innerWidth),
+      roundInterfaceMetric(viewport.height ?? window.innerHeight),
+      compactInterfaceFloat(viewport.devicePixelRatio ?? window.devicePixelRatio ?? 1, 3)
+    ]
+
+    const compactInterfaceCanvas = (canvas, recording = null) => {
+      if (!canvas) return null
+      const mode = String(canvas.mode ?? 'auto')
+      const modeValue = recording ? internInterfaceValue(recording, 'canvasModes', mode) : mode
+      return [
+        modeValue,
+        roundInterfaceMetric(canvas.width),
+        roundInterfaceMetric(canvas.height),
+        roundInterfaceMetric(canvas.left),
+        roundInterfaceMetric(canvas.top),
+        roundInterfaceMetric(canvas.displayWidth),
+        roundInterfaceMetric(canvas.displayHeight)
+      ]
+    }
+
+    const expandInterfaceCanvas = (canvas, recording = null) => {
+      if (!Array.isArray(canvas)) return canvas && typeof canvas === 'object' ? canvas : null
+      const rawMode = typeof canvas[0] === 'number'
+        ? lookupInterfaceDictionary(recording, 'canvasModes', canvas[0], 'auto')
+        : canvas[0]
+      return {
+        mode: String(rawMode ?? 'auto'),
+        width: Number(canvas[1]) || 2,
+        height: Number(canvas[2]) || 2,
+        left: Number(canvas[3]) || 0,
+        top: Number(canvas[4]) || 0,
+        displayWidth: Number(canvas[5]) || 0,
+        displayHeight: Number(canvas[6]) || 0
+      }
+    }
+
+    const compactInterfaceState = (state, recording = null) => ({
+      code: String(state?.code ?? ''),
+      selection: compactInterfaceSelection(state?.selection),
+      panel: compactInterfacePanel(state?.panel),
+      codeVisible: state?.codeVisible === false ? 0 : 1,
+      ui: compactInterfaceUi(state?.ui),
+      codeMaterial: state?.codeMaterial?.sourceName ?? null,
+      capture: compactInterfaceCapture(state?.capture, recording),
+      viewport: compactInterfaceViewport(state?.viewport),
+      canvas: compactInterfaceCanvas(state?.canvas, recording)
+    })
+
+    const createInterfaceScore = (initialState, options = {}) => {
+      const dictionaries = createInterfaceDictionaries()
+      const score = {
+        kind: interfaceRecordingKind,
+        version: interfaceRecordingVersion,
+        clock: {
+          unit: 'ms',
+          source: 'performance.now',
+          origin: 'recording-start'
+        },
+        createdAt: new Date().toISOString(),
+        durationMs: 0,
+        label: options.label ? String(options.label) : undefined,
+        initial: null,
+        dictionaries,
+        tracks: createInterfaceTracks(),
+        keyframes: {
+          code: [],
+          panel: []
+        },
+        stats: {
+          events: 0,
+          tracks: {}
+        },
+        startedAt: performance.now(),
+        _lastCodeKeyframeAt: 0,
+        _pointerLast: null
+      }
+      score.initial = compactInterfaceState(initialState, score)
+      score.keyframes.code.push([0, score.initial.code])
+      score.keyframes.panel.push([0, score.initial.panel])
+      return score
+    }
+
+    const interfaceRecordingElapsedMs = (recording = interfaceRecording) => {
+      if (!recording) return 0
+      if (recording.startedAt) return Math.max(0, Math.round(performance.now() - recording.startedAt))
+      return Math.max(0, Math.round(Number(recording.durationMs ?? 0)))
+    }
+
+    const normalizeCodeOps = (ops = []) => {
+      if (!Array.isArray(ops)) return []
+      return ops
+        .filter((op) => Array.isArray(op) && op.length >= 3)
+        .map((op) => [
+          Math.max(0, roundInterfaceMetric(op[0])),
+          Math.max(0, roundInterfaceMetric(op[1])),
+          String(op[2] ?? '')
+        ])
+    }
+
+    const sameCompactArray = (left, right) => (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => value === right[index])
+    )
+
+    const appendSelectionTrack = (recording, t, selection) => {
+      const compact = compactInterfaceSelection(selection)
+      const last = recording.tracks.selection[recording.tracks.selection.length - 1]
+      if (last && last[1] === compact[0] && last[2] === compact[1]) return false
+      recording.tracks.selection.push([t, compact[0], compact[1]])
+      return true
+    }
+
+    const appendPanelTrack = (recording, t, geometry) => {
+      const compact = compactInterfacePanel(geometry)
+      const last = recording.tracks.panel[recording.tracks.panel.length - 1]
+      if (last && sameCompactArray(last.slice(1), compact)) return false
+      recording.tracks.panel.push([t, ...compact])
+      return true
+    }
+
+    const appendCanvasTrack = (recording, t, canvas) => {
+      const compact = compactInterfaceCanvas(canvas, recording)
+      if (!compact) return false
+      const last = recording.tracks.canvas[recording.tracks.canvas.length - 1]
+      if (last && sameCompactArray(last.slice(1), compact)) return false
+      recording.tracks.canvas.push([t, ...compact])
+      return true
+    }
+
+    const appendPointerTrack = (recording, t, payload = {}) => {
+      const x = roundInterfaceMetric(payload.x)
+      const y = roundInterfaceMetric(payload.y)
+      const phaseId = Math.max(0, recording.dictionaries.phases.indexOf(String(payload.phase ?? 'move')))
+      const pointerTypeId = internInterfaceValue(recording, 'pointerTypes', payload.pointerType ?? 'mouse')
+      const targetId = internInterfaceValue(recording, 'targets', payload.target ?? '')
+      const buttons = Math.max(0, roundInterfaceMetric(payload.buttons ?? 0))
+      const previous = recording._pointerLast
+
+      if (!recording.tracks.pointer.origin) {
+        recording.tracks.pointer.origin = [x, y]
+        recording.tracks.pointer.samples.push([t, 0, 0, buttons, phaseId, pointerTypeId, targetId])
+      } else {
+        recording.tracks.pointer.samples.push([
+          Math.max(0, t - (previous?.t ?? 0)),
+          x - (previous?.x ?? x),
+          y - (previous?.y ?? y),
+          buttons,
+          phaseId,
+          pointerTypeId,
+          targetId
+        ])
+      }
+
+      recording._pointerLast = { t, x, y }
+      return true
+    }
+
+    const appendActionTrack = (recording, t, payload = {}) => {
+      const actionId = internInterfaceValue(recording, 'actions', payload.action ?? payload.type ?? 'event')
+      const targetId = payload.target === undefined ? -1 : internInterfaceValue(recording, 'targets', payload.target)
+      const extra = cloneInterfaceValue(payload)
+      delete extra.action
+      delete extra.type
+      delete extra.target
+      const entry = [t, actionId, targetId]
+      if (Object.keys(extra).length > 0) entry.push(extra)
+      recording.tracks.actions.push(entry)
+      return true
+    }
+
+    const appendRunTrack = (recording, t, phase, payload = {}) => {
+      const entry = {
+        t,
+        phase,
+        runId: payload.runId === undefined ? null : roundInterfaceMetric(payload.runId),
+        source: payload.source === undefined ? null : internInterfaceValue(recording, 'actions', `run:${payload.source}`),
+        scope: internInterfaceValue(recording, 'runScopes', payload.scope ?? ''),
+        label: internInterfaceValue(recording, 'runLabels', payload.scopeLabel ?? ''),
+        range: payload.range ? [
+          roundInterfaceMetric(payload.range.from ?? 0),
+          roundInterfaceMetric(payload.range.to ?? payload.range.from ?? 0)
+        ] : null
+      }
+      if (payload.code !== undefined) entry.code = String(payload.code)
+      if (payload.status !== undefined) entry.status = internInterfaceValue(recording, 'statuses', payload.status)
+      if (payload.blockIndex !== undefined) entry.blockIndex = roundInterfaceMetric(payload.blockIndex)
+      if (payload.blockCount !== undefined) entry.blockCount = roundInterfaceMetric(payload.blockCount)
+      if (payload.executedBlocks !== undefined) entry.executed = roundInterfaceMetric(payload.executedBlocks)
+      if (payload.skippedBlocks !== undefined) entry.skipped = roundInterfaceMetric(payload.skippedBlocks)
+      if (payload.message !== undefined) entry.message = String(payload.message)
+      recording.tracks.runs.push(entry)
+      return true
+    }
+
+    const maybeAppendCodeKeyframe = (recording, t) => {
+      if (t - (recording._lastCodeKeyframeAt ?? 0) < interfaceCodeKeyframeIntervalMs) return
+      recording.keyframes.code.push([t, readEditorCode()])
+      recording._lastCodeKeyframeAt = t
+    }
+
+    const interfaceRecordingTrackCounts = (recording) => ({
+      code: recording?.tracks?.code?.length ?? 0,
+      canvas: recording?.tracks?.canvas?.length ?? 0,
+      selection: recording?.tracks?.selection?.length ?? 0,
+      pointer: recording?.tracks?.pointer?.samples?.length ?? 0,
+      panel: recording?.tracks?.panel?.length ?? 0,
+      visibility: recording?.tracks?.visibility?.length ?? 0,
+      ui: recording?.tracks?.ui?.length ?? 0,
+      codeMaterial: recording?.tracks?.codeMaterial?.length ?? 0,
+      capture: recording?.tracks?.capture?.length ?? 0,
+      actions: recording?.tracks?.actions?.length ?? 0,
+      runs: recording?.tracks?.runs?.length ?? 0
+    })
+
+    const interfaceRecordingEventCount = (recording) => (
+      Object.values(interfaceRecordingTrackCounts(recording)).reduce((sum, count) => sum + count, 0)
+    )
+
+    const serializeInterfaceRecording = (recording = interfaceRecording) => {
+      if (!recording) return null
+      const durationMs = interfaceRecordingElapsedMs(recording)
+      const tracks = {
+        code: recording.tracks.code,
+        canvas: recording.tracks.canvas,
+        selection: recording.tracks.selection,
+        pointer: {
+          origin: recording.tracks.pointer.origin,
+          samples: recording.tracks.pointer.samples
+        },
+        panel: recording.tracks.panel,
+        visibility: recording.tracks.visibility,
+        ui: recording.tracks.ui,
+        codeMaterial: recording.tracks.codeMaterial,
+        capture: recording.tracks.capture,
+        actions: recording.tracks.actions,
+        runs: recording.tracks.runs
+      }
+      const counts = interfaceRecordingTrackCounts({ tracks })
+      const serialized = {
+        kind: interfaceRecordingKind,
+        version: interfaceRecordingVersion,
+        clock: recording.clock,
+        createdAt: recording.createdAt,
+        durationMs,
+        initial: recording.initial,
+        dictionaries: recording.dictionaries,
+        tracks,
+        keyframes: recording.keyframes,
+        stats: {
+          events: Object.values(counts).reduce((sum, count) => sum + count, 0),
+          tracks: counts
+        }
+      }
+      if (recording.label) serialized.label = recording.label
+      return cloneInterfaceValue(serialized)
+    }
+
+    const updateInterfaceRecorderControls = () => {
+      const recordingActive = Boolean(interfaceRecording)
+      if (interfaceRecordToggle) {
+        interfaceRecordToggle.textContent = recordingActive ? 'stop interface' : 'record interface'
+        interfaceRecordToggle.disabled = interfacePlaybackActive
+        if (recordingActive) interfaceRecordToggle.dataset.state = 'active'
+        else delete interfaceRecordToggle.dataset.state
+      }
+      if (interfacePlaybackButton) {
+        interfacePlaybackButton.textContent = interfacePlaybackActive ? 'playing interface' : 'play interface'
+        interfacePlaybackButton.disabled = recordingActive || interfacePlaybackActive || !lastInterfaceRecording
+      }
+    }
+
+    const recordInterfaceEvent = (type, payload = {}) => {
+      if (!interfaceRecording || interfacePlaybackActive) return null
+      const now = performance.now()
+      const t = interfaceRecordingElapsedMs(interfaceRecording)
+      let recorded = false
+
+      if (type === 'editor-change') {
+        const ops = normalizeCodeOps(payload.ops)
+        if (ops.length > 0) {
+          interfaceRecording.tracks.code.push([t, ops])
+          maybeAppendCodeKeyframe(interfaceRecording, t)
+          recorded = true
+        } else if (payload.code !== undefined) {
+          interfaceRecording.tracks.code.push([t, [[0, readEditorCode().length, String(payload.code)]]])
+          maybeAppendCodeKeyframe(interfaceRecording, t)
+          recorded = true
+        }
+        if (payload.selection) recorded = appendSelectionTrack(interfaceRecording, t, payload.selection) || recorded
+      } else if (type === 'editor-selection') {
+        recorded = appendSelectionTrack(interfaceRecording, t, payload.selection)
+      } else if (type === 'canvas-display') {
+        recorded = appendCanvasTrack(interfaceRecording, t, payload.state ?? readCanvasState())
+      } else if (type === 'panel-geometry') {
+        recorded = appendPanelTrack(interfaceRecording, t, payload.geometry)
+      } else if (type === 'code-visible') {
+        const visible = payload.visible === false ? 0 : 1
+        const last = interfaceRecording.tracks.visibility[interfaceRecording.tracks.visibility.length - 1]
+        if (!last || last[1] !== visible) {
+          interfaceRecording.tracks.visibility.push([t, visible])
+          recorded = true
+        }
+      } else if (type === 'ui-settings') {
+        const compact = compactInterfaceUi(payload.settings)
+        const last = interfaceRecording.tracks.ui[interfaceRecording.tracks.ui.length - 1]
+        if (!last || !sameCompactArray(last.slice(1), compact)) {
+          interfaceRecording.tracks.ui.push([t, ...compact])
+          recorded = true
+        }
+      } else if (type === 'code-material') {
+        const sourceId = internInterfaceValue(interfaceRecording, 'codeMaterialSources', payload.sourceName ?? 'off')
+        const last = interfaceRecording.tracks.codeMaterial[interfaceRecording.tracks.codeMaterial.length - 1]
+        if (!last || last[1] !== sourceId) {
+          interfaceRecording.tracks.codeMaterial.push([t, sourceId])
+          recorded = true
+        }
+      } else if (type === 'capture-settings') {
+        const compact = compactInterfaceCapture(payload, interfaceRecording)
+        const last = interfaceRecording.tracks.capture[interfaceRecording.tracks.capture.length - 1]
+        if (!last || !sameCompactArray(last.slice(1), compact)) {
+          interfaceRecording.tracks.capture.push([t, ...compact])
+          recorded = true
+        }
+      } else if (type === 'pointer') {
+        recorded = appendPointerTrack(interfaceRecording, t, payload)
+      } else if (type === 'run-start') {
+        recorded = appendRunTrack(interfaceRecording, t, 'start', payload)
+      } else if (type === 'run-end') {
+        recorded = appendRunTrack(interfaceRecording, t, 'end', payload)
+      } else {
+        recorded = appendActionTrack(interfaceRecording, t, { ...payload, type })
+      }
+
+      if (recorded && (type !== 'pointer' || now - lastInterfaceStatusAt >= 250)) {
+        lastInterfaceStatusAt = now
+        const eventCount = interfaceRecordingEventCount(interfaceRecording)
+        setInterfaceRecordStatus(`${eventCount} event(s), ${(t / 1000).toFixed(1)}s`, 'ok')
+      }
+      return recorded ? { t, type } : null
+    }
+
+    recordCanvasDisplayChange = (reason = 'canvas') => {
+      recordInterfaceEvent('canvas-display', {
+        reason,
+        state: readCanvasState()
+      })
+    }
+
+    const normalizeInterfaceRecording = (recording) => {
+      if (!recording || typeof recording !== 'object') return null
+      if (recording.kind && recording.kind !== interfaceRecordingKind && recording.kind !== legacyInterfaceRecordingKind) return null
+      if (recording.kind === legacyInterfaceRecordingKind || Array.isArray(recording.events)) {
+        throw new Error('Legacy interface recordings must be re-recorded with score format v2.')
+      }
+      const normalized = cloneInterfaceValue(recording)
+      normalized.kind = interfaceRecordingKind
+      normalized.version = interfaceRecordingVersion
+      normalized.clock = normalized.clock ?? { unit: 'ms', source: 'performance.now', origin: 'recording-start' }
+      normalized.durationMs = Math.max(0, roundInterfaceMetric(normalized.durationMs ?? 0))
+      normalized.initial = normalized.initial ?? compactInterfaceState({})
+      normalized.dictionaries = {
+        ...createInterfaceDictionaries(),
+        ...(normalized.dictionaries ?? {})
+      }
+      normalized.tracks = {
+        ...createInterfaceTracks(),
+        ...(normalized.tracks ?? {})
+      }
+      normalized.tracks.pointer = {
+        origin: normalized.tracks.pointer?.origin ?? null,
+        samples: Array.isArray(normalized.tracks.pointer?.samples) ? normalized.tracks.pointer.samples : []
+      }
+      normalized.keyframes = {
+        code: Array.isArray(normalized.keyframes?.code) ? normalized.keyframes.code : [[0, normalized.initial.code ?? '']],
+        panel: Array.isArray(normalized.keyframes?.panel) ? normalized.keyframes.panel : [[0, normalized.initial.panel ?? [0]]]
+      }
+
+      for (const name of ['code', 'canvas', 'selection', 'panel', 'visibility', 'ui', 'codeMaterial', 'capture', 'actions']) {
+        if (!Array.isArray(normalized.tracks[name])) normalized.tracks[name] = []
+        normalized.tracks[name].sort((a, b) => Number(a?.[0] ?? 0) - Number(b?.[0] ?? 0))
+      }
+      if (!Array.isArray(normalized.tracks.runs)) normalized.tracks.runs = []
+      normalized.tracks.runs.sort((a, b) => Number(a?.t ?? 0) - Number(b?.t ?? 0))
+      normalized.stats = {
+        events: interfaceRecordingEventCount(normalized),
+        tracks: interfaceRecordingTrackCounts(normalized)
+      }
+      return normalized
+    }
+
+    const interfaceRecordingFileName = (recording, options = {}) => {
+      const fallbackBase = defaultOutputBaseName().replace(/^hydra-capture/, 'hydra-interface')
+      const rawBaseName = options.outputBaseName ?? recording?.fileBaseName ?? fallbackBase
+      const baseName = sanitizeOutputBaseName(rawBaseName) || fallbackBase
+      if (baseName.toLowerCase().endsWith('.hydra-score.json')) return baseName
+      if (baseName.toLowerCase().endsWith('.json')) return baseName
+      return `${baseName}.hydra-score.json`
+    }
+
+    const downloadInterfaceRecording = (recording = lastInterfaceRecording, options = {}) => {
+      const normalized = normalizeInterfaceRecording(recording)
+      if (!normalized) throw new Error('No interface recording is available to save.')
+      const fileName = interfaceRecordingFileName(normalized, options)
+      const spacing = options.pretty === true ? 2 : 0
+      const blob = new Blob([`${JSON.stringify(normalized, null, spacing)}\n`], {
+        type: 'application/json'
+      })
+      downloadBlob({ blob, fileName })
+      setInterfaceRecordStatus(`Saved ${fileName}.`, 'ok')
+      return { fileName, mimeType: 'application/json', recording: normalized }
+    }
+
+    const startInterfaceRecording = (options = {}) => {
+      if (interfaceRecording) return serializeInterfaceRecording()
+      stopInterfacePlayback({ silent: true })
+      interfaceRecording = createInterfaceScore(readInterfaceState(), options)
+      lastInterfacePointerSampleAt = -Infinity
+      lastInterfaceStatusAt = -Infinity
+      updateInterfaceRecorderControls()
+      setInterfaceRecordStatus('recording interface score...', 'ok')
+      setCaptureStatus('Recording interface performance...', 'ok')
+      recordInterfaceEvent('recording-start', {
+        action: 'recording-start',
+        label: options.label ? String(options.label) : undefined
+      })
+      return serializeInterfaceRecording()
+    }
+
+    const stopInterfaceRecording = (options = {}) => {
+      if (!interfaceRecording) return lastInterfaceRecording
+      recordInterfaceEvent('recording-stop', {
+        action: 'recording-stop',
+        eventCount: interfaceRecordingEventCount(interfaceRecording)
+      })
+      const finalized = serializeInterfaceRecording(interfaceRecording)
+      lastInterfaceRecording = finalized
+      interfaceRecording = null
+      updateInterfaceRecorderControls()
+      const eventCount = finalized?.stats?.events ?? 0
+      setInterfaceRecordStatus(`ready: ${eventCount} event(s), ${(Number(finalized?.durationMs ?? 0) / 1000).toFixed(1)}s`, 'ok')
+      setCaptureStatus(`Interface score ready (${eventCount} event(s)).`, 'ok')
+      if (options.download !== false) {
+        downloadInterfaceRecording(finalized, options)
+      }
+      return finalized
+    }
+
+    const toggleInterfaceRecording = (options = {}) => (
+      interfaceRecording
+        ? stopInterfaceRecording(options)
+        : startInterfaceRecording(options)
+    )
+
+    const setLastInterfaceRecording = (recording) => {
+      const normalized = normalizeInterfaceRecording(recording)
+      if (!normalized) throw new Error('Invalid interface recording.')
+      lastInterfaceRecording = normalized
+      updateInterfaceRecorderControls()
+      setInterfaceRecordStatus(`loaded: ${normalized.stats.events} event(s)`, 'ok')
+      return normalized
+    }
+
+    const ensureInterfacePlaybackCursor = () => {
+      let cursor = document.getElementById('interface-playback-cursor')
+      if (cursor) return cursor
+      cursor = document.createElement('div')
+      cursor.id = 'interface-playback-cursor'
+      cursor.setAttribute('aria-hidden', 'true')
+      Object.assign(cursor.style, {
+        position: 'fixed',
+        left: '0px',
+        top: '0px',
+        width: '14px',
+        height: '14px',
+        border: '1px solid rgba(255, 107, 214, 0.95)',
+        borderRadius: '999px',
+        background: 'rgba(117, 247, 255, 0.18)',
+        boxShadow: '0 0 16px rgba(255, 107, 214, 0.55)',
+        pointerEvents: 'none',
+        transform: 'translate(-50%, -50%)',
+        zIndex: '80',
+        opacity: '0',
+        transition: 'opacity 80ms linear'
+      })
+      document.body.appendChild(cursor)
+      return cursor
+    }
+
+    const updateInterfacePlaybackCursor = (event) => {
+      const cursor = ensureInterfacePlaybackCursor()
+      cursor.style.left = `${Number(event.x) || 0}px`
+      cursor.style.top = `${Number(event.y) || 0}px`
+      cursor.style.opacity = event.phase === 'cancel' ? '0' : '1'
+      cursor.style.transform = event.phase === 'down'
+        ? 'translate(-50%, -50%) scale(1.35)'
+        : 'translate(-50%, -50%) scale(1)'
+    }
+
+    const hideInterfacePlaybackCursor = () => {
+      const cursor = document.getElementById('interface-playback-cursor')
+      if (cursor) cursor.style.opacity = '0'
+    }
+
+    function stopInterfacePlayback(options = {}) {
+      interfacePlaybackToken += 1
+      for (const timer of interfacePlaybackTimers) {
+        window.clearTimeout(timer)
+      }
+      interfacePlaybackTimers.clear()
+      interfacePlaybackActive = false
+      hideInterfacePlaybackCursor()
+      updateInterfaceRecorderControls()
+      if (!options.silent) setInterfaceRecordStatus(lastInterfaceRecording ? 'playback stopped.' : '', '')
+    }
+
+    const waitForInterfacePlayback = (delayMs) => new Promise((resolve) => {
+      const timer = window.setTimeout(() => {
+        interfacePlaybackTimers.delete(timer)
+        resolve()
+      }, delayMs)
+      interfacePlaybackTimers.add(timer)
+    })
+
+    const applyInterfaceCaptureSettings = (capture, recording = null) => {
+      const expanded = expandInterfaceCapture(capture, recording)
+      if (!expanded) return
+      setCaptureDurationSeconds(expanded.duration)
+      setCaptureFps(expanded.fps)
+      setCaptureResolutionMode(expanded.resolution)
+      if (expanded.resolution === 'custom') {
+        setCaptureCustomSize(expanded.dimensions)
+      }
+      updateCaptureButtonState()
+    }
+
+    const applyInterfaceCanvasDisplay = (canvas, recording = null, options = {}) => {
+      if (options.canvas === false || options.canvas === 'current') return
+      const expanded = expandInterfaceCanvas(canvas, recording)
+      if (!expanded) return
+      const width = expanded.width
+      const height = expanded.height
+
+      if (expanded.mode === 'manual-resolution') {
+        canvasDisplayMode = 'manual-resolution'
+        nativeSetResolution?.(width, height)
+      } else if (expanded.mode === 'manual') {
+        canvasDisplayMode = 'manual'
+        nativeSetCanvasDisplay?.(width, height)
+      } else {
+        canvasDisplayMode = 'auto'
+        nativeSetCanvasDisplay?.(width, height, { nativeSize: true })
+        forceCanvasViewportStyle()
+      }
+      scheduleCodeMaterialRender({ force: true })
+    }
+
+    const applyInterfaceState = (state = {}, recording = null, options = {}) => {
+      if (state.canvas) applyInterfaceCanvasDisplay(state.canvas, recording, options)
+      if (state.code !== undefined) setEditorCode(state.code, { persist: false, focus: false })
+      if (state.ui) {
+        applyUiSettings(expandInterfaceUi(state.ui))
+        scheduleCodeMaterialRender()
+      }
+      if (state.capture) applyInterfaceCaptureSettings(state.capture, recording)
+      if (state.codeMaterial) {
+        attachCodeMaterial(state.codeMaterial, { silent: true, persist: false })
+      }
+      if (state.codeVisible === 0 || state.codeVisible === false) hideCode()
+      else showCode()
+      const panel = expandInterfacePanel(state.panel)
+      if (panel.mode === 'fullscreen') applyFullscreenPanelGeometry({ persist: false })
+      else applyPanelGeometry(panel, { persist: false, realtime: true })
+      if (state.selection) selectEditorRange(expandInterfaceSelection(state.selection), { focus: false })
+      syncCodeMaterial({ force: true })
+    }
+
+    const applyCodeTrackEntry = (entry) => {
+      if (!liveEditorView || !Array.isArray(entry)) return
+      const ops = normalizeCodeOps(entry[1])
+      if (ops.length === 0) return
+      liveEditorView.dispatch({
+        changes: ops.map(([from, deleteCount, insert]) => ({
+          from,
+          to: from + deleteCount,
+          insert
+        }))
+      })
+      scheduleCodeMaterialRender({ force: true })
+    }
+
+    const buildInterfacePlaybackEvents = (recording) => {
+      const events = []
+      const push = (t, order, type, payload) => {
+        events.push({ t: Number(t) || 0, order, type, payload })
+      }
+
+      recording.tracks.code.forEach((entry) => push(entry[0], 10, 'code', entry))
+      recording.tracks.canvas.forEach((entry) => push(entry[0], 5, 'canvas', entry))
+      recording.tracks.selection.forEach((entry) => push(entry[0], 20, 'selection', entry))
+      recording.tracks.panel.forEach((entry) => push(entry[0], 30, 'panel', entry))
+      recording.tracks.visibility.forEach((entry) => push(entry[0], 40, 'visibility', entry))
+      recording.tracks.ui.forEach((entry) => push(entry[0], 50, 'ui', entry))
+      recording.tracks.codeMaterial.forEach((entry) => push(entry[0], 60, 'code-material', entry))
+      recording.tracks.capture.forEach((entry) => push(entry[0], 70, 'capture', entry))
+      recording.tracks.actions.forEach((entry) => push(entry[0], 80, 'action', entry))
+      recording.tracks.runs.forEach((entry) => push(entry.t, 90, 'run', entry))
+
+      const pointer = recording.tracks.pointer
+      if (pointer?.origin && Array.isArray(pointer.samples)) {
+        let t = 0
+        let x = Number(pointer.origin[0]) || 0
+        let y = Number(pointer.origin[1]) || 0
+        pointer.samples.forEach((sample) => {
+          t += Number(sample[0]) || 0
+          x += Number(sample[1]) || 0
+          y += Number(sample[2]) || 0
+          push(t, 15, 'pointer', {
+            x,
+            y,
+            buttons: sample[3],
+            phase: lookupInterfaceDictionary(recording, 'phases', sample[4], 'move'),
+            pointerType: lookupInterfaceDictionary(recording, 'pointerTypes', sample[5], 'mouse'),
+            target: lookupInterfaceDictionary(recording, 'targets', sample[6], '')
+          })
+        })
+      }
+
+      return events.sort((a, b) => (a.t - b.t) || (a.order - b.order))
+    }
+
+    const applyInterfacePlaybackEvent = async (event, recording, options = {}) => {
+      const payload = event.payload
+      if (event.type === 'code') {
+        applyCodeTrackEntry(payload)
+      } else if (event.type === 'canvas') {
+        applyInterfaceCanvasDisplay(payload.slice(1), recording, options)
+      } else if (event.type === 'selection') {
+        selectEditorRange({ anchor: payload[1], head: payload[2] }, { focus: false })
+      } else if (event.type === 'panel') {
+        const panel = expandInterfacePanel(payload.slice(1))
+        if (panel.mode === 'fullscreen') applyFullscreenPanelGeometry({ persist: false })
+        else applyPanelGeometry(panel, { persist: false, realtime: true })
+      } else if (event.type === 'visibility') {
+        if (payload[1] === 0) hideCode()
+        else showCode()
+      } else if (event.type === 'ui') {
+        applyUiSettings(expandInterfaceUi(payload.slice(1)))
+        syncCodeMaterial({ force: true })
+      } else if (event.type === 'code-material') {
+        attachCodeMaterial(lookupInterfaceDictionary(recording, 'codeMaterialSources', payload[1], 'off'), { silent: true, persist: false })
+      } else if (event.type === 'capture') {
+        applyInterfaceCaptureSettings(payload.slice(1), recording)
+      } else if (event.type === 'pointer') {
+        updateInterfacePlaybackCursor(payload)
+      } else if (event.type === 'run' && payload.phase === 'start' && options.runCode !== false && payload.code && livecodingPlugin?.run) {
+        await Promise.resolve(livecodingPlugin.run(payload.code))
+        syncCodeMaterial({ force: true })
+      }
+    }
+
+    const playInterfacePerformance = async (recording = lastInterfaceRecording, options = {}) => {
+      const normalized = normalizeInterfaceRecording(recording)
+      if (!normalized) throw new Error('No interface recording is available to play.')
+      stopInterfacePlayback({ silent: true })
+      const token = interfacePlaybackToken
+      const speed = clampNumber(options.speed ?? 1, 0.05, 16, 1)
+      const realtime = options.realtime !== false
+      const events = buildInterfacePlaybackEvents(normalized)
+      interfacePlaybackActive = true
+      updateInterfaceRecorderControls()
+      setInterfaceRecordStatus(`playing ${events.length} event(s)...`, 'ok')
+
+      try {
+        applyInterfaceState(normalized.initial, normalized, options)
+        let previousTime = 0
+        for (const event of events) {
+          if (token !== interfacePlaybackToken) return null
+          const delayMs = realtime ? Math.max(0, (event.t - previousTime) / speed) : 0
+          previousTime = event.t
+          if (delayMs > 0) await waitForInterfacePlayback(delayMs)
+          if (token !== interfacePlaybackToken) return null
+          await applyInterfacePlaybackEvent(event, normalized, options)
+        }
+        setInterfaceRecordStatus(`played ${events.length} event(s).`, 'ok')
+        return normalized
+      } finally {
+        if (token === interfacePlaybackToken) {
+          interfacePlaybackActive = false
+          hideInterfacePlaybackCursor()
+          updateInterfaceRecorderControls()
+        }
+      }
+    }
+
+    const loadInterfacePerformance = async (source, options = {}) => {
+      let recording = source
+      if (typeof source === 'string') {
+        const response = await fetch(source, { cache: 'no-store' })
+        if (!response.ok) {
+          throw new Error(`Failed to load interface score: ${response.status} ${response.statusText}`)
+        }
+        recording = await response.json()
+      }
+      const loaded = setLastInterfaceRecording(recording)
+      if (options.play) {
+        await playInterfacePerformance(loaded, options)
+      }
+      return loaded
+    }
+
+    const describeInterfaceTarget = (target) => {
+      const element = target instanceof Element
+        ? target.closest('[id], button, .live-resize-handle, .live-drag-surface, .cm-editor, canvas')
+        : null
+      if (!element) return ''
+      if (element.id) return `#${element.id}`
+      if (element instanceof HTMLCanvasElement) return 'canvas'
+      const classes = Array.from(element.classList).slice(0, 2).join('.')
+      const tag = element.tagName.toLowerCase()
+      return classes ? `${tag}.${classes}` : tag
+    }
+
+    const recordPointerPerformanceEvent = (event, phase) => {
+      if (!interfaceRecording || interfacePlaybackActive) return
+      const now = performance.now()
+      if (phase === 'move' && now - lastInterfacePointerSampleAt < interfacePointerSampleMs) return
+      if (phase === 'move') lastInterfacePointerSampleAt = now
+      recordInterfaceEvent('pointer', {
+        phase,
+        x: roundInterfaceMetric(event.clientX),
+        y: roundInterfaceMetric(event.clientY),
+        buttons: event.buttons,
+        pointerType: event.pointerType,
+        target: describeInterfaceTarget(event.target)
+      })
+    }
+
+    document.addEventListener('pointerdown', (event) => recordPointerPerformanceEvent(event, 'down'), { capture: true })
+    document.addEventListener('pointermove', (event) => recordPointerPerformanceEvent(event, 'move'), { capture: true })
+    document.addEventListener('pointerup', (event) => recordPointerPerformanceEvent(event, 'up'), { capture: true })
+    document.addEventListener('pointercancel', (event) => recordPointerPerformanceEvent(event, 'cancel'), { capture: true })
+
+    const saveCanvasFrame = async (options = {}) => {
+      const canvas = runtime.host?.canvas ?? document.querySelector('canvas')
+      if (!canvas || typeof canvas.toBlob !== 'function') {
+        throw new Error('Canvas screenshot is not available in this browser context.')
+      }
+
+      const baseName = sanitizeOutputBaseName(options.fileName ?? options.outputBaseName ?? defaultOutputBaseName()) || defaultOutputBaseName()
+      const fileName = baseName.toLowerCase().endsWith('.png') ? baseName : `${baseName}.png`
+      const blob = await new Promise((resolve, reject) => {
+        canvas.toBlob((result) => {
+          if (result) resolve(result)
+          else reject(new Error('Canvas screenshot failed.'))
+        }, 'image/png')
+      })
+      downloadBlob({ blob, fileName })
+      setCaptureStatus(`Saved ${fileName} to your downloads folder.`, 'ok')
+      return { fileName, mimeType: 'image/png' }
+    }
+
+    const videoFilePicker = {
+      accept: 'video/*',
+      types: [{
+        description: 'Video files',
+        accept: {
+          'video/*': ['.mp4', '.webm', '.mov', '.m4v', '.ogg', '.ogv']
+        }
+      }]
+    }
+
+    const isFilePickerAbort = (error) => (
+      error &&
+      typeof error === 'object' &&
+      'name' in error &&
+      error.name === 'AbortError'
+    )
+
+    const pickFilesWithInput = (accept, multiple = false) => new Promise((resolve) => {
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.accept = accept
+      input.multiple = Boolean(multiple)
+      input.style.display = 'none'
+
+      let settled = false
+      const settle = (files) => {
+        if (settled) return
+        settled = true
+        window.removeEventListener('focus', onFocus)
+        input.remove()
+        resolve(files)
+      }
+      const onFocus = () => {
+        window.setTimeout(() => {
+          if (!input.files || input.files.length === 0) settle([])
+        }, 500)
+      }
+
+      input.addEventListener('change', () => {
+        settle(Array.from(input.files ?? []))
+      }, { once: true })
+      window.addEventListener('focus', onFocus)
+      document.body.appendChild(input)
+      input.click()
+    })
+
+    const pickLocalFiles = async ({ accept, types }, { multiple = false } = {}) => {
+      if (typeof window.showOpenFilePicker === 'function') {
+        try {
+          const handles = await window.showOpenFilePicker({
+            multiple: Boolean(multiple),
+            types
+          })
+          return await Promise.all(handles.map((handle) => handle.getFile()))
+        } catch (error) {
+          if (isFilePickerAbort(error)) return []
+          throw error
+        }
+      }
+
+      return pickFilesWithInput(accept, multiple)
+    }
+
+    const pickLocalFile = async (picker) => {
+      const files = await pickLocalFiles(picker)
+      return files[0] ?? null
+    }
+
+    const pickVideoFile = () => pickLocalFile(videoFilePicker)
+    const pickVideoFiles = (options = {}) => pickLocalFiles(videoFilePicker, options)
+
+    const isHydraSource = (value) => value && typeof value === 'object' && typeof value.initVideo === 'function'
+
+    const getHydraSourceVideo = (source) => {
+      const media = source?.src
+      return media instanceof HTMLVideoElement ? media : null
+    }
+
+    const waitForHydraSourceVideo = (source, timeoutMs = 4000) => new Promise((resolve, reject) => {
+      const startedAt = performance.now()
+      const poll = () => {
+        const video = getHydraSourceVideo(source)
+        if (video && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+          resolve(video)
+          return
+        }
+        if (performance.now() - startedAt >= timeoutMs) {
+          reject(new Error('Timed out waiting for video source to become ready.'))
+          return
+        }
+        window.setTimeout(poll, 16)
+      }
+      poll()
+    })
+
+    const seekVideoToStart = (video) => new Promise((resolve) => {
+      if (!video || !Number.isFinite(video.duration)) {
+        resolve()
+        return
+      }
+      const finish = () => {
+        video.removeEventListener('seeked', finish)
+        video.removeEventListener('loadeddata', finish)
+        resolve()
+      }
+      video.pause()
+      if (Math.abs(video.currentTime) < 0.001) {
+        resolve()
+        return
+      }
+      video.addEventListener('seeked', finish, { once: true })
+      video.addEventListener('loadeddata', finish, { once: true })
+      try {
+        if (typeof video.fastSeek === 'function') video.fastSeek(0)
+        else video.currentTime = 0
+      } catch {
+        finish()
+      }
+    })
+
+    const restartVideoElements = async (videos) => {
+      const readyVideos = videos.filter(Boolean)
+      await Promise.all(readyVideos.map(seekVideoToStart))
+      await Promise.all(readyVideos.map((video) => video.play().catch(() => { })))
+      return readyVideos
+    }
+
+    const restartVideos = async (...sources) => {
+      const targets = sources.length > 0
+        ? sources.flat().filter(isHydraSource)
+        : ['s0', 's1', 's2', 's3'].map((name) => synth[name]).filter(isHydraSource)
+      const videos = targets.map(getHydraSourceVideo).filter(Boolean)
+      await restartVideoElements(videos)
+      return videos.length
+    }
+
+    const loadVideoFile = (source = synth.s0, params = {}) => {
+      const target = source ?? synth.s0
+      if (!target || typeof target.initVideo !== 'function') {
+        throw new Error('loadVideoFile: pass a Hydra source, for example loadVideoFile(s0).')
+      }
+
+      return pickVideoFile().then((file) => {
+        if (!file) {
+          setLiveStatus('Video selection cancelled.')
+          return null
+        }
+
+        target.initVideo(file, params)
+        setLiveStatus(`Loaded video: ${file.name || 'selected file'}.`, 'ok')
+        return file
+      }).catch((error) => {
+        const message = error instanceof Error ? error.message : String(error)
+        setLiveStatus(`Video load failed: ${message}`, 'error')
+        console.error('[hydra] video file load failed', error)
+        throw error
+      })
+    }
+
+    const loadVideoFiles = async (...args) => {
+      let params = {}
+      if (args.length > 0) {
+        const lastArg = args[args.length - 1]
+        if (!isHydraSource(lastArg) && !Array.isArray(lastArg) && lastArg && typeof lastArg === 'object') {
+          params = args.pop()
+        }
+      }
+
+      const targets = args.length > 0
+        ? args.flat().filter(isHydraSource)
+        : [synth.s0]
+
+      if (targets.length === 0) {
+        throw new Error('loadVideoFiles: pass Hydra sources, for example loadVideoFiles(s0, s1).')
+      }
+
+      const files = await pickVideoFiles({ multiple: targets.length > 1 })
+      if (files.length === 0) {
+        setLiveStatus('Video selection cancelled.')
+        return []
+      }
+
+      const loadedPairs = targets.slice(0, files.length).map((target, index) => {
+        target.initVideo(files[index], params)
+        return { target, file: files[index] }
+      })
+      const videos = await Promise.all(loadedPairs.map(({ target }) => waitForHydraSourceVideo(target)))
+      await restartVideoElements(videos)
+      setLiveStatus(`Loaded ${loadedPairs.length} video(s).`, 'ok')
+      return loadedPairs.map(({ file }) => file)
+    }
+
+    let activeCaptureAbortController = null
+    let detachLivecoding = null
+    let livecodingPlugin = null
+    let lastFullBufferBlocks = null
+    let nextLivecodingRunMetadata = null
+    let interfaceRunSequence = 0
+
+    const runLivecodingCode = (code, metadata = {}) => {
+      if (!livecodingPlugin || typeof livecodingPlugin.run !== 'function') {
+        throw new Error('Livecoding plugin is not attached.')
+      }
+      const previousMetadata = nextLivecodingRunMetadata
+      nextLivecodingRunMetadata = metadata
+      try {
+        return livecodingPlugin.run(code)
+      } finally {
+        nextLivecodingRunMetadata = previousMetadata
+      }
+    }
+
+    const installInterfaceRunRecorder = (plugin) => {
+      if (!plugin || typeof plugin.run !== 'function' || plugin.__interfaceRunRecorderInstalled) return plugin
+      const originalRun = plugin.run.bind(plugin)
+      plugin.run = (code, ...args) => {
+        const metadata = nextLivecodingRunMetadata ?? {}
+        const runId = interfaceRunSequence += 1
+        const runCode = String(code ?? '')
+        recordInterfaceEvent('run-start', {
+          runId,
+          source: metadata.source ?? 'livecoding.run',
+          scope: metadata.scope ?? 'direct',
+          scopeLabel: metadata.scopeLabel ?? 'direct',
+          range: metadata.range ?? null,
+          blockIndex: metadata.blockIndex,
+          blockCount: metadata.blockCount,
+          code: runCode
+        })
+
+        try {
+          const result = originalRun(runCode, ...args)
+          if (result && typeof result.then === 'function') {
+            return result.then((value) => {
+              recordInterfaceEvent('run-end', {
+                runId,
+                source: metadata.source ?? 'livecoding.run',
+                scope: metadata.scope ?? 'direct',
+                scopeLabel: metadata.scopeLabel ?? 'direct',
+                status: 'ok'
+              })
+              return value
+            }).catch((error) => {
+              const message = error instanceof Error ? error.message : String(error)
+              recordInterfaceEvent('run-end', {
+                runId,
+                source: metadata.source ?? 'livecoding.run',
+                scope: metadata.scope ?? 'direct',
+                scopeLabel: metadata.scopeLabel ?? 'direct',
+                status: 'error',
+                message
+              })
+              throw error
+            })
+          }
+
+          recordInterfaceEvent('run-end', {
+            runId,
+            source: metadata.source ?? 'livecoding.run',
+            scope: metadata.scope ?? 'direct',
+            scopeLabel: metadata.scopeLabel ?? 'direct',
+            status: 'ok'
+          })
+          return result
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          recordInterfaceEvent('run-end', {
+            runId,
+            source: metadata.source ?? 'livecoding.run',
+            scope: metadata.scope ?? 'direct',
+            scopeLabel: metadata.scopeLabel ?? 'direct',
+            status: 'error',
+            message
+          })
+          throw error
+        }
+      }
+      Object.defineProperty(plugin, '__interfaceRunRecorderInstalled', { value: true })
+      return plugin
+    }
+
+    const updateCaptureButtonState = () => {
+      const active = Boolean(activeCaptureAbortController)
+      const durationSeconds = formatDurationSeconds(readCaptureDurationSeconds())
+
+      if (captureVideoToggle) {
+        captureVideoToggle.textContent = active ? 'stop' : `record ${durationSeconds}s`
+        captureVideoToggle.disabled = false
+        if (active) captureVideoToggle.dataset.state = 'active'
+        else delete captureVideoToggle.dataset.state
+      }
+
+      if (liveRecordToggle) {
+        liveRecordToggle.title = active ? 'Stop MP4 capture' : `Record MP4 (${durationSeconds}s)`
+        liveRecordToggle.setAttribute('aria-label', liveRecordToggle.title)
+        if (active) liveRecordToggle.dataset.state = 'active'
+        else if (recordPopover?.hidden !== false) delete liveRecordToggle.dataset.state
+      }
+
+      if (captureDurationInput) {
+        captureDurationInput.disabled = active
+      }
+      if (captureFpsInput) captureFpsInput.disabled = active
+      if (captureResolutionSelect) captureResolutionSelect.disabled = active
+      if (captureWidthInput) captureWidthInput.disabled = active
+      if (captureHeightInput) captureHeightInput.disabled = active
+    }
+
+    const captureAndSaveMedia = async (options = {}) => {
+      if (activeCaptureAbortController) {
+        throw new Error('A capture is already in progress.')
+      }
+
+      const format = String(options.format ?? 'mp4').toLowerCase()
+      if (format !== 'mp4') {
+        throw new Error('captureAndSaveMedia: only mp4 capture is supported.')
+      }
+      const captureDimensions = readCaptureDimensions()
+      const fps = Number.isFinite(options.fps) && Number(options.fps) > 0 ? normalizeCaptureFps(options.fps) : readCaptureFps()
+      const fallbackDuration = readCaptureDurationSeconds()
+      const duration = Number.isFinite(options.duration) && Number(options.duration) > 0
+        ? normalizeCaptureDurationSeconds(Number(options.duration), fallbackDuration)
+        : fallbackDuration
+      const width = Number.isFinite(options.width) && Number(options.width) > 0
+        ? normalizeCaptureDimension(Number(options.width), captureDimensions.width ?? runtime.host?.canvas?.width ?? 1280)
+        : captureDimensions.width
+      const height = Number.isFinite(options.height) && Number(options.height) > 0
+        ? normalizeCaptureDimension(Number(options.height), captureDimensions.height ?? runtime.host?.canvas?.height ?? 720, 4320)
+        : captureDimensions.height
+      const outputBaseName = sanitizeOutputBaseName(options.outputBaseName ?? loadCaptureBaseName()) || defaultOutputBaseName()
+      const abortController = new AbortController()
+
+      activeCaptureAbortController = abortController
+      updateCaptureButtonState()
+      setCaptureStatus('Starting MP4 capture session...')
+
+      try {
+        if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined') {
+          throw new Error('WebCodecs is not available in this browser context. MP4 capture requires VideoEncoder support.')
+        }
+
+        const realtime = options.realtime !== false
+        setCaptureStatus(`Capturing MP4 with WebCodecs at ${fps} fps${realtime ? ' (real-time)' : ''}...`)
+        const videoBlob = await captureHydraVideo({
+          runtime,
+          fps,
+          duration,
+          width,
+          height,
+          realtime,
+          waitForGPU: true,
+          resumeAfterCapture: true,
+          restoreResolution: true,
+          ignoreEngineFpsGate: false,
+          signal: abortController.signal,
+          onProgress: (percent) => {
+            setCaptureStatus(`Encoding MP4 (${percent.toFixed(1)}%)...`)
+          }
+        })
+
+        if (abortController.signal.aborted) {
+          setCaptureStatus('Capture cancelled.', '')
+          return null
+        }
+
+        const fileName = `${outputBaseName}.mp4`
+        const downloadVideoBlob = videoBlob.type === 'video/mp4'
+          ? videoBlob
+          : new Blob([videoBlob], { type: 'video/mp4' })
+        downloadBlob({
+          blob: downloadVideoBlob,
+          fileName
+        })
+        saveCaptureBaseName(outputBaseName)
+        setCaptureStatus(`Saved ${fileName} to your downloads folder.`, 'ok')
+        return {
+          fileName,
+          mimeType: 'video/mp4'
+        }
+      } catch (error) {
+        if (abortController.signal.aborted) {
+          setCaptureStatus('Capture cancelled.', '')
+          return null
+        }
+
+        const message = error instanceof Error ? error.message : String(error)
+        setCaptureStatus(`Capture failed: ${message}`, 'error')
+        console.error('[hydra] capture failed', error)
+        throw error
+      } finally {
+        activeCaptureAbortController = null
+        updateCaptureButtonState()
+      }
+    }
+
+    const captureAndSaveVideo = async (options = {}) => captureAndSaveMedia({ ...options, format: 'mp4' })
+    const captureAndSaveMp4 = async (options = {}) => captureAndSaveMedia({ ...options, format: 'mp4' })
+    const captureAndSaveWebm = async () => {
+      throw new Error('captureAndSaveWebm is no longer available. Use captureAndSaveMp4() for WebCodecs capture.')
+    }
+
+    const toggleVideoCapture = () => {
+      if (activeCaptureAbortController) {
+        setCaptureStatus('Stopping MP4 capture...')
+        activeCaptureAbortController.abort()
+        return
+      }
+      void captureAndSaveMedia({ format: 'mp4' }).catch(() => { })
+    }
+
+    const randomBetween = (min, max, precision = 2) => {
+      const value = min + Math.random() * (max - min)
+      return Number.parseFloat(value.toFixed(precision))
+    }
+
+    const randomInt = (min, max) => Math.floor(min + Math.random() * (max - min + 1))
+
+    const choose = (values) => values[Math.floor(Math.random() * values.length)]
+
+    const randomColorArgs = () => [
+      randomBetween(0.45, 1.2, 2),
+      randomBetween(0.25, 1.1, 2),
+      randomBetween(0.35, 1.25, 2)
+    ].join(', ')
+
+    const randomSketchFactories = [
+      () => ({
+        name: 'osc feedback',
+        code: `osc(${randomInt(8, 48)}, ${randomBetween(0.02, 0.14, 3)}, ${randomBetween(0, 0.8, 2)})
+  .rotate(() => time * ${randomBetween(0.02, 0.18, 3)})
+  .kaleid(${randomInt(3, 8)})
+  .modulate(noise(${randomBetween(1.5, 8, 2)}, ${randomBetween(0.03, 0.2, 3)}), ${randomBetween(0.05, 0.24, 3)})
+  .color(${randomColorArgs()})
+  .out()
+
+speed = ${randomBetween(0.45, 1.25, 2)}`
+      }),
+      () => ({
+        name: 'soft geometry',
+        code: `shape(${randomInt(3, 9)}, ${randomBetween(0.18, 0.52, 2)}, ${randomBetween(0.005, 0.08, 3)})
+  .repeat(${randomInt(2, 6)}, ${randomInt(2, 6)}, ${randomBetween(0, 0.45, 2)}, ${randomBetween(0, 0.45, 2)})
+  .rotate(() => time * ${randomBetween(-0.18, 0.18, 3)})
+  .modulate(osc(${randomInt(12, 80)}, ${randomBetween(0.01, 0.09, 3)}, ${randomBetween(0, 1, 2)}), ${randomBetween(0.05, 0.3, 3)})
+  .color(${randomColorArgs()})
+  .out()
+
+speed = ${randomBetween(0.35, 0.95, 2)}`
+      }),
+      () => ({
+        name: 'voronoi screen',
+        code: `voronoi(${randomBetween(2, 9, 2)}, ${randomBetween(0.05, 0.6, 2)}, ${randomBetween(0.1, 0.7, 2)})
+  .pixelate(${randomInt(12, 90)}, ${randomInt(12, 90)})
+  .blend(osc(${randomInt(18, 96)}, ${randomBetween(0.01, 0.12, 3)}, ${randomBetween(0, 1, 2)}).rotate(${randomBetween(-0.6, 0.6, 2)}), ${randomBetween(0.25, 0.75, 2)})
+  .contrast(${randomBetween(0.9, 1.9, 2)})
+  .out()
+
+speed = ${randomBetween(0.5, 1.4, 2)}`
+      }),
+      () => ({
+        name: 'webgpu bloom',
+        code: `${choose(['fbm', 'ridged', 'turbulence'])}(${randomBetween(1.5, 7, 2)}, ${randomBetween(0.03, 0.22, 3)}, ${randomInt(3, 7)}, ${randomBetween(1.8, 2.6, 2)}, ${randomBetween(0.35, 0.75, 2)})
+  .modulate(osc(${randomInt(8, 36)}, ${randomBetween(0.02, 0.12, 3)}, 0), ${randomBetween(0.04, 0.22, 3)})
+  .colorama(${randomBetween(0.002, 0.035, 3)})
+  .bloom(${randomBetween(0.35, 1.1, 2)}, ${randomBetween(0.7, 1.8, 2)}, ${randomBetween(0.35, 0.8, 2)}, ${randomBetween(0.08, 0.3, 2)})
+  .out()
+
+speed = ${randomBetween(0.4, 1.1, 2)}`
+      }),
+      () => ({
+        name: 'history trails',
+        code: `osc(${randomInt(10, 36)}, ${randomBetween(0.02, 0.1, 3)}, ${randomBetween(0, 0.5, 2)})
+  .blend(prev(), ${randomBetween(0.25, 0.72, 2)})
+  .modulateScale(noiseLoop(${randomBetween(0.7, 3.5, 2)}, ${randomBetween(0.04, 0.18, 3)}, ${randomBetween(0.25, 0.9, 2)}), ${randomBetween(0.25, 1.4, 2)}, ${randomBetween(0.6, 1.2, 2)})
+  .hue(${randomBetween(0.05, 0.45, 2)})
+  .out()
+
+speed = ${randomBetween(0.35, 0.9, 2)}`
+      })
+    ]
+
+    const loadRandomSketch = ({ run = true, saveUrl = false } = {}) => {
+      const sketch = choose(randomSketchFactories)()
+      setEditorCode(sketch.code, { focus: true })
+      lastFullBufferBlocks = null
+      if (saveUrl) saveSketchToUrl({ historyMode: 'push' })
+      setLiveStatus(`Loaded random sketch: ${sketch.name}.`, 'ok')
+      recordInterfaceEvent('action', {
+        action: 'load-random-sketch',
+        name: sketch.name
+      })
+      if (run) void runEditorSnippet('all')
+      return sketch
+    }
+
+    const collectNumberLiterals = (code) => {
+      const matches = []
+      const pattern = /(^|[^\w$])(-?(?:\d+\.\d*|\.\d+|\d+)(?:e[+-]?\d+)?)/gi
+      let match = pattern.exec(code)
+      while (match) {
+        const start = match.index + match[1].length
+        const raw = match[2]
+        matches.push({ start, end: start + raw.length, raw })
+        match = pattern.exec(code)
+      }
+      return matches
+    }
+
+    const formatMutatedNumber = (raw, value) => {
+      if (/^-?\d+$/.test(raw) && Math.abs(value) >= 2) return String(Math.max(0, Math.round(value)))
+      const decimalMatch = raw.match(/\.(\d+)/)
+      const precision = decimalMatch ? Math.min(4, Math.max(2, decimalMatch[1].length + 1)) : 3
+      return Number.parseFloat(value.toFixed(precision)).toString()
+    }
+
+    const mutateNumberLiteral = (raw) => {
+      const numeric = Number(raw)
+      if (!Number.isFinite(numeric)) return raw
+      const direction = numeric < 0 ? -1 : 1
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        const factor = randomBetween(0.45, 1.85, 3)
+        const base = Math.abs(numeric) < 0.0001
+          ? randomBetween(0.03, 0.6, 3)
+          : Math.abs(numeric) * factor
+        const replacement = formatMutatedNumber(raw, base * direction)
+        if (replacement !== raw) return replacement
+      }
+      const fallback = Math.abs(numeric) < 0.0001 ? 0.125 : numeric + (direction * Math.max(0.01, Math.abs(numeric) * 0.25))
+      return formatMutatedNumber(raw, fallback)
+    }
+
+    const mutateEditorCode = () => {
+      if (!liveEditorView) return null
+      const selection = getLiveSelectionSnippet()
+      const targetRange = selection.code.trim()
+        ? selection.range
+        : { from: 0, to: liveEditorView.state.doc.length }
+      const targetCode = liveEditorView.state.doc.sliceString(targetRange.from, targetRange.to)
+      const literals = collectNumberLiterals(targetCode)
+      if (literals.length === 0) {
+        setLiveStatus('No numeric values to dice.', 'error')
+        return null
+      }
+
+      const literal = choose(literals)
+      const replacement = mutateNumberLiteral(literal.raw)
+      const from = targetRange.from + literal.start
+      const to = targetRange.from + literal.end
+      liveEditorView.dispatch({
+        changes: { from, to, insert: replacement },
+        selection: { anchor: from + replacement.length }
+      })
+      flashEditorRange({ from, to: from + replacement.length })
+      setLiveStatus(`Diced ${literal.raw} -> ${replacement}.`, 'ok')
+      recordInterfaceEvent('action', {
+        action: 'mutate-number',
+        from,
+        to: from + replacement.length,
+        before: literal.raw,
+        after: replacement
+      })
+      return { from, to: from + replacement.length, before: literal.raw, after: replacement }
+    }
+
+    const randomize = (options) => loadRandomSketch(options)
+
+    const clearEditor = () => {
+      setEditorCode('', { focus: true })
+      lastFullBufferBlocks = null
+      setLiveStatus('Editor cleared.', 'ok')
+      recordInterfaceEvent('action', { action: 'clear-editor' })
+      return ''
+    }
+
+    window.captureAndSaveMedia = captureAndSaveMedia
+    window.captureAndSaveVideo = captureAndSaveVideo
+    window.captureAndSaveMp4 = captureAndSaveMp4
+    window.captureAndSaveWebm = captureAndSaveWebm
+    window.saveCanvasFrame = saveCanvasFrame
+    window.toggleVideoCapture = toggleVideoCapture
+    window.toggleMp4Capture = toggleVideoCapture
+    window.saveSketchToUrl = saveSketchToUrl
+    window.copySketchUrl = copySketchUrl
+    window.loadSketchFromUrl = loadSketchFromUrl
+    window.loadRandomSketch = loadRandomSketch
+    window.randomize = randomize
+    window.mutateEditorCode = mutateEditorCode
+    window.clearEditor = clearEditor
+    window.fitEditorPanel = fitEditorPanel
+    window.showCode = showCode
+    window.hideCode = hideCode
+    window.toggleCode = toggleCode
+    window.toggleRecordPanel = toggleRecordPopover
+    window.toggleOptionsPanel = toggleOptionsPanel
+    window.startInterfaceRecording = startInterfaceRecording
+    window.stopInterfaceRecording = stopInterfaceRecording
+    window.toggleInterfaceRecording = toggleInterfaceRecording
+    window.downloadInterfaceRecording = downloadInterfaceRecording
+    window.playInterfacePerformance = playInterfacePerformance
+    window.loadInterfacePerformance = loadInterfacePerformance
+    window.stopInterfacePlayback = stopInterfacePlayback
+    window.hydraInterfaceRecorder = {
+      start: startInterfaceRecording,
+      stop: stopInterfaceRecording,
+      toggle: toggleInterfaceRecording,
+      save: downloadInterfaceRecording,
+      load: setLastInterfaceRecording,
+      loadUrl: loadInterfacePerformance,
+      play: playInterfacePerformance,
+      stopPlayback: stopInterfacePlayback,
+      get active() {
+        return Boolean(interfaceRecording)
+      },
+      get playing() {
+        return interfacePlaybackActive
+      },
+      get current() {
+        return serializeInterfaceRecording()
+      },
+      get last() {
+        return lastInterfaceRecording
+      }
+    }
+    window.pickVideoFile = pickVideoFile
+    window.pickVideoFiles = pickVideoFiles
+    window.loadVideoFile = loadVideoFile
+    window.loadVideoFiles = loadVideoFiles
+    window.restartVideos = restartVideos
+    setCaptureDurationSeconds(loadCaptureDurationSeconds())
+    setCaptureFps(loadCaptureFps())
+    loadCaptureCustomSize()
+    setCaptureResolutionMode(loadCaptureResolutionMode())
+    setCaptureStatus('')
+    setLiveStatus('')
+    updateCaptureButtonState()
+    updateInterfaceRecorderControls()
+
+    const getLiveSelectionSnippet = () => {
+      if (!liveEditorView) return { code: '', range: null }
+      const selection = liveEditorView.state.selection.main
+      if (selection.empty) return { code: '', range: null }
+      return {
+        code: liveEditorView.state.doc.sliceString(selection.from, selection.to),
+        range: { from: selection.from, to: selection.to }
+      }
+    }
+
+    const getLiveLineSnippet = () => {
+      if (!liveEditorView) return { code: '', range: null }
+      const cursor = liveEditorView.state.selection.main.head
+      const line = liveEditorView.state.doc.lineAt(cursor)
+      return {
+        code: line.text,
+        range: { from: line.from, to: line.to }
+      }
+    }
+
+    const resolveLiveSnippet = (scope = 'smart') => {
+      if (!liveEditorView) return { code: '', scopeLabel: 'buffer', range: null }
+      if (scope === 'all') {
+        return {
+          code: readEditorCode(),
+          scopeLabel: 'buffer',
+          range: { from: 0, to: liveEditorView.state.doc.length }
+        }
+      }
+
+      const selection = getLiveSelectionSnippet()
+      if (selection.code.trim()) return { ...selection, scopeLabel: 'selection' }
+
+      const line = getLiveLineSnippet()
+      if (line.code.trim()) return { ...line, scopeLabel: 'line' }
+
+      return { code: '', scopeLabel: 'line', range: line.range }
+    }
+
+    const splitLiveExecutionBlocks = (code) => {
+      const normalized = String(code ?? '').replace(/\r\n?/g, '\n')
+      const lines = normalized.split('\n')
+      const blocks = []
+      let blockLines = []
+
+      const flushBlock = () => {
+        if (blockLines.length === 0) return
+        const block = blockLines.join('\n').trim()
+        if (block) blocks.push(block)
+        blockLines = []
+      }
+
+      for (const line of lines) {
+        if (!line.trim()) {
+          flushBlock()
+          continue
+        }
+        blockLines.push(line)
+      }
+      flushBlock()
+      return blocks
+    }
+
+    const runEditorSnippet = async (scope = 'smart') => {
+      if (!liveEditorView) return
+      if (!livecodingPlugin || typeof livecodingPlugin.run !== 'function') {
+        setLiveStatus('Livecoding plugin is not attached.', 'error')
+        return
+      }
+
+      const snippet = resolveLiveSnippet(scope)
+      const code = snippet.code
+      if (!code.trim()) {
+        if (scope === 'all') {
+          setLiveStatus('Editor is empty.', 'error')
+        } else {
+          setLiveStatus('Nothing selected.', 'error')
+        }
+        return
+      }
+
+      recordInterfaceEvent('action', {
+        action: 'run-editor',
+        scope,
+        scopeLabel: snippet.scopeLabel,
+        range: snippet.range
+      })
+
+      if (scope === 'all') {
+        const blocks = splitLiveExecutionBlocks(code)
+        const previousBlocks = Array.isArray(lastFullBufferBlocks) ? lastFullBufferBlocks : []
+        let executedBlocks = 0
+        let skippedBlocks = 0
+        let executeRemaining = false
+
+        try {
+          await restartVideos()
+          for (let index = 0; index < blocks.length; index += 1) {
+            const block = blocks[index]
+            if (!executeRemaining && previousBlocks[index] === block) {
+              skippedBlocks += 1
+              continue
+            }
+
+            executeRemaining = true
+            try {
+              await Promise.resolve(runLivecodingCode(block, {
+                source: 'editor-buffer-block',
+                scope,
+                scopeLabel: 'buffer',
+                range: snippet.range,
+                blockIndex: index,
+                blockCount: blocks.length
+              }))
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              throw new Error(`Block ${index + 1}: ${message}`)
+            }
+            executedBlocks += 1
+          }
+
+          lastFullBufferBlocks = blocks
+          saveSketchToUrl({ code, historyMode: 'push' })
+          syncCodeMaterial()
+          flashEditorRange(snippet.range)
+          setLiveStatus(
+            `Ran buffer at ${new Date().toLocaleTimeString()} (${executedBlocks} block(s), ${skippedBlocks} unchanged).`,
+            'ok'
+          )
+          recordInterfaceEvent('run-end', {
+            scope,
+            scopeLabel: 'buffer',
+            status: 'ok',
+            executedBlocks,
+            skippedBlocks
+          })
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          setLiveStatus(`Error: ${message}`, 'error')
+          console.error('[hydra] live editor run failed', error)
+          recordInterfaceEvent('run-end', {
+            scope,
+            scopeLabel: 'buffer',
+            status: 'error',
+            message
+          })
+        }
+        return
+      }
+
+      lastFullBufferBlocks = null
+      try {
+        await Promise.resolve(runLivecodingCode(code, {
+          source: 'editor-snippet',
+          scope,
+          scopeLabel: snippet.scopeLabel,
+          range: snippet.range
+        }))
+        syncCodeMaterial()
+        flashEditorRange(snippet.range)
+        setLiveStatus(`Ran ${snippet.scopeLabel} at ${new Date().toLocaleTimeString()}.`, 'ok')
+        recordInterfaceEvent('run-end', {
+          scope,
+          scopeLabel: snippet.scopeLabel,
+          status: 'ok'
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        setLiveStatus(`Error: ${message}`, 'error')
+        console.error('[hydra] live editor run failed', error)
+        recordInterfaceEvent('run-end', {
+          scope,
+          scopeLabel: snippet.scopeLabel,
+          status: 'error',
+          message
+        })
+      }
+    }
+
+    if (liveEditor) {
+      liveEditorView = new EditorView({
+        parent: liveEditor,
+        state: EditorState.create({
+          doc: loadLiveSnippet(),
+          extensions: [
+            basicSetup,
+            javascript(),
+            tooltips({ parent: document.body }),
+            autocompletion({ override: [hydraCompletionSource] }),
+            flashField,
+            codeMaterialViewPlugin,
+            EditorView.lineWrapping,
+            EditorView.updateListener.of((update) => {
+              const selection = update.state.selection.main
+              const recordedSelection = {
+                from: selection.from,
+                to: selection.to,
+                anchor: selection.anchor,
+                head: selection.head
+              }
+              if (update.docChanged) {
+                if (!interfacePlaybackActive) persistLiveSnippet()
+                lastFullBufferBlocks = null
+                const ops = []
+                update.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
+                  ops.push([fromA, toA - fromA, inserted.toString()])
+                })
+                recordInterfaceEvent('editor-change', {
+                  ops,
+                  selection: recordedSelection
+                })
+              } else if (update.selectionSet) {
+                recordInterfaceEvent('editor-selection', {
+                  selection: recordedSelection
+                })
+              }
+            }),
+            Prec.highest(keymap.of([
+              {
+                key: 'Mod-Enter',
+                run() {
+                  void runEditorSnippet('smart')
+                  return true
+                }
+              },
+              {
+                key: 'Shift-Mod-Enter',
+                run() {
+                  void runEditorSnippet('all')
+                  return true
+                }
+              },
+              {
+                key: 'Alt-Enter',
+                run() {
+                  void runEditorSnippet('all')
+                  return true
+                }
+              }
+            ]))
+          ]
+        })
+      })
+      attachCodeMaterial(readStoredCodeMaterialSourceName(), { silent: true, persist: false })
+    }
+
+    if (liveRunButton) {
+      liveRunButton.addEventListener('click', () => runEditorSnippet('smart'))
+    }
+
+    if (liveRunAllButton) {
+      liveRunAllButton.addEventListener('click', () => runEditorSnippet('all'))
+    }
+
+    if (liveShareButton) {
+      liveShareButton.addEventListener('click', () => {
+        void copySketchUrl().catch((error) => {
+          const message = error instanceof Error ? error.message : String(error)
+          setLiveStatus(`URL copy failed: ${message}`, 'error')
+        })
+      })
+    }
+
+    if (liveRandomButton) {
+      liveRandomButton.addEventListener('click', () => loadRandomSketch())
+    }
+
+    if (liveDiceButton) {
+      liveDiceButton.addEventListener('click', () => mutateEditorCode())
+    }
+
+    if (liveClearButton) {
+      liveClearButton.addEventListener('click', () => clearEditor())
+    }
+
+    if (liveRecordToggle) {
+      liveRecordToggle.addEventListener('click', () => {
+        if (activeCaptureAbortController) toggleVideoCapture()
+        else toggleRecordPopover()
+      })
+    }
+
+    if (liveOptionsToggle) {
+      liveOptionsToggle.addEventListener('click', () => toggleOptionsPanel())
+    }
+
+    if (liveInfoToggle) {
+      liveInfoToggle.addEventListener('click', () => showWelcome({ force: true }))
+    }
+
+    if (liveFitButton) {
+      liveFitButton.addEventListener('click', () => {
+        const geometry = toggleEditorPanelFit()
+        setLiveStatus(geometry?.mode === 'fullscreen' ? 'Fullscreen code.' : 'Windowed code.', 'ok')
+      })
+    }
+
+    if (recordCloseButton) {
+      recordCloseButton.addEventListener('click', () => toggleRecordPopover(false))
+    }
+
+    if (optionsCloseButton) {
+      optionsCloseButton.addEventListener('click', () => toggleOptionsPanel(false))
+    }
+
+    if (optionsOpenRecordButton) {
+      optionsOpenRecordButton.addEventListener('click', () => {
+        toggleOptionsPanel(false)
+        toggleRecordPopover(true)
+      })
+    }
+
+    if (optionsResetButton) {
+      optionsResetButton.addEventListener('click', resetUiPreferences)
+    }
+
+    if (welcomeCloseButton) {
+      welcomeCloseButton.addEventListener('click', () => dismissWelcome())
+    }
+
+    if (welcomeStartButton) {
+      welcomeStartButton.addEventListener('click', () => {
+        dismissWelcome()
+        liveEditorView?.focus()
+      })
+    }
+
+    if (welcomeRandomButton) {
+      welcomeRandomButton.addEventListener('click', () => {
+        dismissWelcome()
+        loadRandomSketch()
+      })
+    }
+
+    if (captureVideoToggle) {
+      captureVideoToggle.addEventListener('click', toggleVideoCapture)
+    }
+
+    if (captureFrameButton) {
+      captureFrameButton.addEventListener('click', () => {
+        void saveCanvasFrame().catch((error) => {
+          const message = error instanceof Error ? error.message : String(error)
+          setCaptureStatus(`Frame failed: ${message}`, 'error')
+        })
+      })
+    }
+
+    if (interfaceRecordToggle) {
+      interfaceRecordToggle.addEventListener('click', () => {
+        toggleInterfaceRecording()
+      })
+    }
+
+    if (interfacePlaybackButton) {
+      interfacePlaybackButton.addEventListener('click', () => {
+        void playInterfacePerformance(lastInterfaceRecording, { runCode: true }).catch((error) => {
+          const message = error instanceof Error ? error.message : String(error)
+          setInterfaceRecordStatus(`Playback failed: ${message}`, 'error')
+        })
+      })
+    }
+
+    if (captureDurationInput) {
+      const syncCaptureDuration = () => {
+        setCaptureDurationSeconds(readCaptureDurationSeconds())
+        updateCaptureButtonState()
+        recordInterfaceEvent('capture-settings', {
+          duration: readCaptureDurationSeconds(),
+          fps: readCaptureFps(),
+          resolution: normalizeResolutionMode(captureResolutionSelect?.value),
+          dimensions: readCaptureDimensions()
+        })
+      }
+      captureDurationInput.addEventListener('change', syncCaptureDuration)
+      captureDurationInput.addEventListener('blur', syncCaptureDuration)
+    }
+
+    if (captureFpsInput) {
+      const syncCaptureFps = () => {
+        setCaptureFps(readCaptureFps())
+        updateCaptureButtonState()
+        recordInterfaceEvent('capture-settings', {
+          duration: readCaptureDurationSeconds(),
+          fps: readCaptureFps(),
+          resolution: normalizeResolutionMode(captureResolutionSelect?.value),
+          dimensions: readCaptureDimensions()
+        })
+      }
+      captureFpsInput.addEventListener('change', syncCaptureFps)
+      captureFpsInput.addEventListener('blur', syncCaptureFps)
+    }
+
+    if (captureResolutionSelect) {
+      captureResolutionSelect.addEventListener('change', () => {
+        setCaptureResolutionMode(captureResolutionSelect.value)
+        recordInterfaceEvent('capture-settings', {
+          duration: readCaptureDurationSeconds(),
+          fps: readCaptureFps(),
+          resolution: normalizeResolutionMode(captureResolutionSelect.value),
+          dimensions: readCaptureDimensions()
+        })
+      })
+    }
+
+    const syncCustomCaptureSize = () => {
+      setCaptureCustomSize({
+        width: captureWidthInput?.value,
+        height: captureHeightInput?.value
+      })
+      recordInterfaceEvent('capture-settings', {
+        duration: readCaptureDurationSeconds(),
+        fps: readCaptureFps(),
+        resolution: normalizeResolutionMode(captureResolutionSelect?.value),
+        dimensions: readCaptureDimensions()
+      })
+    }
+
+    if (captureWidthInput) {
+      captureWidthInput.addEventListener('change', syncCustomCaptureSize)
+      captureWidthInput.addEventListener('blur', syncCustomCaptureSize)
+    }
+
+    if (captureHeightInput) {
+      captureHeightInput.addEventListener('change', syncCustomCaptureSize)
+      captureHeightInput.addEventListener('blur', syncCustomCaptureSize)
+    }
+
+    if (editorFontSizeInput) {
+      const syncEditorFontSize = () => {
+        persistUiSettings()
+        syncCodeMaterial()
+        recordInterfaceEvent('ui-settings', {
+          settings: readUiSettingsFromControls()
+        })
+      }
+      editorFontSizeInput.addEventListener('change', syncEditorFontSize)
+      editorFontSizeInput.addEventListener('blur', syncEditorFontSize)
+    }
+
+    if (editorOpacityInput) {
+      editorOpacityInput.addEventListener('input', () => {
+        applyUiSettings(readUiSettingsFromControls())
+        scheduleCodeMaterialRender()
+        recordInterfaceEvent('ui-settings', {
+          settings: readUiSettingsFromControls()
+        })
+      })
+      editorOpacityInput.addEventListener('change', () => {
+        persistUiSettings()
+        syncCodeMaterial()
+      })
+    }
+
+    if (editorLayoutSelect) {
+      editorLayoutSelect.addEventListener('change', () => {
+        if (editorLayoutSelect.value === 'floating') floatEditorPanel()
+        else fitEditorPanel()
+      })
+    }
+
+    if (codeMaterialSourceSelect) {
+      codeMaterialSourceSelect.addEventListener('change', () => {
+        attachCodeMaterial(codeMaterialSourceSelect.value)
+        recordInterfaceEvent('code-material', {
+          sourceName: normalizeCodeMaterialSourceName(codeMaterialSourceSelect.value)
+        })
+      })
+    }
+
+    window.addEventListener('popstate', () => loadSketchFromUrl())
+    window.addEventListener('hashchange', () => loadSketchFromUrl())
+
+    document.addEventListener('keydown', (event) => {
+      const isMod = event.metaKey || event.ctrlKey
+      if (!isMod || !event.shiftKey) return
+      const key = event.key.toLowerCase()
+      if (key === 'h') {
+        event.preventDefault()
+        toggleCode()
+      } else if (key === 's') {
+        event.preventDefault()
+        void saveCanvasFrame().catch((error) => {
+          const message = error instanceof Error ? error.message : String(error)
+          setCaptureStatus(`Screenshot failed: ${message}`, 'error')
+        })
+      } else if (key === 'u') {
+        event.preventDefault()
+        void copySketchUrl().catch((error) => {
+          const message = error instanceof Error ? error.message : String(error)
+          setLiveStatus(`URL copy failed: ${message}`, 'error')
+        })
+      }
+    })
+
+    window.hydraEditor = {
+      getCode: readEditorCode,
+      setCode: setEditorCode,
+      run: runEditorSnippet,
+      saveSketchToUrl,
+      copySketchUrl,
+      loadSketchFromUrl,
+      loadRandomSketch,
+      randomize,
+      mutateEditorCode,
+      clear: clearEditor,
+      select: selectEditorRange,
+      showCompletions: showEditorCompletions,
+      codeCanvas: codeMaterialCanvas,
+      renderCodeToCanvas,
+      attachCodeMaterial,
+      syncCodeMaterial,
+      detachCodeMaterial,
+      getCodeMaterial: getCodeMaterialInfo,
+      setCanvasDisplay,
+      setCanvasFullscreen,
+      fitCanvasToWindow: setCanvasFullscreen,
+      resetCanvasDisplay,
+      getCanvasDisplay,
+      setResolution,
+      fit: fitEditorPanel,
+      float: floatEditorPanel,
+      toggleFit: toggleEditorPanelFit,
+      show: showCode,
+      hide: hideCode,
+      toggle: toggleCode,
+      openRecord: () => toggleRecordPopover(true),
+      openOptions: () => toggleOptionsPanel(true),
+      interfaceRecorder: window.hydraInterfaceRecorder,
+      startInterfaceRecording,
+      stopInterfaceRecording,
+      toggleInterfaceRecording,
+      playInterfacePerformance,
+      loadInterfacePerformance,
+      getUiSettings: () => applyUiSettings(readUiSettingsFromControls()),
+      setUiSettings: (settings) => {
+        const normalized = applyUiSettings(settings)
+        writeUiSettings(normalized)
+        return normalized
+      },
+      getPanelGeometry: readCurrentPanelGeometry,
+      setPanelGeometry: (geometry) => applyPanelGeometry(geometry, { persist: true })
+    }
+    window.codeCanvas = codeMaterialCanvas
+    window.codeMaterialCanvas = codeMaterialCanvas
+    window.renderCodeToCanvas = renderCodeToCanvas
+    window.attachCodeMaterial = attachCodeMaterial
+    window.syncCodeMaterial = syncCodeMaterial
+    window.detachCodeMaterial = detachCodeMaterial
+
+    if (enableLivecoding) {
+      livecodingPlugin = createLivecodingPlugin({
+        runCode: createTrustedLocalCodeRunner(),
+        exposeHelpers: {
+          captureFrames,
+          captureAndSaveVideo,
+          captureAndSaveMp4,
+          saveCanvasFrame,
+          setCanvasDisplay,
+          setCanvasFullscreen,
+          fitCanvasToWindow: setCanvasFullscreen,
+          resetCanvasDisplay,
+          getCanvasDisplay,
+          setResolution,
+          startInterfaceRecording,
+          stopInterfaceRecording,
+          toggleInterfaceRecording,
+          playInterfacePerformance,
+          loadInterfacePerformance,
+          saveSketchToUrl,
+          copySketchUrl,
+          loadSketchFromUrl,
+          loadRandomSketch,
+          randomize,
+          mutateEditorCode,
+          clearEditor,
+          codeCanvas: codeMaterialCanvas,
+          renderCodeToCanvas,
+          attachCodeMaterial,
+          syncCodeMaterial,
+          detachCodeMaterial,
+          fitEditorPanel,
+          showCode,
+          hideCode,
+          toggleCode,
+          toggleRecordPanel: toggleRecordPopover,
+          toggleOptionsPanel,
+          toggleVideoCapture,
+          pickVideoFile,
+          pickVideoFiles,
+          loadVideoFile,
+          loadVideoFiles,
+          restartVideos
+        },
+        allowedBindings: [
+          'speed',
+          'bpm',
+          'fps',
+          'time',
+          'mouse',
+          'update',
+          'afterUpdate',
+          'emitEvent',
+          'setCanvasDisplay',
+          'setCanvasFullscreen',
+          'fitCanvasToWindow',
+          'resetCanvasDisplay',
+          'getCanvasDisplay',
+          'setResolution'
+        ]
+      })
+      installInterfaceRunRecorder(livecodingPlugin)
+      detachLivecoding = runtime.attachPlugin(livecodingPlugin)
+      window.livecoding = livecodingPlugin
+      window.livecodingDetach = detachLivecoding
+      if (livePanel) {
+        livePanel.hidden = false
+        restoreEditorPanelGeometry()
+      }
+      if (livecodingNote) {
+        livecodingNote.textContent = 'live'
+      }
+      if (!runtimeReady) {
+        if (runtimeChip) runtimeChip.textContent = 'webgpu unavailable'
+        setLiveStatus('WebGPU unavailable.', 'error')
+      } else {
+        setLiveStatus('')
+      }
+      showWelcome()
+      console.info('[hydra] livecoding plugin attached')
+      console.info('[hydra] live editor ready: use panel or livecoding.run(...)')
+    } else if (livecodingNote) {
+      livecodingNote.textContent = 'paused'
+    }
+
+    const originalDispose = runtime.dispose.bind(runtime)
+    runtime.dispose = () => {
+      if (activeCaptureAbortController) {
+        activeCaptureAbortController.abort()
+      }
+      if (codeMaterialRenderFrame) {
+        window.cancelAnimationFrame(codeMaterialRenderFrame)
+        codeMaterialRenderFrame = 0
+      }
+      if (typeof detachLivecoding === 'function') {
+        detachLivecoding()
+        detachLivecoding = null
+      }
+      livecodingPlugin = null
+      lastFullBufferBlocks = null
+      originalDispose()
+    }
+
+    console.info('[hydra] ready')
+    console.info('[hydra] try: osc(20, 0.1, 0).rotate(0.2).out()')
+    console.info('[hydra] capture mp4 (WebCodecs): click Video button or run await captureAndSaveVideo({ duration: 3 })')
+    console.info('[hydra] capture frames: await captureFrames({ duration: 2, fps: 60, extension: "png", pickDirectory: true })')
+    console.info('[hydra] dispose via: hydra.dispose()')
+  </script>
+</body>
+
+</html>
