@@ -1,0 +1,44 @@
+{
+  "name": "hydra-synth",
+  "version": "2.0.0-alpha.0",
+  "description": "Modern Hydra-compatible WebGPU synth engine, compiler, browser runtime, capture, and livecoding exports",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./livecoding": {
+      "types": "./dist/livecoding.d.ts",
+      "import": "./dist/livecoding.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
+    },
+    "./core/compiler": {
+      "types": "./dist/core/compiler/index.d.ts",
+      "import": "./dist/core/compiler/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "node ../../scripts/build-package.mjs",
+    "build:dist": "vite build",
+    "typecheck": "node ../../scripts/build-package.mjs --check"
+  },
+  "dependencies": {
+    "mp4box": "2.3.0"
+  },
+  "license": "AGPL-3.0-or-later",
+  "devDependencies": {
+    "vite": "7.3.1"
+  }
+}
