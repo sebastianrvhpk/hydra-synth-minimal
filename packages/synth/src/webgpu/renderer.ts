@@ -20,6 +20,8 @@ export interface WebGPUCapabilities {
   features: string[]
 }
 
+export type WebGPUTextureFilterMode = 'nearest' | 'linear'
+
 export class WebGPURenderer {
   readonly canvas: HTMLCanvasElement
   width: number
@@ -33,6 +35,7 @@ export class WebGPURenderer {
   canvasFormat: GPUTextureFormat | null = null
   globalUniformBuffer: GPUBuffer | null = null
   linearSampler: GPUSampler | null = null
+  nearestSampler: GPUSampler | null = null
   fallbackTexture: GPUTexture | null = null
   capabilities: WebGPUCapabilities | null = null
 
@@ -135,10 +138,17 @@ export class WebGPURenderer {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     })
 
-    this.linearSampler = this.device.createSampler({
+    this.nearestSampler = this.device.createSampler({
       magFilter: 'nearest',
       minFilter: 'nearest',
       mipmapFilter: 'nearest',
+      addressModeU: 'repeat',
+      addressModeV: 'repeat'
+    })
+    this.linearSampler = this.device.createSampler({
+      magFilter: 'linear',
+      minFilter: 'linear',
+      mipmapFilter: 'linear',
       addressModeU: 'repeat',
       addressModeV: 'repeat'
     })
@@ -410,13 +420,18 @@ fn fsMain(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
     return this.device.createCommandEncoder({ label: 'hydra-frame-encoder' })
   }
 
+  getSampler (filter: WebGPUTextureFilterMode = 'nearest'): GPUSampler | null {
+    return filter === 'linear' ? this.linearSampler : this.nearestSampler
+  }
+
   submitFrame (encoder: GPUCommandEncoder | null): void {
     if (!this.ready || !this.device || !encoder) return
     this.device.queue.submit([encoder.finish()])
   }
 
   renderTextureToScreen (encoder: GPUCommandEncoder, texture: GPUTexture | null): void {
-    if (!this.ready || !this.context || !this.screenPipeline || !this.globalUniformBuffer || !this.linearSampler || !this.device) return
+    const screenSampler = this.getSampler('nearest')
+    if (!this.ready || !this.context || !this.screenPipeline || !this.globalUniformBuffer || !screenSampler || !this.device) return
 
     const targetView = this.context.getCurrentTexture().createView()
     const renderPass = encoder.beginRenderPass({
@@ -432,7 +447,7 @@ fn fsMain(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
     const bindGroupCacheKey = [
       `p${this.getObjectId(this.screenPipeline)}`,
       `g${this.getObjectId(this.globalUniformBuffer)}`,
-      `s${this.getObjectId(this.linearSampler)}`,
+      `s${this.getObjectId(screenSampler)}`,
       `t${this.getObjectId(sourceTexture)}`
     ].join('|')
 
@@ -441,7 +456,7 @@ fn fsMain(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
         layout: this.screenPipeline.getBindGroupLayout(0),
         entries: [
           { binding: 0, resource: { buffer: this.globalUniformBuffer } },
-          { binding: 1, resource: this.linearSampler },
+          { binding: 1, resource: screenSampler },
           { binding: 2, resource: this.getTextureView(sourceTexture) }
         ]
       })
@@ -455,7 +470,8 @@ fn fsMain(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
   }
 
   renderAllOutputsToScreen (encoder: GPUCommandEncoder, textures: GPUTexture[] = []): void {
-    if (!this.ready || !this.context || !this.screenAllPipeline || !this.globalUniformBuffer || !this.linearSampler || !this.device) return
+    const screenSampler = this.getSampler('nearest')
+    if (!this.ready || !this.context || !this.screenAllPipeline || !this.globalUniformBuffer || !screenSampler || !this.device) return
 
     const fallback = this.getFallbackTexture()
     const resolved = this.screenResolvedTextures
@@ -480,7 +496,7 @@ fn fsMain(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
     const bindGroupCacheKey = [
       `p${this.getObjectId(this.screenAllPipeline)}`,
       `g${this.getObjectId(this.globalUniformBuffer)}`,
-      `s${this.getObjectId(this.linearSampler)}`,
+      `s${this.getObjectId(screenSampler)}`,
       `t0${this.getObjectId(resolved[0])}`,
       `t1${this.getObjectId(resolved[1])}`,
       `t2${this.getObjectId(resolved[2])}`,
@@ -492,7 +508,7 @@ fn fsMain(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
         layout: this.screenAllPipeline.getBindGroupLayout(0),
         entries: [
           { binding: 0, resource: { buffer: this.globalUniformBuffer } },
-          { binding: 1, resource: this.linearSampler },
+          { binding: 1, resource: screenSampler },
           { binding: 2, resource: this.getTextureView(resolved[0] ?? fallback) },
           { binding: 3, resource: this.getTextureView(resolved[1] ?? fallback) },
           { binding: 4, resource: this.getTextureView(resolved[2] ?? fallback) },
@@ -528,6 +544,7 @@ fn fsMain(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
     this.screenPipeline = null
     this.screenAllPipeline = null
     this.linearSampler = null
+    this.nearestSampler = null
     this.capabilities = null
     this.context = null
     this.device = null
