@@ -2,7 +2,7 @@ import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
@@ -214,6 +214,13 @@ const resolvePath = (pathname) => {
   return candidate
 }
 
+const safeWriteRoot = (value = '') => {
+  if (!value) return null
+  const resolved = path.resolve(value)
+  mkdirSync(resolved, { recursive: true })
+  return resolved
+}
+
 const openBrowser = (url) => {
   const options = { detached: true, stdio: 'ignore' }
 
@@ -244,6 +251,56 @@ const handleCaptureRoute = async (request, response, parsedUrl, pathname) => {
       sessionId: session.id,
       extension: session.extension
     })
+    return true
+  }
+
+  if (pathname === '/__capture/save-video') {
+    if (request.method !== 'POST') {
+      sendText(response, 405, 'Method not allowed.')
+      return true
+    }
+
+    const outputDir = safeWriteRoot(parsedUrl.searchParams.get('outputDir') ?? '')
+    const fileName = parsedUrl.searchParams.get('fileName') ?? ''
+    if (!outputDir) {
+      sendText(response, 400, 'Missing outputDir.')
+      return true
+    }
+    if (!isSafeFileName(fileName) || !fileName.endsWith('.mp4')) {
+      sendText(response, 400, 'Invalid fileName.')
+      return true
+    }
+
+    const payload = await readRequestBody(request)
+    if (payload.length === 0) {
+      sendText(response, 400, 'Video payload is empty.')
+      return true
+    }
+
+    const outputPath = path.join(outputDir, fileName)
+    if (!outputPath.startsWith(outputDir)) {
+      sendText(response, 400, 'Invalid output path.')
+      return true
+    }
+    writeFileSync(outputPath, payload)
+    sendJson(response, 200, { ok: true, outputPath })
+    return true
+  }
+
+  if (pathname === '/__capture/append-manifest') {
+    if (request.method !== 'POST') {
+      sendText(response, 405, 'Method not allowed.')
+      return true
+    }
+
+    const outputDir = safeWriteRoot(parsedUrl.searchParams.get('outputDir') ?? '')
+    if (!outputDir) {
+      sendText(response, 400, 'Missing outputDir.')
+      return true
+    }
+    const body = await readJsonBody(request)
+    appendFileSync(path.join(outputDir, 'manifest.jsonl'), `${JSON.stringify(body)}\n`)
+    sendJson(response, 200, { ok: true })
     return true
   }
 
