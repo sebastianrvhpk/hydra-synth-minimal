@@ -110,8 +110,7 @@ export class VideoRecorder {
 
     for (const codec of codecCandidates) {
       const configVariants: VideoEncoderConfig[] = [
-        { ...baseConfig, codec, avc: { format: 'avc' } },
-        { ...baseConfig, codec }
+        { ...baseConfig, codec, avc: { format: 'avc' } }
       ]
 
       for (const config of configVariants) {
@@ -130,7 +129,10 @@ export class VideoRecorder {
 
     if (!configuredCodec) {
       this.recording = false
-      throw new Error('[VideoRecorder] no supported H.264 codec configuration found for this capture.')
+      throw new Error(
+        '[VideoRecorder] no supported H.264 AVC WebCodecs configuration found for MP4 capture. ' +
+        'Use an installed Chrome/Edge browser with H.264 WebCodecs support, or use a frame/ffmpeg capture fallback.'
+      )
     }
   }
 
