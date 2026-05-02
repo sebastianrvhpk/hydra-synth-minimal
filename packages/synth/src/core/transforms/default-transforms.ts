@@ -294,12 +294,11 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     wgsl: `
   let safeGamma = max(abs(gamma), 0.0001);
   let safeBins = max(abs(bins), 1.0);
-  var c2 = pow(_c0, vec4f(safeGamma));
-  c2 *= vec4f(safeBins);
-  c2 = floor(c2);
-  c2 /= vec4f(safeBins);
-  c2 = pow(c2, vec4f(1.0 / safeGamma));
-  return vec4f(c2.xyz, _c0.w);
+  let signalSign = sign(_c0.xyz);
+  var magnitude = pow(abs(_c0.xyz), vec3f(safeGamma));
+  magnitude = floor(magnitude * safeBins) / safeBins;
+  let quantized = signalSign * pow(magnitude, vec3f(1.0 / safeGamma));
+  return vec4f(quantized, _c0.w);
 `
   },
   {

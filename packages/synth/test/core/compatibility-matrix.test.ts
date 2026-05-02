@@ -118,6 +118,23 @@ describe('DSL compatibility matrix', () => {
     expect(wgsl).toMatch(/noise\(st, c0_i0\.x, c0_i1\.x\)/)
   })
 
+  it('posterizes signed and unipolar fields through the same two-argument form', () => {
+    const { registry, output } = createRegistry()
+    registry.generators
+      .noise(2, 0)
+      .posterize(8, 1)
+      .out()
+
+    expect(output.passes.length).toBe(1)
+    const wgsl = output.passes[0].wgsl
+    expect(wgsl).toContain('fn posterize')
+    expect(wgsl).toContain('signalSign = sign(_c0.xyz)')
+    expect(wgsl).toContain('pow(abs(_c0.xyz)')
+    expect(wgsl).toContain('signalSign * pow(magnitude')
+    expect(wgsl).not.toContain('mode')
+    expect(wgsl).not.toContain('pow(_c0,')
+  })
+
   it('keeps dynamic uniform callbacks deterministic with tolerance checks', () => {
     const { registry, output } = createRegistry()
     registry.registerTransform({
