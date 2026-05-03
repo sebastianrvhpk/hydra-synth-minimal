@@ -270,3 +270,48 @@ src(o0)
 .out(o1)
 
 render(o1)
+
+---
+
+
+
+osc(Math.PI,.01,1).g(ns(),.5).color(0,1,0)
+  .add(osc(Math.PI,.01,1).r(ns(),.5).color(1,0,0))
+  .add(osc(Math.PI,.01,1).b(ns(),-.5).color(0,0,1))
+  .blend(osc(Math.PI,.01,1),ns())
+  .out()
+
+
+  ---
+
+
+
+phase = ns(1, .03)
+  .posterize(4, 1)
+  .pixelate(1, 1)
+  .r(.5, 0)
+
+tileField = gradient()
+  .repeat(width / 8, height / 8, phase, 0)
+  .sub(gradient())
+
+gate = shape(4, 1, 0)
+  .scale(1 / 8, 1, 1, 0, 0)
+  .repeat(width / 8, height / 8, phase, 0)
+
+material = solid()
+  .add(ns(width / 8, .2).pixelate(width / 8, height / 8), .8)
+  .diff(osc(Math.PI * 2, .21, 1).kaleid(8))
+
+src(o0)
+  .dualKawaseBlur(2)
+ .modulate(tileField
+  .dualKawaseBlur(20).color(1 / width, 1 / height), .5)
+  .modulate(ns().color(1 / width, 1 / height), 2)
+  .layer(material.mask(gate))
+  .out(o0)
+
+
+  ---
+
+  

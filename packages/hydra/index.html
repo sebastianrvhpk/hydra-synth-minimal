@@ -1140,6 +1140,44 @@
     synth.getCanvasDisplay = getCanvasDisplay
     synth.setResolution = setResolution
 
+    const installTextureFilterCompat = () => {
+      const canvas = runtime.host?.canvas
+      if (canvas) {
+        synth.canvas = canvas
+        canvas.setNearest = function () {
+          this.style.imageRendering = 'pixelated'
+          return this
+        }
+        canvas.setLinear = function () {
+          this.style.imageRendering = 'auto'
+          return this
+        }
+      }
+
+      const outputs = Array.isArray(runtime.outputs) ? runtime.outputs : []
+      const outputSetNearest = (output) => {
+        if (output && typeof output.setNearest === 'function') output.setNearest()
+        return output
+      }
+      const outputSetLinear = (output) => {
+        if (output && typeof output.setLinear === 'function') output.setLinear()
+        return output
+      }
+      synth.oS = {
+        outputs,
+        setNearest() {
+          outputs.forEach(outputSetNearest)
+          return this
+        },
+        setLinear() {
+          outputs.forEach(outputSetLinear)
+          return this
+        }
+      }
+    }
+
+    installTextureFilterCompat()
+
     const attachBinding = (name) => {
       Object.defineProperty(window, name, {
         configurable: true,
@@ -1169,8 +1207,8 @@
     window.captureHydraFrameSequence = captureFrames
 
     // Default scene so users immediately see output.
-    if (runtimeReady && typeof synth.osc === 'function') {
-      synth.osc(12, 0.08, 0).out()
+    if (runtimeReady && typeof synth.solid === 'function') {
+      synth.solid().out()
     }
 
     const params = new URLSearchParams(window.location.search)
@@ -1323,6 +1361,7 @@ speed = 0.75`
       'loadRandomSketch',
       'randomize',
       'mutateEditorCode',
+      'hydraAgentLivecoder',
       'clearEditor',
       'codeCanvas',
       'renderCodeToCanvas',
@@ -4380,7 +4419,7 @@ speed = 0.75`
           width,
           height,
           realtime,
-          waitForGPU: true,
+          waitForGPU: options.waitForGPU !== false,
           resumeAfterCapture: true,
           restoreResolution: true,
           ignoreEngineFpsGate: false,
@@ -4399,10 +4438,20 @@ speed = 0.75`
         const downloadVideoBlob = videoBlob.type === 'video/mp4'
           ? videoBlob
           : new Blob([videoBlob], { type: 'video/mp4' })
-        downloadBlob({
-          blob: downloadVideoBlob,
-          fileName
-        })
+        if (options.saveToServerDir) {
+          const saveResponse = await fetch(`/__capture/save-video?outputDir=${encodeURIComponent(options.saveToServerDir)}&fileName=${encodeURIComponent(fileName)}`, {
+            method: 'POST',
+            body: downloadVideoBlob
+          })
+          if (!saveResponse.ok) {
+            throw new Error(`Server save failed: ${await saveResponse.text()}`)
+          }
+        } else {
+          downloadBlob({
+            blob: downloadVideoBlob,
+            fileName
+          })
+        }
         saveCaptureBaseName(outputBaseName)
         setCaptureStatus(`Saved ${fileName} to your downloads folder.`, 'ok')
         return {
@@ -4607,6 +4656,107 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
     window.captureAndSaveVideo = captureAndSaveVideo
     window.captureAndSaveMp4 = captureAndSaveMp4
     window.captureAndSaveWebm = captureAndSaveWebm
+
+    const appendBatchCaptureManifest = async (outputDir, entry) => {
+      await fetch(`/__capture/append-manifest?outputDir=${encodeURIComponent(outputDir)}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(entry)
+      })
+    }
+
+    const runBatchCaptureFromUrl = async () => {
+      const params = new URLSearchParams(window.location.search)
+      const manifestUrl = params.get('batchManifest')
+      const outputDir = params.get('batchOutDir')
+      if (!manifestUrl || !outputDir) return
+
+      const duration = Number(params.get('duration') ?? 10)
+      const fps = Number(params.get('fps') ?? 30)
+      const width = Number(params.get('width') ?? 1280)
+      const height = Number(params.get('height') ?? 720)
+      const realtime = params.get('realtime') === '1'
+      const response = await fetch(manifestUrl)
+      if (!response.ok) throw new Error(`Unable to load batch manifest: ${response.status}`)
+      const manifest = await response.json()
+      const entries = Array.isArray(manifest?.entries) ? manifest.entries : []
+
+      welcomeModal?.setAttribute('hidden', '')
+      recordPopover?.setAttribute('hidden', '')
+      optionsPanel?.setAttribute('hidden', '')
+      hideCode()
+      setLiveStatus(`Batch capture: 0/${entries.length}`, 'ok')
+
+      for (let index = 0; index < entries.length; index += 1) {
+        const entry = entries[index]
+        const startedAt = new Date().toISOString()
+        const outputBaseName = sanitizeOutputBaseName(entry.outputBaseName ?? entry.name ?? `patch-${index + 1}`) || `patch-${index + 1}`
+        const result = {
+          index,
+          name: entry.name ?? outputBaseName,
+          url: entry.url ?? null,
+          outputBaseName,
+          outputPath: `${outputDir}\\${outputBaseName}.mp4`,
+          duration,
+          fps,
+          width,
+          height,
+          startedAt,
+          endedAt: null,
+          status: 'pending',
+          error: null,
+          skipReason: entry.skipReason ?? null,
+          mediaUrls: entry.mediaUrls ?? []
+        }
+
+        try {
+          setLiveStatus(`Batch capture: ${index + 1}/${entries.length} ${result.name}`, 'ok')
+          if (entry.skipReason) {
+            result.status = 'skipped_media'
+            continue
+          }
+          const patchResponse = await fetch(entry.url)
+          if (!patchResponse.ok) throw new Error(`Unable to load patch: ${patchResponse.status}`)
+          const patch = await patchResponse.text()
+
+          hush()
+          await runtime.init()
+          runtime.setResolution(width, height)
+          solid(0, 0, 0).out()
+          await Promise.resolve(livecoding.run(`(async () => {\n${patch}\n})()`))
+          await runtime.init()
+          runtime.setResolution(width, height)
+          if (window.synth) window.synth.fps = undefined
+          fitCanvasToWindow()
+          welcomeModal?.setAttribute('hidden', '')
+          recordPopover?.setAttribute('hidden', '')
+          optionsPanel?.setAttribute('hidden', '')
+          hideCode()
+
+          await captureAndSaveMp4({
+            duration,
+            fps,
+            width,
+            height,
+            outputBaseName,
+            realtime,
+            waitForGPU: false,
+            saveToServerDir: outputDir
+          })
+          result.status = 'ok'
+        } catch (error) {
+          result.status = 'error'
+          result.error = error instanceof Error ? error.message : String(error)
+        } finally {
+          result.endedAt = new Date().toISOString()
+          await appendBatchCaptureManifest(outputDir, result)
+        }
+      }
+
+      setLiveStatus(`Batch capture complete: ${entries.length}/${entries.length}`, 'ok')
+    }
+
+    window.runBatchCaptureFromUrl = runBatchCaptureFromUrl
     window.saveCanvasFrame = saveCanvasFrame
     window.toggleVideoCapture = toggleVideoCapture
     window.toggleMp4Capture = toggleVideoCapture
@@ -4844,6 +4994,244 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
         })
       }
     }
+
+    let agentLivecodeRunId = 0
+
+    const sleepAgentLivecode = (durationMs) => new Promise((resolve) => {
+      window.setTimeout(resolve, Math.max(0, Number(durationMs) || 0))
+    })
+
+    const nextAgentLivecodeRunId = () => {
+      agentLivecodeRunId += 1
+      return agentLivecodeRunId
+    }
+
+    const assertAgentLivecodeActive = (runId) => {
+      if (runId !== agentLivecodeRunId) throw new Error('Agent livecoding sequence was stopped.')
+    }
+
+    const clampEditorPosition = (position, fallback = 0) => {
+      const max = liveEditorView?.state.doc.length ?? 0
+      const numeric = Number(position)
+      return Math.max(0, Math.min(max, Number.isFinite(numeric) ? numeric : fallback))
+    }
+
+    const resolveAgentEditRange = (step = {}) => {
+      if (!liveEditorView) return null
+      const code = readEditorCode()
+      if (typeof step.find === 'string') {
+        const fromIndex = code.indexOf(step.find)
+        if (fromIndex < 0) throw new Error(`Could not find text: ${step.find}`)
+        return {
+          from: fromIndex,
+          to: fromIndex + step.find.length
+        }
+      }
+      if (step.range && typeof step.range === 'object') {
+        const from = clampEditorPosition(step.range.from ?? step.range.anchor, 0)
+        const to = clampEditorPosition(step.range.to ?? step.range.head, from)
+        return {
+          from: Math.min(from, to),
+          to: Math.max(from, to)
+        }
+      }
+      if (Number.isFinite(Number(step.from)) || Number.isFinite(Number(step.to))) {
+        const from = clampEditorPosition(step.from, 0)
+        const to = clampEditorPosition(step.to, from)
+        return {
+          from: Math.min(from, to),
+          to: Math.max(from, to)
+        }
+      }
+      return null
+    }
+
+    const dispatchAgentEditorChange = ({ from, to = from, insert = '', selectToEnd = true }) => {
+      if (!liveEditorView) return null
+      const safeFrom = clampEditorPosition(from, 0)
+      const safeTo = clampEditorPosition(to, safeFrom)
+      const text = String(insert ?? '')
+      const head = selectToEnd ? safeFrom + text.length : safeFrom
+      liveEditorView.dispatch({
+        changes: {
+          from: Math.min(safeFrom, safeTo),
+          to: Math.max(safeFrom, safeTo),
+          insert: text
+        },
+        selection: EditorSelection.single(head),
+        scrollIntoView: true
+      })
+      scheduleCodeMaterialRender({ force: true })
+      return {
+        from: safeFrom,
+        to: safeFrom + text.length
+      }
+    }
+
+    const animateAgentDelete = async ({ from, to, delayMs, runId }) => {
+      let cursor = Math.max(from, to)
+      while (cursor > from) {
+        assertAgentLivecodeActive(runId)
+        dispatchAgentEditorChange({
+          from: cursor - 1,
+          to: cursor,
+          insert: '',
+          selectToEnd: false
+        })
+        cursor -= 1
+        if (delayMs > 0) await sleepAgentLivecode(delayMs)
+      }
+      return { from, to: from }
+    }
+
+    const animateAgentInsert = async ({ from, text, delayMs, chunkSize, runId }) => {
+      let cursor = from
+      const source = String(text ?? '')
+      const size = Math.max(1, Math.floor(Number(chunkSize) || 1))
+      for (let index = 0; index < source.length; index += size) {
+        assertAgentLivecodeActive(runId)
+        const chunk = source.slice(index, index + size)
+        dispatchAgentEditorChange({
+          from: cursor,
+          to: cursor,
+          insert: chunk
+        })
+        cursor += chunk.length
+        if (delayMs > 0) await sleepAgentLivecode(delayMs)
+      }
+      return { from, to: cursor }
+    }
+
+    const runAgentLivecodeBuffer = async (metadata = {}) => {
+      await runEditorSnippet('all')
+      recordInterfaceEvent('action', {
+        action: 'agent-livecode-run',
+        label: metadata.label ?? null
+      })
+      return readEditorCode()
+    }
+
+    const applyAgentLivecodeStep = async (step = {}, options = {}) => {
+      if (!liveEditorView) throw new Error('Live editor is not ready.')
+      const runId = options.runId ?? nextAgentLivecodeRunId()
+      assertAgentLivecodeActive(runId)
+      const type = String(step.type ?? (typeof step.find === 'string' ? 'replace' : 'insert')).toLowerCase()
+      const delayMs = Math.max(0, Number(step.delayMs ?? options.delayMs ?? 18) || 0)
+      const chunkSize = Math.max(1, Math.floor(Number(step.chunkSize ?? options.chunkSize ?? 1) || 1))
+      const label = step.label ?? options.label ?? type
+
+      recordInterfaceEvent('action', {
+        action: 'agent-livecode-step',
+        type,
+        label
+      })
+
+      if (type === 'wait' || type === 'sleep') {
+        await sleepAgentLivecode(step.ms ?? step.durationMs ?? options.waitMs ?? 500)
+        return { type, code: readEditorCode() }
+      }
+
+      if (type === 'run') {
+        await runAgentLivecodeBuffer({ label })
+        return { type, code: readEditorCode() }
+      }
+
+      if (type === 'select') {
+        const range = resolveAgentEditRange(step)
+        if (!range) throw new Error('Select step requires find, range, from/to, or anchor/head.')
+        selectEditorRange(range, { focus: step.focus !== false })
+        return { type, range, code: readEditorCode() }
+      }
+
+      if (type === 'set') {
+        const code = String(step.code ?? step.text ?? '')
+        if (step.animate) {
+          const oldLength = liveEditorView.state.doc.length
+          await animateAgentDelete({ from: 0, to: oldLength, delayMs, runId })
+          await animateAgentInsert({ from: 0, text: code, delayMs, chunkSize, runId })
+        } else {
+          setEditorCode(code, { persist: step.persist ?? options.persist ?? false, focus: step.focus !== false })
+        }
+        if (step.run ?? options.run) await runAgentLivecodeBuffer({ label })
+        return { type, code: readEditorCode() }
+      }
+
+      if (type === 'insert') {
+        const from = clampEditorPosition(step.at ?? step.from, liveEditorView.state.selection.main.head)
+        const text = String(step.text ?? step.insert ?? '')
+        const range = await animateAgentInsert({ from, text, delayMs, chunkSize, runId })
+        if (step.run ?? options.run) await runAgentLivecodeBuffer({ label })
+        return { type, range, code: readEditorCode() }
+      }
+
+      if (type === 'delete') {
+        const range = resolveAgentEditRange(step)
+        if (!range) throw new Error('Delete step requires find, range, or from/to.')
+        const resultRange = await animateAgentDelete({ ...range, delayMs, runId })
+        if (step.run ?? options.run) await runAgentLivecodeBuffer({ label })
+        return { type, range: resultRange, code: readEditorCode() }
+      }
+
+      if (type === 'replace') {
+        const range = resolveAgentEditRange(step)
+        if (!range) throw new Error('Replace step requires find, range, or from/to.')
+        selectEditorRange(range, { focus: step.focus !== false })
+        if (step.delete !== false) await animateAgentDelete({ ...range, delayMs, runId })
+        const replacement = String(step.replacement ?? step.text ?? step.insert ?? '')
+        const resultRange = await animateAgentInsert({ from: range.from, text: replacement, delayMs, chunkSize, runId })
+        if (step.run ?? options.run) await runAgentLivecodeBuffer({ label })
+        return { type, range: resultRange, code: readEditorCode() }
+      }
+
+      throw new Error(`Unsupported agent livecoding step type: ${type}`)
+    }
+
+    const playAgentLivecodeSequence = async (steps = [], options = {}) => {
+      if (!Array.isArray(steps)) throw new Error('Agent livecoding sequence must be an array.')
+      const runId = nextAgentLivecodeRunId()
+      const results = []
+      setLiveStatus(`Agent livecoding: ${steps.length} step(s).`, 'ok')
+      for (let index = 0; index < steps.length; index += 1) {
+        assertAgentLivecodeActive(runId)
+        const step = steps[index]
+        const result = await applyAgentLivecodeStep(step, {
+          ...options,
+          runId,
+          label: step?.label ?? `step ${index + 1}`
+        })
+        results.push(result)
+        if (step?.pauseAfterMs ?? options.pauseAfterMs) {
+          await sleepAgentLivecode(step.pauseAfterMs ?? options.pauseAfterMs)
+        }
+      }
+      setLiveStatus(`Agent livecoding complete: ${steps.length} step(s).`, 'ok')
+      return results
+    }
+
+    const stopAgentLivecodeSequence = () => {
+      nextAgentLivecodeRunId()
+      setLiveStatus('Agent livecoding stopped.', 'ok')
+      return true
+    }
+
+    const createAgentLivecodeApi = () => ({
+      getCode: readEditorCode,
+      setCode: (code, options = {}) => applyAgentLivecodeStep({ ...options, type: 'set', code }, options),
+      insert: (text, at, options = {}) => applyAgentLivecodeStep({ ...options, type: 'insert', text, at }, options),
+      replace: (find, replacement, options = {}) => applyAgentLivecodeStep({ ...options, type: 'replace', find, replacement }, options),
+      delete: (find, options = {}) => applyAgentLivecodeStep({ ...options, type: 'delete', find }, options),
+      select: (target, options = {}) => applyAgentLivecodeStep(
+        typeof target === 'string'
+          ? { ...options, type: 'select', find: target }
+          : { ...options, type: 'select', range: target },
+        options
+      ),
+      run: (metadata = {}) => runAgentLivecodeBuffer(metadata),
+      wait: (ms) => sleepAgentLivecode(ms),
+      step: applyAgentLivecodeStep,
+      play: playAgentLivecodeSequence,
+      stop: stopAgentLivecodeSequence
+    })
 
     if (liveEditor) {
       liveEditorView = new EditorView({
@@ -5160,10 +5548,13 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
       }
     })
 
+    const hydraAgentLivecoder = createAgentLivecodeApi()
+
     window.hydraEditor = {
       getCode: readEditorCode,
       setCode: setEditorCode,
       run: runEditorSnippet,
+      agent: hydraAgentLivecoder,
       saveSketchToUrl,
       copySketchUrl,
       loadSketchFromUrl,
@@ -5208,6 +5599,7 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
       getPanelGeometry: readCurrentPanelGeometry,
       setPanelGeometry: (geometry) => applyPanelGeometry(geometry, { persist: true })
     }
+    window.hydraAgentLivecoder = hydraAgentLivecoder
     window.codeCanvas = codeMaterialCanvas
     window.codeMaterialCanvas = codeMaterialCanvas
     window.renderCodeToCanvas = renderCodeToCanvas
@@ -5323,6 +5715,10 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
     console.info('[hydra] capture mp4 (WebCodecs): click Video button or run await captureAndSaveVideo({ duration: 3 })')
     console.info('[hydra] capture frames: await captureFrames({ duration: 2, fps: 60, extension: "png", pickDirectory: true })')
     console.info('[hydra] dispose via: hydra.dispose()')
+    void runBatchCaptureFromUrl().catch((error) => {
+      console.error('[hydra] batch capture failed', error)
+      setLiveStatus(`Batch capture failed: ${error instanceof Error ? error.message : String(error)}`, 'error')
+    })
   </script>
 </body>
 
