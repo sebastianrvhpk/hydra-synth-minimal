@@ -38,6 +38,11 @@ const sourceRefToken = (sourceRef: unknown): string | null => {
     return `state:${sanitizeResourceToken(stateKey)}`
   }
 
+  const internalPassIndex = candidate.internalPassIndex
+  if (typeof internalPassIndex === 'number' && Number.isInteger(internalPassIndex) && internalPassIndex >= 0) {
+    return `internal-pass:${internalPassIndex}`
+  }
+
   const slot = candidate.slot
   if (typeof slot === 'string' && slot.length > 0) {
     return `slot:${sanitizeResourceToken(slot)}`

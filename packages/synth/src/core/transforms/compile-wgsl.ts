@@ -25,16 +25,30 @@ import type {
 interface ShaderParams {
   uniforms: HydraUniformBinding[]
   textures: Array<Omit<HydraTextureBinding, 'binding'>>
-  wgslFunctions: HydraTransformCall[]
+  wgslFunctions: HydraWgslFunction[]
   fragColor: string
   usesPrev: boolean
   uniformScalarCount: number
   argumentNamespaceSeed: number
+  expressionFunctionSeed: number
   structureSignature: string
   schedule: HydraPassSchedule
 }
 
 const DEFAULT_PASS_OUTPUT_FORMAT: HydraResourceFormat = 'rgba16float'
+
+interface HydraWgslFunction {
+  name: string
+  transform: {
+    wgsl: string
+  }
+}
+
+type RenderpassMode = 'framebuffer' | 'expression'
+
+interface GenerateWgslOptions {
+  renderpassMode: RenderpassMode
+}
 
 const normalizeResolutionScale = (value: number): number => {
   if (!Number.isFinite(value) || value <= 0) return 1
@@ -142,11 +156,24 @@ const coerceExpression = (expression: string, fromType: string, toType: string):
   return expression
 }
 
-const containsTransform = (transform: HydraTransformCall, list: HydraTransformCall[]): boolean => {
+const containsTransform = (transform: HydraWgslFunction, list: HydraWgslFunction[]): boolean => {
   for (let index = 0; index < list.length; index += 1) {
     if (transform.name === list[index].name) return true
   }
   return false
+}
+
+const registerWgslFunction = (
+  shaderParams: ShaderParams,
+  name: string,
+  wgsl: string
+): void => {
+  const entry: HydraWgslFunction = {
+    name,
+    transform: { wgsl }
+  }
+  if (containsTransform(entry, shaderParams.wgslFunctions)) return
+  shaderParams.wgslFunctions.push(entry)
 }
 
 const structureSignatureForArg = (arg: unknown): string => {
@@ -271,7 +298,10 @@ const buildTransformCall = (
   return `${method}(${[callSeed].concat(inputExpressions).join(', ')})`
 }
 
-const buildNestedInputs = (inputs: HydraTypedArgument[], shaderParams: ShaderParams): ((cVar: string, stVar: string) => string) => {
+const buildNestedInputs = (
+  inputs: HydraTypedArgument[],
+  shaderParams: ShaderParams
+): ((cVar: string, stVar: string) => string) => {
   let generator = (_cVar: string, _stVar: string): string => ''
 
   inputs.forEach((input, index) => {
@@ -282,7 +312,8 @@ const buildNestedInputs = (inputs: HydraTypedArgument[], shaderParams: ShaderPar
         const nestedUvVar = generateInputName(`${stVar}_${cVar}`, index)
         const nestedGenerator = generateWgslTransforms(
           (input.value as { transforms: HydraTransformCall[] }).transforms,
-          shaderParams
+          shaderParams,
+          { renderpassMode: 'expression' }
         )
         return `var ${nestedUvVar}: vec2f = ${stVar};\nvar ${nestedColorVar}: vec4f = vec4f(0.0);\n${currentPrevious(cVar, stVar)}\n${nestedGenerator(nestedColorVar, nestedUvVar)}`
       }
@@ -292,7 +323,57 @@ const buildNestedInputs = (inputs: HydraTypedArgument[], shaderParams: ShaderPar
   return generator
 }
 
-const generateWgslTransforms = (transforms: HydraTransformCall[], shaderParams: ShaderParams): ((cVar: string, stVar: string) => string) => {
+const sanitizeWgslIdentifier = (value: string): string =>
+  value.replace(/[^a-zA-Z0-9_]/g, '_').replace(/^[^a-zA-Z_]/, '_')
+
+const registerExpressionEvaluator = (
+  shaderParams: ShaderParams,
+  previousGenerator: (cVar: string, stVar: string) => string
+): string => {
+  const name = `hydraExprInput_${shaderParams.expressionFunctionSeed}`
+  shaderParams.expressionFunctionSeed += 1
+  const wgsl = `
+fn ${name}(hydraExprSt: vec2f) -> vec4f {
+  var st = hydraExprSt;
+  var c = vec4f(0.0);
+  ${previousGenerator('c', 'st')}
+  return c;
+}
+`
+  registerWgslFunction(shaderParams, name, wgsl)
+  return name
+}
+
+const registerExpressionRenderpass = (
+  shaderParams: ShaderParams,
+  transform: HydraTransformCall,
+  sampleFunctionName: string
+): string => {
+  const name = `hydraExpr_${sanitizeWgslIdentifier(transform.name)}_${shaderParams.expressionFunctionSeed}`
+  shaderParams.expressionFunctionSeed += 1
+  const renamed = transform.transform.wgsl.replace(
+    new RegExp(`fn\\s+${sanitizeWgslIdentifier(transform.name)}\\s*\\(`),
+    `fn ${name}(`
+  )
+  const wgsl = renamed.replace(/\bhydraSampleTexture\s*\(\s*prevBuffer\s*,\s*/g, `${sampleFunctionName}(`)
+  registerWgslFunction(shaderParams, name, wgsl)
+  return name
+}
+
+const transformUsesPrevBuffer = (
+  transform: HydraTransformCall,
+  mode: RenderpassMode
+): boolean => {
+  if (transform.name === 'prev') return true
+  if (transform.transform.type === 'renderpass' && mode === 'expression') return false
+  return /\bprevBuffer\b/.test(transform.transform.wgsl)
+}
+
+const generateWgslTransforms = (
+  transforms: HydraTransformCall[],
+  shaderParams: ShaderParams,
+  options: GenerateWgslOptions = { renderpassMode: 'framebuffer' }
+): ((cVar: string, stVar: string) => string) => {
   let generator = (_cVar: string, _stVar: string): string => ''
 
   transforms.forEach((transform, index) => {
@@ -302,16 +383,26 @@ const generateWgslTransforms = (transforms: HydraTransformCall[], shaderParams: 
     const args = formatArguments(transform, namespaceSeed)
     const previous = generator
 
-    if (!containsTransform(transform, shaderParams.wgslFunctions)) {
-      shaderParams.wgslFunctions.push(transform)
+    if (transformUsesPrevBuffer(transform, options.renderpassMode)) {
+      shaderParams.usesPrev = true
     }
 
     if (
-      transform.name === 'prev' ||
-      /\bprevBuffer\b/.test(transform.transform.wgsl)
+      transform.transform.type === 'renderpass' &&
+      options.renderpassMode === 'expression'
     ) {
-      shaderParams.usesPrev = true
+      const sampleFunctionName = registerExpressionEvaluator(shaderParams, previous)
+      const renderpassFunctionName = registerExpressionRenderpass(shaderParams, transform, sampleFunctionName)
+      generator = (cVar, stVar) => {
+        const contextVar = `${cVar}${index}`
+        const nested = buildNestedInputs(args, shaderParams)(contextVar, stVar)
+        const call = buildTransformCall(renderpassFunctionName, stVar, args, contextVar, shaderParams)
+        return `${nested}\n${cVar} = ${call};`
+      }
+      return
     }
+
+    registerWgslFunction(shaderParams, transform.name, transform.transform.wgsl)
 
     if (
       transform.transform.type === 'src' ||
@@ -358,11 +449,12 @@ const generateWgsl = (transforms: HydraTransformCall[]): ShaderParams => {
     usesPrev: false,
     uniformScalarCount: 0,
     argumentNamespaceSeed: 0,
+    expressionFunctionSeed: 0,
     structureSignature: buildStructureSignature(transforms),
     schedule: mergePassSchedule(transforms)
   }
 
-  const generator = generateWgslTransforms(transforms, shaderParams)
+  const generator = generateWgslTransforms(transforms, shaderParams, { renderpassMode: 'framebuffer' })
   shaderParams.fragColor = generator('c', 'st')
 
   if (shaderParams.usesPrev) ensurePrevTexture(shaderParams)

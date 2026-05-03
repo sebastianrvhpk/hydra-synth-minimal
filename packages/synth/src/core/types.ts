@@ -297,6 +297,7 @@ export interface HydraTransformRegistryHost {
 
 export interface HydraGraphNode {
   transforms: HydraTransformCall[]
+  clone(): HydraGraphNode
   out(output?: HydraOutputAdapter): void
   wgsl(): HydraCompiledPass[]
   plan?(): unknown

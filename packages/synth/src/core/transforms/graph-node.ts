@@ -26,6 +26,27 @@ export class HydraGraphNode {
     this.onCompileError = onCompileError
   }
 
+  clone (): this {
+    const SourceClass = this.constructor as new (options: HydraGraphNodeOptions) => this
+    const firstTransform = this.transforms[0]
+    if (!firstTransform) throw new Error('Cannot clone an empty Hydra graph node.')
+    const cloned = new SourceClass({
+      initialTransform: firstTransform,
+      defaultOutput: this.defaultOutput,
+      maxDynamicUniforms: this.maxDynamicUniforms,
+      onCompileError: this.onCompileError
+    })
+    cloned.transforms.splice(
+      0,
+      cloned.transforms.length,
+      ...this.transforms.map((transform) => ({
+        ...transform,
+        userArgs: transform.userArgs.slice()
+      }))
+    )
+    return cloned
+  }
+
   out (targetOutput?: HydraOutputAdapter): void {
     const output = targetOutput ?? this.defaultOutput
     if (!output) return

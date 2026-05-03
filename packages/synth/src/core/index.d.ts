@@ -411,6 +411,7 @@ export interface HydraTransformRegistryHost {
 
 export interface HydraGraphNodeShape {
   transforms: HydraTransformCall[]
+  clone (): HydraGraphNodeShape
   out (output?: HydraOutputAdapter): void
   wgsl (): HydraCompiledPass[]
 }
@@ -467,6 +468,7 @@ export declare class HydraGraphNode implements HydraGraphNodeShape {
   readonly transforms: HydraTransformCall[]
   readonly type: 'HydraGraphNode'
   constructor (options: HydraGraphNodeOptions)
+  clone (): this
   out (output?: HydraOutputAdapter): void
   wgsl (): HydraCompiledPass[]
 }

@@ -32,6 +32,25 @@ describe('HydraTransformRegistry', () => {
     expect(output.passes[0].wgsl).toContain('fn fsMain')
   })
 
+  it('clones graph nodes so reusable branches do not append transforms to the source branch', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    const wave = registry.generators.osc(4, 0.1, 0.2).modulate(registry.generators.noise(2, 0.1), 0.5)
+    const redBranch = wave.clone().r(2, -1).color(1, 0, 0)
+    const greenBranch = wave.clone().g(2, -1).color(0, 1, 0)
+
+    expect(wave.transforms.map((transform) => transform.name)).toEqual(['osc', 'modulate'])
+    expect(redBranch.transforms.map((transform) => transform.name)).toEqual(['osc', 'modulate', 'r', 'color'])
+    expect(greenBranch.transforms.map((transform) => transform.name)).toEqual(['osc', 'modulate', 'g', 'color'])
+
+    redBranch.add(greenBranch).out()
+
+    expect(output.passes.length).toBe(1)
+    expect(output.passes[0].wgsl).toContain('fn r')
+    expect(output.passes[0].wgsl).toContain('fn g')
+  })
+
   it('uses fragment position directly when reconstructing normalized coordinates', () => {
     const output = new CaptureOutput()
     const registry = new HydraTransformRegistry({ defaultOutput: output })
@@ -70,6 +89,148 @@ describe('HydraTransformRegistry', () => {
     expect(output.passes[1].wgsl).toContain('fn bloom')
     expect(output.passes[1].wgsl).toContain('prevBuffer')
     expect(output.passes[1].wgsl).toContain('hydraLuminance')
+  })
+
+  it('stages nested renderpass transforms as hidden texture passes', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators
+      .osc(8, 0.1, 0)
+      .modulate(
+        registry.generators
+          .gradient()
+          .blur(2)
+          .sub(registry.generators.gradient()),
+        1
+      )
+      .out()
+
+    expect(output.passes.length).toBe(4)
+    expect(output.passes[0].wgsl).toContain('fn gradient')
+    expect(output.passes[1].wgsl).toContain('fn blur')
+    expect(output.passes[2].wgsl).toContain('fn sub')
+    expect(output.passes[3].wgsl).toContain('fn modulate')
+    expect(output.passes[3].textures.some((texture) => (
+      Boolean(texture.sourceRef) &&
+      typeof texture.sourceRef === 'object' &&
+      'internalPassIndex' in texture.sourceRef &&
+      texture.sourceRef.internalPassIndex === 2
+    ))).toBe(true)
+  })
+
+  it('allows every registered renderpass transform inside graph-valued arguments', () => {
+    const registry = new HydraTransformRegistry({ defaultOutput: new CaptureOutput() })
+    const renderpassNames = registry
+      .listTransforms()
+      .filter((name) => registry.getTransform(name)?.type === 'renderpass')
+
+    expect(renderpassNames.length).toBeGreaterThan(0)
+
+    for (const name of renderpassNames) {
+      const output = new CaptureOutput()
+      const localRegistry = new HydraTransformRegistry({ defaultOutput: output })
+      const field = localRegistry.generators.gradient()
+      const method = (field as unknown as Record<string, (...args: unknown[]) => unknown>)[name]
+
+      expect(typeof method).toBe('function')
+      method.call(field)
+
+      localRegistry.generators
+        .osc(8, 0.1, 0)
+        .modulate(field, 0.25)
+        .out()
+
+      expect(output.passes.length).toBeGreaterThan(1)
+      expect(output.passes[output.passes.length - 1].wgsl).toContain('fn modulate')
+      expect(output.passes[output.passes.length - 1].textures.some((texture) => (
+        Boolean(texture.sourceRef) &&
+        typeof texture.sourceRef === 'object' &&
+        'internalPassIndex' in texture.sourceRef
+      ))).toBe(true)
+    }
+  })
+
+  it('keeps complex nested renderpass fields staged instead of recursively expanding expression kernels', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+    const externalSource = { id: 3, getTexture: () => null }
+
+    registry.generators
+      .src(externalSource)
+      .modulate(
+        registry.generators
+          .gradient()
+          .blur(500)
+          .blur(35)
+          .add(
+            registry.generators
+              .noise()
+              .posterize(8, 1)
+              .pixelate(8, 8)
+              .dualKawaseBlur(5),
+            0.5
+          )
+          .blur()
+          .sub(registry.generators.gradient()),
+        1
+      )
+      .out()
+
+    expect(output.passes.length).toBe(9)
+    const wgsl = output.passes.map((pass) => pass.wgsl).join('\n')
+    expect(wgsl).not.toContain('fn hydraExpr_')
+    expect(wgsl).not.toContain('fn hydraExprInput_')
+    expect(output.passes.every((pass) => pass.wgsl.length < 20_000)).toBe(true)
+    expect(output.passes[5].textures.some((texture) => (
+      Boolean(texture.sourceRef) &&
+      typeof texture.sourceRef === 'object' &&
+      'internalPassIndex' in texture.sourceRef &&
+      texture.sourceRef.internalPassIndex === 2
+    ))).toBe(true)
+  })
+
+  it('preserves the previous framebuffer pass when a post-renderpass chain also stages nested renderpass fields', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+    const externalSource = { id: 3, getTexture: () => null }
+
+    registry.generators
+      .src(externalSource)
+      .blur(4)
+      .modulate(
+        registry.generators
+          .gradient()
+          .add(
+            registry.generators
+              .noise()
+              .posterize(8, 1)
+              .pixelate(8, 8)
+              .dualKawaseBlur(5),
+            5
+          )
+          .sub(registry.generators.gradient()),
+        1
+      )
+      .out()
+
+    expect(output.passes.length).toBe(6)
+
+    const finalPass = output.passes[5]
+    expect(finalPass.wgsl).toContain('fn modulate')
+    expect(finalPass.textures.some((texture) => (
+      Boolean(texture.sourceRef) &&
+      typeof texture.sourceRef === 'object' &&
+      'internalPassIndex' in texture.sourceRef &&
+      texture.sourceRef.internalPassIndex === 1
+    ))).toBe(true)
+    expect(finalPass.textures.some((texture) => (
+      Boolean(texture.sourceRef) &&
+      typeof texture.sourceRef === 'object' &&
+      'internalPassIndex' in texture.sourceRef &&
+      texture.sourceRef.internalPassIndex === 4
+    ))).toBe(true)
+    expect(finalPass.wgsl).not.toContain('prevBuffer')
   })
 
   it('compiles staged bloom chains with downsample scheduling metadata', () => {
