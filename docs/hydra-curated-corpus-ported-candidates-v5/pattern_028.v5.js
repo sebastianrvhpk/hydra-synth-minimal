@@ -1,0 +1,9 @@
+speed=.25
+n=128
+shape(4,1,0)
+.scale(1/n,1,1).repeat(width/n,height/n)
+.modulate(gradient().pixelate(2,2).brightness(-.5).repeat(width/n,height/n).color(1/width,1/height).mask(noise(3,1).brightness(0).pixelate(width/n,height/n)),-n*2)
+.add(o0,.875)
+.modulate(gradient().repeat(width/32,height/32).color(1/width,1/height).mask(noise(3,-1).brightness(0).pixelate(width/32,height/32)),-width/32)
+//.modulate(gradient().repeat(width/128,height/128).color(1/width,1/height).mask(noise(3,1).brightness(0).pixelate(width/128,height/128)),width/4)
+.out(o0)

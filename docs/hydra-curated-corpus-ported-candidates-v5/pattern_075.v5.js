@@ -1,0 +1,15 @@
+src(o0)
+.modulateHue(src(o0).scroll(.25,.125),1)
+.modulate(solid()
+.layer(gradient().brightness(-.5).rotate(Math.PI/2))
+.layer(gradient().brightness(-.5).rotate(Math.PI/-2).mask(shape(4,1,0)).scale(2/3))
+.layer(gradient().brightness(-.5).rotate(Math.PI/2).mask(shape(4,1,0)).scale(1/3))
+.layer(gradient().brightness(-.5).rotate(Math.PI/-2).mask(shape(4,1,0)).scale(1/6))
+.layer(gradient().brightness(-.5).rotate(Math.PI/2).mask(shape(4,1,0)).scale(1/12))
+//.modulate(noise(1,0).color(1,0).modulate(solid(rn(),rn()),width).add(noise(1,0).color(0,1).modulate(solid(rn(),rn()),width)),.25)
+.color(1/width,1/height)
+,2)
+.layer(osc(Math.PI,1,1).mask(shape(4,1,0).scale(.25,1,1,0,0).repeat(width/4,height/4).mask(noise(30,.5).thresh(.875,0))))
+.out(o0)
+
+render(o0);

@@ -1,0 +1,37 @@
+[
+  {
+    "file": "pattern_002.v3.js",
+    "kind": "display-alias:solid-layer-buffer",
+    "sourceBuffer": "o0",
+    "aliasBuffer": "o1",
+    "reason": "alias buffer only appears in out(alias) and render(alias); render source directly"
+  },
+  {
+    "file": "pattern_006.v3.js",
+    "kind": "display-alias:solid-layer-buffer",
+    "sourceBuffer": "o0",
+    "aliasBuffer": "o1",
+    "reason": "alias buffer only appears in out(alias) and render(alias); render source directly"
+  },
+  {
+    "file": "pattern_008.v3.js",
+    "kind": "display-alias:solid-layer-src",
+    "sourceBuffer": "o0",
+    "aliasBuffer": "o1",
+    "reason": "alias buffer only appears in out(alias) and render(alias); render source directly"
+  },
+  {
+    "file": "pattern_009.v3.js",
+    "kind": "display-alias:solid-layer-src",
+    "sourceBuffer": "o0",
+    "aliasBuffer": "o1",
+    "reason": "alias buffer only appears in out(alias) and render(alias); render source directly"
+  },
+  {
+    "file": "pattern_075.v3.js",
+    "kind": "display-alias:src-copy",
+    "sourceBuffer": "o0",
+    "aliasBuffer": "o1",
+    "reason": "alias buffer only appears in out(alias) and render(alias); render source directly"
+  }
+]

@@ -1,0 +1,7 @@
+src(o0)
+.diff(shape(width,1,0).scale(.125,1,1).diff(shape(width,1,0).scale(.125,1-16/width,1-16/height).mult(osc(Math.PI,1,1))))
+.modulate(noise(.5,.5).blend(osc(Math.PI,1).brightness(-.5),.5).color(0,1/height),2)
+.modulate(noise(.5,-.5).blend(osc(Math.PI,1).modulate(solid(1,0),1).brightness(-.5),.5).color(1/width,0),2)
+.modulate((gradient().scale(1, (noise(.5,.5).blend(osc(Math.PI,1).brightness(-.5),.5).color(0,1/height)).r(2, 1), (noise(.5,.5).blend(osc(Math.PI,1).brightness(-.5),.5).color(0,1/height)).g(2, 1)).sub(gradient())).color(1 / width, 1 / height), 1)
+.modulate((gradient().scale(1, (noise(.5,-.5).blend(osc(Math.PI,1).modulate(solid(1,0),1).brightness(-.5),.5).color(1/width,0)).r(2, 1), (noise(.5,-.5).blend(osc(Math.PI,1).modulate(solid(1,0),1).brightness(-.5),.5).color(1/width,0)).g(2, 1)).sub(gradient())).color(1 / width, 1 / height), 1)
+.out(o0)

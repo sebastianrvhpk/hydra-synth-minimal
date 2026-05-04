@@ -1,0 +1,7 @@
+solid(0,-.25,0)
+.add(osc(Math.PI*5,.1).modulate(solid(Math.PI,0),3).color(1,.25,0))
+.add(osc(Math.PI*5,-.1).modulate(solid(Math.PI,0),2).color(0,1,.333))
+.add(osc(Math.PI*5,-.1).modulate(solid(Math.PI,0),1).color(.25,0,1))
+.rotate(0,Math.PI/2)
+.kaleid(2).scrollY(0,.1).rotate(0,1).kaleid(5000)
+.out(o0)

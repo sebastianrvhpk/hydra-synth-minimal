@@ -1,0 +1,12 @@
+n=4
+src(o0)
+.scroll(-1/height,1/width)
+.modulate((gradient().scale(1, (noise(3,.1).blend(o0,.75).posterize(4,1).color(1/width,1/height)).r(5, 1), (noise(3,.1).blend(o0,.75).posterize(4,1).color(1/width,1/height)).g(5, 1)).sub(gradient())).color(1 / width, 1 / height), 1)
+.modulateHue(o0,1)
+.layer(osc(TAU,.1,1).saturate(.875).contrast(1.25).color(1,.6,.875)
+.mask(shape(4,1,1/width)
+.scale(1/n,1,1/n)
+.repeat(n,n)
+.modulate((gradient().scale(1, (osc(TAU,-.5).rotate(0,.25).brightness(-.25).posterize(16,1).color(0,1)).r(1, 1), (osc(TAU,-.5).rotate(0,.25).brightness(-.25).posterize(16,1).color(0,1)).g(1, 1)).sub(gradient())).color(1 / width, 1 / height), 1)
+))
+.out(o0)
