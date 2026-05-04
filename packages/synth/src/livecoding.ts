@@ -1,4 +1,5 @@
 import type { HydraEngineBindingHost, ScriptPlugin } from './core/index.js'
+import { findReferencedOutputIndices } from './runtime/output-reference.js'
 
 export interface AttachLivecodingOptions {
   targetGlobal?: Record<string, unknown>
@@ -27,7 +28,7 @@ export const attachLivecoding = (
 ): LivecodingSession => {
   const targetGlobal = options.targetGlobal ?? (globalThis as Record<string, unknown>)
   const initialBindings = engine.getBindings()
-  const allowedBindings = options.allowedBindings ?? Object.keys(initialBindings)
+  const allowedBindings = new Set(options.allowedBindings ?? Object.keys(initialBindings))
   const runCode = resolveCodeRunner(options)
 
   const previousValues = new Map<string, { exists: boolean, value: unknown }>()
@@ -76,6 +77,23 @@ export const attachLivecoding = (
     injectedBindings.add(name)
   }
 
+  const ensureReferencedOutputs = (code: string): void => {
+    const outputIndices = findReferencedOutputIndices(code)
+    if (outputIndices.length === 0) return
+
+    const bindings = engine.getBindings()
+    const ensureOutput = bindings.ensureOutput
+    if (typeof ensureOutput !== 'function') return
+
+    const maxOutputIndex = outputIndices[outputIndices.length - 1]
+    if (typeof maxOutputIndex !== 'number') return
+
+    ensureOutput(maxOutputIndex)
+    for (let index = 0; index <= maxOutputIndex; index += 1) {
+      allowedBindings.add(`o${index}`)
+    }
+  }
+
   const syncFromEngine = (): void => {
     if (disposed) return
     const bindings = engine.getBindings()
@@ -104,6 +122,7 @@ export const attachLivecoding = (
       throw new Error('Livecoding session has been disposed.')
     }
 
+    ensureReferencedOutputs(code)
     syncFromEngine()
     const result = runCode(code, targetGlobal)
     syncFromGlobal()

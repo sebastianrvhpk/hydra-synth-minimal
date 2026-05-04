@@ -110,6 +110,8 @@ export interface WebGPUCapabilities {
   features: string[]
 }
 
+export type WebGPUTextureFilterMode = 'nearest' | 'linear'
+
 export declare class WebGPURenderer {
   readonly canvas: HTMLCanvasElement
   width: number
@@ -122,6 +124,7 @@ export declare class WebGPURenderer {
   canvasFormat: GPUTextureFormat | null
   globalUniformBuffer: GPUBuffer | null
   linearSampler: GPUSampler | null
+  nearestSampler: GPUSampler | null
   fallbackTexture: GPUTexture | null
   capabilities: WebGPUCapabilities | null
   constructor (options: WebGPURendererOptions)
@@ -147,6 +150,7 @@ export declare class WebGPURenderer {
   getObjectId (value: object | null | undefined): number
   getTextureView (texture: GPUTexture, dimension?: GPUTextureViewDimension): GPUTextureView
   beginFrame (): GPUCommandEncoder | null
+  getSampler (filter?: WebGPUTextureFilterMode): GPUSampler | null
   submitFrame (encoder: GPUCommandEncoder | null): void
   renderTextureToScreen (encoder: GPUCommandEncoder, texture: GPUTexture | null): void
   renderAllOutputsToScreen (encoder: GPUCommandEncoder, textures?: GPUTexture[]): void
@@ -313,6 +317,8 @@ export declare class WebGPUOutputNode implements HydraOutputAdapter {
   setPipelineErrorHandler (
     handler: ((context: { outputLabel: string, passIndex: number, signature: string, error: unknown }) => void) | null
   ): void
+  setNearest (): this
+  setLinear (): this
   emitEvent (name: string): void
   attachRenderer (renderer: WebGPURenderer): void
   resize (width: number, height: number): void
@@ -330,6 +336,7 @@ export interface HydraBrowserRuntimeOptions {
   patchbay?: PatchBayAdapter | null
   numSources?: number
   numOutputs?: number
+  maxOutputs?: number
   extendTransforms?: HydraTransformDefinition[] | HydraTransformDefinition
   autoLoop?: boolean
   audio?: boolean | HydraAudioAnalyzerOptions
@@ -368,6 +375,8 @@ export declare class HydraBrowserRuntime {
   setCanvasDisplay (width: number, height: number, options?: CanvasDisplayOptions): void
   resetCanvasDisplay (): void
   createSource (): HydraSourceNode
+  createOutput (): WebGPUOutputNode
+  ensureOutput (index: number): WebGPUOutputNode
   getExecutionMode (): HydraRuntimeExecutionMode
   setExecutionMode (mode: HydraRuntimeExecutionMode | string): HydraRuntimeExecutionMode
   compilePlan (graphNode: { transforms?: HydraTransformCall[] } | null | undefined): HydraExecutionPlan | null
@@ -527,6 +536,7 @@ export interface HydraLegacyOptions {
   height?: number
   numSources?: number
   numOutputs?: number
+  maxOutputs?: number
   makeGlobal?: boolean
   autoLoop?: boolean
   detectAudio?: boolean
@@ -583,6 +593,8 @@ export declare class Hydra {
   setResolution (width: number, height: number): void
   hush (): void
   createSource (): HydraSourceNode
+  createOutput (): WebGPUOutputNode
+  ensureOutput (index: number): WebGPUOutputNode
   eval (code: string): unknown
   loadScript (url?: string): Promise<void>
   getScreenImage (callback?: (blob: Blob) => void): Promise<Blob>

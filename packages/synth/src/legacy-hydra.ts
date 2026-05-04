@@ -6,6 +6,7 @@ import { type HydraAudioAnalyzerOptions } from './runtime/audio-input.js'
 import { WebGPURenderer, type WebGPURendererOptions } from './webgpu/renderer.js'
 import type { PatchBayAdapter } from './runtime/source-node.js'
 import type { HydraLivecodingCodeRunner } from './livecoding.js'
+import { findReferencedOutputIndices } from './runtime/output-reference.js'
 
 export interface HydraLegacyOptions {
   pb?: PatchBayAdapter | null
@@ -13,6 +14,7 @@ export interface HydraLegacyOptions {
   height?: number
   numSources?: number
   numOutputs?: number
+  maxOutputs?: number
   makeGlobal?: boolean
   autoLoop?: boolean
   detectAudio?: boolean
@@ -179,6 +181,7 @@ export class Hydra {
     height = 720,
     numSources = 4,
     numOutputs = 4,
+    maxOutputs,
     makeGlobal = true,
     autoLoop = true,
     detectAudio = false,
@@ -211,6 +214,7 @@ export class Hydra {
       patchbay: pb,
       numSources,
       numOutputs,
+      ...(maxOutputs != null ? { maxOutputs } : {}),
       extendTransforms,
       autoLoop,
       audio,
@@ -271,10 +275,25 @@ export class Hydra {
     return source
   }
 
+  createOutput(): HydraBrowserRuntime['outputs'][number] {
+    const output = this.runtime.createOutput()
+    this.o = this.runtime.outputs
+    this.installGlobalBinding(output.label)
+    return output
+  }
+
+  ensureOutput(index: number): HydraBrowserRuntime['outputs'][number] {
+    const output = this.runtime.ensureOutput(index)
+    this.o = this.runtime.outputs
+    this.runtime.outputs.forEach((candidate) => this.installGlobalBinding(candidate.label))
+    return output
+  }
+
   eval(code: string): unknown {
     if (!this.runTrustedCode) {
       throw new Error('Hydra legacy code execution requires an explicit runCode(code, scope) callback.')
     }
+    this.ensureReferencedOutputs(code)
     const scope = this.targetGlobal ?? this.synth
     return this.runTrustedCode(code, scope)
   }
@@ -328,6 +347,9 @@ export class Hydra {
   }
 
   private installCompatibilityAliases(): void {
+    this.synth.createOutput = this.createOutput.bind(this)
+    this.synth.ensureOutput = this.ensureOutput.bind(this)
+    this.synth.ensureOutputBuffer = this.ensureOutput.bind(this)
     this.synth.setFunction = (definition: HydraTransformDefinition) => {
       const registerFunction = this.synth.registerFunction
       if (typeof registerFunction !== 'function') {
@@ -365,5 +387,12 @@ export class Hydra {
       }
     })
     this.installedGlobalNames.add(name)
+  }
+
+  private ensureReferencedOutputs(code: string): void {
+    const outputIndices = findReferencedOutputIndices(code)
+    if (outputIndices.length === 0) return
+    const maxOutputIndex = outputIndices[outputIndices.length - 1]
+    if (typeof maxOutputIndex === 'number') this.ensureOutput(maxOutputIndex)
   }
 }

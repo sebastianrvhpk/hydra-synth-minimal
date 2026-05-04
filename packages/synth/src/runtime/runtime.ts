@@ -47,10 +47,19 @@ export const normalizeRuntimeExecutionMode = (
 
 const DEFAULT_RUNTIME_DELTA_MS = 16
 const MAX_FRAME_HISTORY = 240
+const DEFAULT_MAX_OUTPUTS = 64
 
 const coerceCount = (value: unknown, fallback: number, minimum: number): number => {
   if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
   return Math.max(minimum, Math.floor(value))
+}
+
+const coerceOutputIndex = (value: unknown): number => {
+  const numeric = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(numeric) || numeric < 0) {
+    throw new Error('HydraBrowserRuntime: output index must be a finite non-negative number.')
+  }
+  return Math.floor(numeric)
 }
 
 const coerceNonNegativeFinite = (value: unknown, fallback: number): number => {
@@ -71,6 +80,7 @@ export interface HydraBrowserRuntimeOptions {
   patchbay?: PatchBayAdapter | null
   numSources?: number
   numOutputs?: number
+  maxOutputs?: number
   extendTransforms?: HydraTransformDefinition[] | HydraTransformDefinition
   autoLoop?: boolean
   audio?: boolean | HydraAudioAnalyzerOptions
@@ -110,6 +120,7 @@ export class HydraBrowserRuntime {
   private executor: HydraExecutor | null = null
   private lastExecuteResult: ExecutePlanResult | null = null
   private lastPlan: HydraExecutionPlan | null = null
+  private readonly maxOutputs: number
   private readonly routingDiagnostics: HydraRuntimeRoutingDiagnostics
 
   constructor({
@@ -118,6 +129,7 @@ export class HydraBrowserRuntime {
     patchbay = null,
     numSources = 4,
     numOutputs = 4,
+    maxOutputs = DEFAULT_MAX_OUTPUTS,
     extendTransforms,
     autoLoop = true,
     audio = false,
@@ -164,20 +176,9 @@ export class HydraBrowserRuntime {
 
     const sourceCount = coerceCount(numSources, 4, 0)
     const outputCount = coerceCount(numOutputs, 4, 1)
+    this.maxOutputs = Math.max(outputCount, coerceCount(maxOutputs, DEFAULT_MAX_OUTPUTS, outputCount))
 
-    this.outputs = Array(outputCount).fill(null).map((_, index) => {
-      const output = new WebGPUOutputNode({
-        renderer: null,
-        width: this.host.canvas.width,
-        height: this.host.canvas.height,
-        label: `o${index}`
-      })
-      output.id = index
-      output.setGraphRenderHandler((targetOutput, graphSource) => {
-        this.routeGraphRender(targetOutput, graphSource)
-      })
-      return output
-    })
+    this.outputs = Array(outputCount).fill(null).map((_, index) => this.createOutputNode(index))
 
     this.sources = []
     for (let index = 0; index < sourceCount; index += 1) {
@@ -211,9 +212,7 @@ export class HydraBrowserRuntime {
     })
 
     this.outputs.forEach((output) => {
-      output.setPipelineErrorHandler(({ outputLabel, passIndex, signature, error }) => {
-        this.engine.reportCompileError(`${outputLabel}:pass${passIndex}`, { signature, cause: error })
-      })
+      this.configureOutputNode(output)
     })
 
     this.synth = this.engine.getBindings() as Record<string, unknown>
@@ -225,6 +224,9 @@ export class HydraBrowserRuntime {
     this.synth.tick = this.tick.bind(this)
     this.synth.emitEvent = this.emitEvent.bind(this)
     this.synth.createSource = this.createSource.bind(this)
+    this.synth.createOutput = this.createOutput.bind(this)
+    this.synth.ensureOutput = this.ensureOutput.bind(this)
+    this.synth.ensureOutputBuffer = this.ensureOutput.bind(this)
     this.synth.getPassStats = this.getPassStats.bind(this)
     this.synth.getExecutionMode = this.getExecutionMode.bind(this)
     this.synth.setExecutionMode = this.setExecutionMode.bind(this)
@@ -378,6 +380,34 @@ export class HydraBrowserRuntime {
     return source
   }
 
+  createOutput(): WebGPUOutputNode {
+    return this.ensureOutput(this.outputs.length)
+  }
+
+  ensureOutput(index: number): WebGPUOutputNode {
+    if (this.disposed) {
+      throw new Error('HydraBrowserRuntime: cannot create outputs after dispose.')
+    }
+
+    const outputIndex = coerceOutputIndex(index)
+    if (outputIndex >= this.maxOutputs) {
+      throw new Error(`HydraBrowserRuntime: output index o${outputIndex} exceeds maxOutputs (${this.maxOutputs}).`)
+    }
+
+    while (this.outputs.length <= outputIndex) {
+      const nextIndex = this.outputs.length
+      const output = this.createOutputNode(nextIndex)
+      this.configureOutputNode(output)
+      this.outputs.push(output)
+      this.synth[`o${nextIndex}`] = output
+      if (this.renderer.ready) output.attachRenderer(this.renderer)
+    }
+
+    const output = this.outputs[outputIndex]
+    if (!output) throw new Error(`HydraBrowserRuntime: failed to create output o${outputIndex}.`)
+    return output
+  }
+
   getPassStats(): Record<string, ReturnType<WebGPUOutputNode['getPassStats']>> {
     const stats: Record<string, ReturnType<WebGPUOutputNode['getPassStats']>> = {}
     this.outputs.forEach((output, index) => {
@@ -401,6 +431,26 @@ export class HydraBrowserRuntime {
       this.executor = new HydraExecutor()
     }
     return this.executor
+  }
+
+  private createOutputNode(index: number): WebGPUOutputNode {
+    const output = new WebGPUOutputNode({
+      renderer: null,
+      width: this.host.canvas.width,
+      height: this.host.canvas.height,
+      label: `o${index}`
+    })
+    output.id = index
+    output.setGraphRenderHandler((targetOutput, graphSource) => {
+      this.routeGraphRender(targetOutput, graphSource)
+    })
+    return output
+  }
+
+  private configureOutputNode(output: WebGPUOutputNode): void {
+    output.setPipelineErrorHandler(({ outputLabel, passIndex, signature, error }) => {
+      this.engine.reportCompileError(`${outputLabel}:pass${passIndex}`, { signature, cause: error })
+    })
   }
 
   private getCurrentFrameState(): {

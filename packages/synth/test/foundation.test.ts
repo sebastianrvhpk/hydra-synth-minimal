@@ -287,6 +287,103 @@ describe('browser foundation', () => {
     output.dispose()
   })
 
+  it('allocates a transient write texture when all ping-pong targets are sampled', () => {
+    const createdTextures: Array<{ label?: string, destroy: () => void }> = []
+    const renderer = {
+      ready: true,
+      createOutputTexture: ({ label = '' }: { label?: string } = {}) => {
+        const texture = { label, destroy: () => {} }
+        createdTextures.push(texture)
+        return texture
+      }
+    }
+    const output = new WebGPUOutputNode({
+      renderer: renderer as unknown as never,
+      width: 4,
+      height: 4,
+      label: 'sample-write-conflict'
+    })
+    const candidateWrite = {} as GPUTexture
+    const sampledTextures = [candidateWrite, {} as GPUTexture]
+
+    const conflicts = (output as unknown as {
+      isTextureBeingSampled: (texture: GPUTexture | null, sampledTextures: Array<GPUTexture | null>) => boolean
+    }).isTextureBeingSampled(candidateWrite, sampledTextures)
+    const transient = (output as unknown as {
+      getOrCreateTransientWriteTexture: (
+        width: number,
+        height: number,
+        avoidTextures?: Array<GPUTexture | null>
+      ) => GPUTexture | null
+    }).getOrCreateTransientWriteTexture(4, 4)
+
+    expect(conflicts).toBe(true)
+    expect(transient).not.toBe(candidateWrite)
+    expect(createdTextures[0]?.label).toBe('sample-write-conflict-transient-write-4x4-0')
+    output.dispose()
+  })
+
+  it('protects internally referenced pass outputs from later writes', () => {
+    const output = new WebGPUOutputNode({
+      renderer: null,
+      width: 4,
+      height: 4,
+      label: 'internal-pass-lifetime'
+    })
+    const blurredColorTexture = {} as GPUTexture
+    const laterFieldTexture = {} as GPUTexture
+
+    ;(output as unknown as {
+      passOutputHistory: Array<GPUTexture | null>
+    }).passOutputHistory = [
+      null,
+      blurredColorTexture,
+      null,
+      laterFieldTexture
+    ]
+
+    const makePass = (internalPassIndex?: number) => ({
+      signature: `pass-${internalPassIndex ?? 'none'}`,
+      wgsl: '',
+      uniforms: [],
+      textures: typeof internalPassIndex === 'number'
+        ? [{
+            name: 'tex',
+            variableName: 'hydraTexture0',
+            getTexture: null,
+            isPrev: false,
+            sourceRef: { internalPassIndex },
+            binding: 3
+          }]
+        : []
+    })
+
+    const passes = [
+      makePass(),
+      makePass(),
+      makePass(),
+      makePass(),
+      makePass(3),
+      makePass(1)
+    ]
+
+    const lastUse = (output as unknown as {
+      getInternalPassLastUseByIndex: (passes: typeof passes) => Map<number, number>
+    }).getInternalPassLastUseByIndex(passes)
+    const protectedAtPass3 = (output as unknown as {
+      getProtectedPassOutputTextures: (
+        passIndex: number,
+        lastUseByIndex: Map<number, number>
+      ) => Array<GPUTexture | null>
+    }).getProtectedPassOutputTextures(3, lastUse)
+
+    expect(lastUse.get(1)).toBe(5)
+    expect(lastUse.get(3)).toBe(4)
+    expect(protectedAtPass3).toContain(blurredColorTexture)
+    expect(protectedAtPass3).not.toContain(laterFieldTexture)
+    output.dispose()
+  })
+
   it('prefers self history texture bindings over mutable frame texture pointers', () => {
     const output = new WebGPUOutputNode({
       renderer: null,
@@ -420,6 +517,30 @@ describe('browser foundation', () => {
   it('defaults browser runtime execution mode to auto', () => {
     const runtime = createRuntimeHarness()
     expect(runtime.getExecutionMode()).toBe('auto')
+    runtime.dispose()
+  })
+
+  it('grows output buffers on demand without changing the default four outputs', () => {
+    const runtime = createRuntimeHarness()
+
+    expect(runtime.outputs).toHaveLength(4)
+    expect(runtime.synth.o4).toBeUndefined()
+
+    const output = runtime.ensureOutput(6)
+
+    expect(runtime.outputs).toHaveLength(7)
+    expect(output).toBe(runtime.outputs[6])
+    expect(output.id).toBe(6)
+    expect(output.label).toBe('o6')
+    expect(runtime.synth.o6).toBe(output)
+    expect(runtime.ensureOutput(2)).toBe(runtime.outputs[2])
+    expect(runtime.outputs).toHaveLength(7)
+
+    const nextOutput = runtime.createOutput()
+    expect(nextOutput.label).toBe('o7')
+    expect(runtime.synth.o7).toBe(nextOutput)
+    expect(runtime.outputs).toHaveLength(8)
+
     runtime.dispose()
   })
 

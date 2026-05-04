@@ -433,6 +433,40 @@ test('hydra app smoke: editor geometry and sketch helpers are live', async ({ pa
   ).hydraEditor.getCode())).not.toBe(dicedCode)
 })
 
+test('hydra app smoke: livecoding creates higher output buffers from oN references', async ({ page }) => {
+  await openHydraApp(page)
+  await page.waitForFunction(() => (
+    (window as unknown as { livecoding?: { run?: (code: string) => unknown }, hydra?: unknown }).livecoding?.run &&
+    (window as unknown as { hydra?: unknown }).hydra
+  ))
+
+  const result = await page.evaluate(() => {
+    const hydraWindow = window as unknown as {
+      hydra: {
+        outputs: Array<{ label: string }>
+        getActiveOutput: () => { label: string }
+      }
+      livecoding: { run: (code: string) => unknown }
+      synth: Record<string, unknown>
+      o5?: unknown
+    }
+    hydraWindow.livecoding.run('solid(1, 0, 0, 1).out(o5)\nrender(o5)')
+    return {
+      outputCount: hydraWindow.hydra.outputs.length,
+      hasGlobalO5: Boolean(hydraWindow.o5),
+      hasSynthO5: Boolean(hydraWindow.synth.o5),
+      activeOutput: hydraWindow.hydra.getActiveOutput().label
+    }
+  })
+
+  expect(result).toEqual({
+    outputCount: 6,
+    hasGlobalO5: true,
+    hasSynthO5: true,
+    activeOutput: 'o5'
+  })
+})
+
 test('hydra app smoke: interface recorder captures editor performance', async ({ page }) => {
   const code = 'osc(9, 0.1, 0).out()'
   await openHydraApp(page, `#code=${encodeSketchForUrl(code)}`)

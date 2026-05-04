@@ -64,6 +64,39 @@ describe('attachLivecoding', () => {
     expect(targetGlobal.keep).toBe('safe')
   })
 
+  it('creates and injects higher output bindings referenced by livecoded patches', () => {
+    let host: MockBindingHost | null = null
+    const ensureCalls: number[] = []
+    const initial: Record<string, unknown> = {
+      o0: { label: 'o0' },
+      ensureOutput: (index: number) => {
+        if (!host) throw new Error('Host is not initialized.')
+        ensureCalls.push(index)
+        for (let outputIndex = 0; outputIndex <= index; outputIndex += 1) {
+          host.setBinding(`o${outputIndex}`, { label: `o${outputIndex}` })
+        }
+      }
+    }
+    host = new MockBindingHost(initial)
+    const targetGlobal: Record<string, unknown> = {}
+
+    const session = attachLivecoding(host, {
+      targetGlobal,
+      allowedBindings: ['speed'],
+      runCode: (_code, scope) => {
+        expect((scope.o5 as { label: string }).label).toBe('o5')
+      }
+    })
+
+    session.run('src(o5).out(o5)')
+
+    expect(ensureCalls).toEqual([5])
+    expect((targetGlobal.o5 as { label: string }).label).toBe('o5')
+
+    session.dispose()
+    expect('o5' in targetGlobal).toBe(false)
+  })
+
   it('cleans up helper-registered listeners and callbacks on dispose', () => {
     const host = new MockBindingHost({ speed: 1 })
     const eventTarget = new EventTarget()

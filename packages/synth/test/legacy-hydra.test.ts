@@ -58,6 +58,7 @@ describe('legacy Hydra facade', () => {
 
     const targetGlobal: Record<string, unknown> = {}
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement
+    let sawDynamicOutput = false
     const hydra = new Hydra({
       canvas,
       autoLoop: false,
@@ -67,6 +68,9 @@ describe('legacy Hydra facade', () => {
       runCode: (code, scope) => {
         const speedAssignment = code.match(/\bspeed\s*=\s*(\d+(?:\.\d+)?)/)
         if (speedAssignment) scope.speed = Number(speedAssignment[1])
+        if (code.includes('o5')) {
+          sawDynamicOutput = (scope.o5 as { label?: string } | undefined)?.label === 'o5'
+        }
       }
     })
 
@@ -80,7 +84,13 @@ describe('legacy Hydra facade', () => {
     hydra.eval('speed = 2')
     expect(hydra.synth.speed).toBe(2)
 
+    hydra.eval('src(o5).out(o5)')
+    expect(sawDynamicOutput).toBe(true)
+    expect(hydra.runtime.outputs).toHaveLength(6)
+    expect((targetGlobal.o5 as { label?: string }).label).toBe('o5')
+
     hydra.dispose()
     expect('hydra' in targetGlobal).toBe(false)
+    expect('o5' in targetGlobal).toBe(false)
   })
 })
