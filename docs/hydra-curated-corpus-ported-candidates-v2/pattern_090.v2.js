@@ -1,0 +1,61 @@
+/*
+Hydra curated corpus port candidate: pattern_090
+Title: source block 90
+Status: semantic port, not visually accepted.
+Bucket: legacy feedback / conceptual port
+
+Port moves:
+- P: review feedback order; prefer pre-accumulation memory drift when clean ingress is intended
+- G?: review gate role; hard gates for ingress, soft/luma only for other roles or intended legacy behavior
+- L/X: review global blend/diff/sub pressure; move into material before mask unless intentionally global
+- T: preserve metric tiling and anchor math
+
+This file preserves authored behavior where automatic conversion would be risky.
+Math-safe automated rewrites currently include:
+- .out() -> .out(o0)
+- modulateScrollX/Y(field, amount, speed?) -> explicit .modulate(...) pixel-step equivalent
+- modulateRotate(field, multiple, offset) -> gradient().rotate(...).sub(gradient()) transform delta
+- modulateScale(field, multiple, offset) -> gradient().scale(...).sub(gradient()) transform delta
+*/
+
+/*
+Second pass:
+- shared helpers moved to shared-v2.js
+- Hydra array sequences converted to quantized texture-valued seqSignal(...)
+- callback parameters converted to signal helpers where possible
+- status remains: review candidate, not visually accepted
+*/
+
+// Run shared-v2.js once before this patch.
+
+speed=2
+shape(4,1,0).scale(.5,1,1,rn(),rn()).repeat(width/2,height/2,rn(),rn()).mult(ns(1,.1).thresh(.25-.5,.25))
+.diff(shape(4,1,0).scale(.25,1,1,rn(),rn()).repeat(width/4,height/4,rn(),rn()).mult(ns(1.25,.1).thresh(.375-.5,.25)))
+.diff(shape(4,1,0).scale(.125,1,1,rn(),rn()).repeat(width/8,height/8,rn(),rn()).mult(ns(.5,.1).thresh(.5-.5,.25)))
+.diff(shape(4,1,0).scale(.5,1,1,rn(),rn()).repeat(width/2,height/2,rn(),rn()).mult(ns(1.75,.1).thresh(.75-.5,.25)))
+.diff(src(o0).mask(ns(TAU,.2).thresh(0,0).pixelate(1,1)).mask(ns(Math.PI*4,.05).pixelate(width,1).thresh(0,0)))
+.blend(src(o0).modulate(solid(1/width,1/height).mult(osc(TAU,.1).mask(ns(TAU,.2).thresh(0,.025).pixelate(1,1)).brightness(-.5).contrast(2)),-1),.875)
+.scrollX(-2/width)
+.blend(o0,.5)
+.diff(o1)
+.out(o0)
+
+src(o1)
+.modulate(solid(1/width,-1/height),1)
+.add(solid(1,1,1).mask(shape(400,1,0).scale(1,20/width,20/height)
+.modulate(solid()
+.add(ns(3,.2).color(1,0).add(osc(TAU,.1).brightness(-.5).color(1,0)))
+.add(ns(3,.2).color(0,1).add(osc(TAU,.1).scrollX(.25).brightness(-.5).color(0,1)))
+.pixelate(1,1).color(A,1),.75)
+),1)
+.mask(osc(TAU,.25).thresh(1-.875,.01))
+  .diff(o1)
+.scale(seqSignal(1, 1.00125, 3, 0.25),1,1,.75,.5)
+.add(o1,.01)
+.out(o1)
+
+render(o0)
+
+//hush()
+
+//screencap()
