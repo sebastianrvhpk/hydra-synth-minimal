@@ -32,6 +32,8 @@
   "scripts": {
     "build": "node ../../scripts/build-package.mjs",
     "build:dist": "vite build",
+    "build:single": "vite build --config vite.single.config.ts",
+    "build:v0": "vite build --config vite.single.config.ts",
     "typecheck": "node ../../scripts/build-package.mjs --check"
   },
   "dependencies": {
