@@ -5,6 +5,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Hydra</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23050505'/%3E%3Ccircle cx='16' cy='16' r='10' fill='none' stroke='%2375f7ff' stroke-width='3'/%3E%3Cpath d='M9 20c4-8 10-8 14 0' fill='none' stroke='%23ff6bd6' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
   <script type="importmap">
       {
         "imports": {
@@ -198,6 +199,62 @@
 
     .panel-action[data-tone="record"]:hover {
       background: rgba(255, 107, 214, 0.24);
+    }
+
+    .utility-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+    }
+
+    .utility-group {
+      display: grid;
+      gap: 6px;
+    }
+
+    .utility-group-title {
+      color: rgba(238, 244, 239, 0.72);
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .utility-chip {
+      min-width: 0;
+      border: 1px solid rgba(238, 244, 239, 0.18);
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--ink);
+      cursor: pointer;
+      font: inherit;
+      font-size: 11px;
+      line-height: 1;
+      padding: 6px 7px;
+      text-align: left;
+    }
+
+    .utility-chip:hover {
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .utility-chip:focus-visible {
+      outline: 1px solid rgba(117, 247, 255, 0.82);
+      outline-offset: 2px;
+    }
+
+    .utility-preview {
+      max-height: 144px;
+      overflow: auto;
+      margin: 2px 0 0;
+      border: 1px solid rgba(117, 247, 255, 0.22);
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.24);
+      color: rgba(238, 244, 239, 0.9);
+      padding: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 10.5px;
+      line-height: 1.45;
+      white-space: pre-wrap;
     }
 
     .panel-note {
@@ -937,6 +994,12 @@
       <div id="code-material-status" class="panel-note">src(s3)</div>
     </div>
     <div class="panel-section">
+      <div class="panel-title">grammar</div>
+      <div id="utility-reference" class="utility-grid"></div>
+      <pre id="utility-reference-preview" class="utility-preview"></pre>
+      <p id="utility-reference-status" class="panel-note">click a name to insert it</p>
+    </div>
+    <div class="panel-section">
       <div id="hud">
         <div id="brand">hydra</div>
         <div id="runtime-chip">webgpu</div>
@@ -1196,8 +1259,122 @@
       attachBinding(name)
     }
 
+    const readHydraWidth = () => Number(synth.width ?? runtime.host?.canvas?.width ?? window.innerWidth ?? 1) || 1
+    const readHydraHeight = () => Number(synth.height ?? runtime.host?.canvas?.height ?? window.innerHeight ?? 1) || 1
+    const readAspectA = () => {
+      const width = readHydraWidth()
+      const height = readHydraHeight()
+      return width > height ? height / width : 1
+    }
+    const readAspectB = () => {
+      const width = readHydraWidth()
+      const height = readHydraHeight()
+      return height > width ? width / height : 1
+    }
+
+    const grammarUtilities = {
+      px: (value = 0, max = 6) => Math.max(-max, Math.min(max, Number(value) || 0)),
+      rn: (max = 1) => Math.random() * max,
+      btw: (min = 0, max = 1, power = 1) => min + Math.random() ** power * (max - min),
+      intgr: (min = 0, max = 1, power = 1) => {
+        const lo = Math.ceil(min)
+        const hi = Math.floor(max)
+        return lo + Math.floor(Math.random() ** power * (hi - lo + 1))
+      },
+      maybe: (p = 0.5) => Math.random() < p,
+      bi: (p = 0.5) => Math.random() > p ? 1 : -1,
+      bl: (p = 0.5, power = 1) => Math.random() ** power > p ? 1 : 0,
+      pick: (p, a, b) => Math.random() < p ? a : b,
+      choice2: (a, b, power = 1) => Math.random() ** power < 0.5 ? a : b,
+      choice3: (a, b, c, power = 1) => {
+        const r = Math.random() ** power
+        return r < 1 / 3 ? a : r < 2 / 3 ? b : c
+      },
+      choice4: (a, b, c, d, power = 1) => {
+        const r = Math.random() ** power
+        return r < 0.25 ? a : r < 0.5 ? b : r < 0.75 ? c : d
+      },
+      pixelX: () => grammarUtilities.choice3(1, grammarUtilities.intgr(4, 13), readHydraWidth()),
+      pixelY: () => grammarUtilities.choice3(1, grammarUtilities.intgr(4, 13), readHydraHeight()),
+      ns: (freq = 3, vel = 0, x = grammarUtilities.rn(), y = grammarUtilities.rn()) =>
+        synth.noise(freq, vel)
+          .scale(1, readAspectA(), readAspectB())
+          .modulate(synth.solid(readHydraWidth() * x, readHydraHeight() * y), 1),
+      nsloop: (freq = 35, vel = 0.25, rad = 0.8, x = grammarUtilities.rn(), y = grammarUtilities.rn()) =>
+        (typeof synth.noiseLoop === 'function' ? synth.noiseLoop(freq, vel, rad) : synth.noise(freq, vel))
+          .scale(1, readAspectA(), readAspectB())
+          .modulate(synth.solid(readHydraWidth() * x, readHydraHeight() * y), 1),
+      knob: (base = 0, amount = 1, bins = 4, freq = 2, vel = 0.05) =>
+        grammarUtilities.ns(freq, vel)
+          .posterize(bins, 1)
+          .pixelate(1, 1)
+          .r(amount, base),
+      rng: (min = 0, max = 1, bins = 4, freq = 2, vel = 0.05) =>
+        grammarUtilities.knob((min + max) / 2, (max - min) / 2, bins, freq, vel),
+      hit: (base = 0, amount = 1, threshold = 0.65, freq = 1, vel = 0.05) =>
+        synth.solid(base)
+          .add(grammarUtilities.ns(freq, vel).pixelate(1, 1).thresh(threshold, 0), amount),
+      wob: (min = 0, max = 1, sync = 0.05) =>
+        synth.osc(Math.PI * 2, sync, 1)
+          .pixelate(1, 1)
+          .r(max - min, min),
+      wobc: (base = 0, amount = 1, sync = 0.05) =>
+        synth.osc(Math.PI * 2, sync, 1)
+          .brightness(-0.5)
+          .pixelate(1, 1)
+          .r(amount * 2, base),
+      pxknob: (base = 0, amount = 1, bins = 4, freq = 2, vel = 0.05, max = 6) => {
+        const center = grammarUtilities.px(base * Math.max(readHydraWidth(), readHydraHeight()), max)
+        const room = Math.max(0, max - Math.abs(center))
+        const range = Math.min(Math.abs(amount * Math.max(readHydraWidth(), readHydraHeight())), room)
+        return grammarUtilities.knob(center, range, bins, freq, vel)
+      },
+      pxrng: (min = 0, maxValue = 1, bins = 4, freq = 2, vel = 0.05, max = 6) =>
+        grammarUtilities.rng(
+          grammarUtilities.px(min * Math.max(readHydraWidth(), readHydraHeight()), max),
+          grammarUtilities.px(maxValue * Math.max(readHydraWidth(), readHydraHeight()), max),
+          bins,
+          freq,
+          vel
+        ),
+      pxwob: (min = 0, maxValue = 1, sync = 0.05, max = 6) =>
+        grammarUtilities.wob(
+          grammarUtilities.px(min * Math.max(readHydraWidth(), readHydraHeight()), max),
+          grammarUtilities.px(maxValue * Math.max(readHydraWidth(), readHydraHeight()), max),
+          sync
+        ),
+      pxwobc: (base = 0, amount = 1, sync = 0.05, max = 6) => {
+        const center = grammarUtilities.px(base * Math.max(readHydraWidth(), readHydraHeight()), max)
+        const room = Math.max(0, max - Math.abs(center))
+        const range = Math.min(Math.abs(amount * Math.max(readHydraWidth(), readHydraHeight())), room)
+        return grammarUtilities.wobc(center, range, sync)
+      }
+    }
+
+    const installGrammarUtilityBinding = (name, descriptor) => {
+      Object.defineProperty(synth, name, {
+        configurable: true,
+        enumerable: true,
+        ...descriptor
+      })
+      Object.defineProperty(window, name, {
+        configurable: true,
+        enumerable: true,
+        ...descriptor
+      })
+    }
+
+    installGrammarUtilityBinding('TAU', { get: () => Math.PI * 2, set: () => { } })
+    installGrammarUtilityBinding('A', { get: readAspectA, set: () => { } })
+    installGrammarUtilityBinding('B', { get: readAspectB, set: () => { } })
+    installGrammarUtilityBinding('PX_MAX', { get: () => 6, set: () => { } })
+    for (const [name, value] of Object.entries(grammarUtilities)) {
+      installGrammarUtilityBinding(name, { writable: true, value })
+    }
+
     window.hydra = runtime
     window.synth = synth
+    window.hydraUtilities = grammarUtilities
     setCanvasFullscreen()
     const captureFrames = async (options = {}) => captureHydraFrameSequence({
       runtime,
@@ -1260,6 +1437,9 @@
     const editorLayoutSelect = document.getElementById('editor-layout-select')
     const codeMaterialSourceSelect = document.getElementById('code-material-source-select')
     const codeMaterialStatus = document.getElementById('code-material-status')
+    const utilityReference = document.getElementById('utility-reference')
+    const utilityReferencePreview = document.getElementById('utility-reference-preview')
+    const utilityReferenceStatus = document.getElementById('utility-reference-status')
     const codeMaterialCanvas = document.getElementById('code-material-canvas')
     const liveEditorStorageKey = 'hydra-livecode'
     const livePanelGeometryStorageKey = 'hydra-live-panel-geometry'
@@ -1293,8 +1473,114 @@
 
 speed = 0.75`
     let liveEditorView = null
+    const grammarUtilityGroups = [
+      {
+        title: 'constants',
+        items: [
+          ['TAU', 'TAU'],
+          ['A', 'A'],
+          ['B', 'B'],
+          ['PX_MAX', 'PX_MAX']
+        ]
+      },
+      {
+        title: 'random scalars',
+        items: [
+          ['rn', 'rn()'],
+          ['btw', 'btw(0, 1)'],
+          ['intgr', 'intgr(2, 8)'],
+          ['maybe', 'maybe(.5)'],
+          ['bi', 'bi(.5)'],
+          ['bl', 'bl(.5)'],
+          ['pick', 'pick(.5, .25, .75)'],
+          ['choice2', 'choice2(.25, .75)'],
+          ['choice3', 'choice3(.25, .5, .75)'],
+          ['choice4', 'choice4(.125, .25, .5, .75)']
+        ]
+      },
+      {
+        title: 'raster units',
+        items: [
+          ['px', 'px(1)'],
+          ['pixelX', 'pixelX()'],
+          ['pixelY', 'pixelY()']
+        ]
+      },
+      {
+        title: 'texture fields',
+        items: [
+          ['ns', 'ns(3, .05)'],
+          ['nsloop', 'nsloop(35, .25, .8)']
+        ]
+      },
+      {
+        title: 'parameter signals',
+        items: [
+          ['knob', 'knob(0, 1, 4, 2, .05)'],
+          ['rng', 'rng(0, 1, 4, 2, .05)'],
+          ['hit', 'hit(0, 1, .65, 1, .05)'],
+          ['wob', 'wob(0, 1, .05)'],
+          ['wobc', 'wobc(0, 1, .05)']
+        ]
+      },
+      {
+        title: 'pixel-bounded signals',
+        items: [
+          ['pxknob', 'pxknob(0, .01, 4)'],
+          ['pxrng', 'pxrng(0, .01, 4)'],
+          ['pxwob', 'pxwob(0, .01, .05)'],
+          ['pxwobc', 'pxwobc(0, .01, .05)']
+        ]
+      }
+    ]
+    const grammarUtilitySnippets = grammarUtilityGroups.flatMap((group) => group.items)
+    const grammarUtilityNames = grammarUtilitySnippets.map(([name]) => name)
+    const grammarUtilitySource = new Map([
+      ['TAU', 'TAU = Math.PI * 2'],
+      ['A', 'A = width > height ? height / width : 1'],
+      ['B', 'B = height > width ? width / height : 1'],
+      ['PX_MAX', 'PX_MAX = 6'],
+      ['px', 'px(value = 0, max = 6) => clamp value into [-max, max]'],
+      ['rn', 'rn(max = 1) => Math.random() * max'],
+      ['btw', 'btw(min = 0, max = 1, power = 1) => min + Math.random() ** power * (max - min)'],
+      ['intgr', 'intgr(min = 0, max = 1, power = 1) => integer in [min, max]'],
+      ['maybe', 'maybe(p = .5) => Math.random() < p'],
+      ['bi', 'bi(p = .5) => Math.random() > p ? 1 : -1'],
+      ['bl', 'bl(p = .5, power = 1) => Math.random() ** power > p ? 1 : 0'],
+      ['pick', 'pick(p, a, b) => maybe(p) ? a : b'],
+      ['choice2', 'choice2(a, b, power = 1) => weighted random choice'],
+      ['choice3', 'choice3(a, b, c, power = 1) => weighted random choice'],
+      ['choice4', 'choice4(a, b, c, d, power = 1) => weighted random choice'],
+      ['pixelX', 'pixelX() => choice3(1, intgr(4, 13), width)'],
+      ['pixelY', 'pixelY() => choice3(1, intgr(4, 13), height)'],
+      ['ns', `ns(freq = 3, vel = 0, x = rn(), y = rn()) =>
+  noise(freq, vel)
+    .scale(1, A, B)
+    .modulate(solid(width * x, height * y), 1)`],
+      ['nsloop', `nsloop(freq = 35, vel = .25, rad = .8, x = rn(), y = rn()) =>
+  noiseLoop(freq, vel, rad)
+    .scale(1, A, B)
+    .modulate(solid(width * x, height * y), 1)`],
+      ['knob', `knob(base = 0, amount = 1, bins = 4, freq = 2, vel = .05) =>
+  ns(freq, vel)
+    .posterize(bins, 1)
+    .pixelate(1, 1)
+    .r(amount, base)`],
+      ['rng', 'rng(min = 0, max = 1, bins = 4, freq = 2, vel = .05) => knob((min + max) / 2, (max - min) / 2, bins, freq, vel)'],
+      ['hit', `hit(base = 0, amount = 1, threshold = .65, freq = 1, vel = .05) =>
+  solid(base).add(ns(freq, vel).pixelate(1, 1).thresh(threshold, 0), amount)`],
+      ['wob', `wob(min = 0, max = 1, sync = .05) =>
+  osc(TAU, sync, 1).pixelate(1, 1).r(max - min, min)`],
+      ['wobc', `wobc(base = 0, amount = 1, sync = .05) =>
+  osc(TAU, sync, 1).brightness(-.5).pixelate(1, 1).r(amount * 2, base)`],
+      ['pxknob', 'pxknob(base = 0, amount = 1, bins = 4, freq = 2, vel = .05, max = PX_MAX)'],
+      ['pxrng', 'pxrng(min = 0, maxValue = 1, bins = 4, freq = 2, vel = .05, max = PX_MAX)'],
+      ['pxwob', 'pxwob(min = 0, maxValue = 1, sync = .05, max = PX_MAX)'],
+      ['pxwobc', 'pxwobc(base = 0, amount = 1, sync = .05, max = PX_MAX)']
+    ])
 
     const hydraCompletionNames = [
+      ...grammarUtilityNames,
       'osc',
       'noise',
       'voronoi',
@@ -1355,6 +1641,7 @@ speed = 0.75`
       'toggleInterfaceRecording',
       'playInterfacePerformance',
       'loadInterfacePerformance',
+      'loadInterfacePerformanceFile',
       'saveSketchToUrl',
       'copySketchUrl',
       'loadSketchFromUrl',
@@ -1549,6 +1836,13 @@ speed = 0.75`
       try {
         return decodeSketchCode(encoded)
       } catch (error) {
+        if (/[().,;\s=]/u.test(encoded)) return encoded
+        try {
+          const decoded = decodeURIComponent(encoded)
+          if (/[().,;\s=]/u.test(decoded)) return decoded
+        } catch {
+          // Keep the original decode failure for the warning below.
+        }
         console.warn('[hydra] failed to decode sketch URL', error)
         return null
       }
@@ -1597,6 +1891,11 @@ speed = 0.75`
       setLiveStatus('Loaded sketch from URL.', 'ok')
       if (run) void runEditorSnippet('all')
       return code
+    }
+
+    const hasRunnableSketchUrl = () => {
+      const code = readSketchCodeFromUrl()
+      return code !== null && code.trim().length > 0
     }
 
     const flashEditorRange = (range) => {
@@ -2451,6 +2750,60 @@ speed = 0.75`
         anchor: from,
         head: to
       }
+    }
+
+    const insertEditorText = (text, options = {}) => {
+      if (!liveEditorView) return null
+      const selection = liveEditorView.state.selection.main
+      const insert = String(text ?? '')
+      const from = Number.isFinite(Number(options.from)) ? Number(options.from) : selection.from
+      const to = Number.isFinite(Number(options.to)) ? Number(options.to) : selection.to
+      liveEditorView.dispatch({
+        changes: { from, to, insert },
+        selection: EditorSelection.cursor(from + insert.length),
+        scrollIntoView: true
+      })
+      if (options.focus !== false) liveEditorView.focus()
+      scheduleCodeMaterialRender({ force: true })
+      return { from, to: from + insert.length }
+    }
+
+    const renderUtilityReference = () => {
+      if (!utilityReference) return
+      utilityReference.replaceChildren()
+      const showPreview = (name, snippet) => {
+        if (utilityReferencePreview) {
+          utilityReferencePreview.textContent = grammarUtilitySource.get(name) ?? snippet
+        }
+        if (utilityReferenceStatus) utilityReferenceStatus.textContent = snippet
+      }
+      for (const group of grammarUtilityGroups) {
+        const groupElement = document.createElement('div')
+        groupElement.className = 'utility-group'
+        const title = document.createElement('div')
+        title.className = 'utility-group-title'
+        title.textContent = group.title
+        groupElement.appendChild(title)
+
+        for (const [name, snippet] of group.items) {
+          const button = document.createElement('button')
+          button.type = 'button'
+          button.className = 'utility-chip'
+          button.textContent = name
+          button.title = snippet
+          button.addEventListener('pointerenter', () => showPreview(name, snippet))
+          button.addEventListener('focus', () => showPreview(name, snippet))
+          button.addEventListener('click', () => {
+            insertEditorText(snippet)
+            if (utilityReferenceStatus) utilityReferenceStatus.textContent = `inserted ${name}`
+          })
+          groupElement.appendChild(button)
+        }
+
+        utilityReference.appendChild(groupElement)
+      }
+      const [firstName, firstSnippet] = grammarUtilitySnippets[0] ?? []
+      if (firstName) showPreview(firstName, firstSnippet)
     }
 
     const showEditorCompletions = () => {
@@ -4018,6 +4371,35 @@ speed = 0.75`
       return loaded
     }
 
+    const isInterfaceScoreFile = (file) => {
+      if (!file) return false
+      const name = String(file.name ?? '').toLowerCase()
+      const type = String(file.type ?? '').toLowerCase()
+      return name.endsWith('.hydra-score.json') ||
+        name.endsWith('.json') ||
+        type === 'application/json'
+    }
+
+    const loadInterfacePerformanceFile = async (file, options = {}) => {
+      if (!isInterfaceScoreFile(file)) {
+        throw new Error('Drop a .hydra-score.json interface score file.')
+      }
+      const text = await file.text()
+      let recording
+      try {
+        recording = JSON.parse(text)
+      } catch {
+        throw new Error('Dropped file is not valid JSON.')
+      }
+      const loaded = await loadInterfacePerformance(recording, {
+        play: options.play ?? true,
+        runCode: options.runCode ?? true,
+        ...options
+      })
+      setCaptureStatus(`Loaded interface score: ${file.name || 'dropped JSON'}.`, 'ok')
+      return loaded
+    }
+
     const describeInterfaceTarget = (target) => {
       const element = target instanceof Element
         ? target.closest('[id], button, .live-resize-handle, .live-drag-surface, .cm-editor, canvas')
@@ -4779,6 +5161,7 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
     window.downloadInterfaceRecording = downloadInterfaceRecording
     window.playInterfacePerformance = playInterfacePerformance
     window.loadInterfacePerformance = loadInterfacePerformance
+    window.loadInterfacePerformanceFile = loadInterfacePerformanceFile
     window.stopInterfacePlayback = stopInterfacePlayback
     window.hydraInterfaceRecorder = {
       start: startInterfaceRecording,
@@ -4787,6 +5170,7 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
       save: downloadInterfaceRecording,
       load: setLastInterfaceRecording,
       loadUrl: loadInterfacePerformance,
+      loadFile: loadInterfacePerformanceFile,
       play: playInterfacePerformance,
       stopPlayback: stopInterfacePlayback,
       get active() {
@@ -5256,7 +5640,6 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
               }
               if (update.docChanged) {
                 if (!interfacePlaybackActive) persistLiveSnippet()
-                lastFullBufferBlocks = null
                 const ops = []
                 update.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
                   ops.push([fromA, toA - fromA, inserted.toString()])
@@ -5299,6 +5682,7 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
       })
       attachCodeMaterial(readStoredCodeMaterialSourceName(), { silent: true, persist: false })
     }
+    renderUtilityReference()
 
     if (liveRunButton) {
       liveRunButton.addEventListener('click', () => runEditorSnippet('smart'))
@@ -5415,6 +5799,38 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
         })
       })
     }
+
+    const readDroppedInterfaceScoreFile = (event) => {
+      const files = Array.from(event.dataTransfer?.files ?? [])
+      return files.find(isInterfaceScoreFile) ?? null
+    }
+
+    document.addEventListener('dragover', (event) => {
+      const file = readDroppedInterfaceScoreFile(event)
+      if (!file) return
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'copy'
+      setInterfaceRecordStatus('drop to play interface score', 'ok')
+    })
+
+    document.addEventListener('dragleave', (event) => {
+      if (event.relatedTarget) return
+      if (!interfacePlaybackActive && !interfaceRecording) {
+        setInterfaceRecordStatus(lastInterfaceRecording ? 'score ready.' : '', '')
+      }
+    })
+
+    document.addEventListener('drop', (event) => {
+      const file = readDroppedInterfaceScoreFile(event)
+      if (!file) return
+      event.preventDefault()
+      void loadInterfacePerformanceFile(file, { play: true, runCode: true }).catch((error) => {
+        const message = error instanceof Error ? error.message : String(error)
+        setInterfaceRecordStatus(`Load failed: ${message}`, 'error')
+        setCaptureStatus(`Interface score load failed: ${message}`, 'error')
+        console.error('[hydra] interface score drop failed', error)
+      })
+    })
 
     if (captureDurationInput) {
       const syncCaptureDuration = () => {
@@ -5553,8 +5969,10 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
     window.hydraEditor = {
       getCode: readEditorCode,
       setCode: setEditorCode,
+      insert: insertEditorText,
       run: runEditorSnippet,
       agent: hydraAgentLivecoder,
+      utilities: grammarUtilities,
       saveSketchToUrl,
       copySketchUrl,
       loadSketchFromUrl,
@@ -5590,6 +6008,7 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
       toggleInterfaceRecording,
       playInterfacePerformance,
       loadInterfacePerformance,
+      loadInterfacePerformanceFile,
       getUiSettings: () => applyUiSettings(readUiSettingsFromControls()),
       setUiSettings: (settings) => {
         const normalized = applyUiSettings(settings)
@@ -5626,6 +6045,7 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
           toggleInterfaceRecording,
           playInterfacePerformance,
           loadInterfacePerformance,
+          loadInterfacePerformanceFile,
           saveSketchToUrl,
           copySketchUrl,
           loadSketchFromUrl,
@@ -5649,9 +6069,15 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
           pickVideoFiles,
           loadVideoFile,
           loadVideoFiles,
-          restartVideos
+          restartVideos,
+          ...grammarUtilities
         },
         allowedBindings: [
+          ...grammarUtilityNames,
+          'TAU',
+          'A',
+          'B',
+          'PX_MAX',
           'speed',
           'bpm',
           'fps',
@@ -5686,6 +6112,11 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
         setLiveStatus('')
       }
       showWelcome()
+      if (hasRunnableSketchUrl()) {
+        window.setTimeout(() => {
+          void runEditorSnippet('all')
+        }, 0)
+      }
       console.info('[hydra] livecoding plugin attached')
       console.info('[hydra] live editor ready: use panel or livecoding.run(...)')
     } else if (livecodingNote) {

@@ -1,0 +1,34 @@
+{
+  "buildCommand": "pnpm build:vercel",
+  "outputDirectory": "dist",
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "rewrites": [
+    {
+      "source": "/hydra",
+      "destination": "/hydra/index.html"
+    },
+    {
+      "source": "/hydra/",
+      "destination": "/hydra/index.html"
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/hydra",
+      "permanent": false
+    }
+  ],
+  "headers": [
+    {
+      "source": "/hydra/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        }
+      ]
+    }
+  ]
+}

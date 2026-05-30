@@ -9,6 +9,7 @@
     "build:dist": "pnpm --filter hydra-synth run build:dist",
     "build:single": "pnpm --filter hydra-synth run build:single",
     "build:v0": "pnpm --filter hydra-synth run build:v0",
+    "build:vercel": "pnpm build && node scripts/build-vercel-static.mjs",
     "dev": "pnpm build && node scripts/dev-server.mjs --open",
     "dev:livecoding": "pnpm dev",
     "dev:no-open": "pnpm build && node scripts/dev-server.mjs",
