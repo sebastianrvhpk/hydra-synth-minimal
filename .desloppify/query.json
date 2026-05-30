@@ -1,75 +1,9 @@
 {
-  "command": "scan",
+  "command": "status",
   "overall_score": 19.8,
   "objective_score": 79.3,
   "strict_score": 19.8,
   "verified_strict_score": 79.3,
-  "prev_overall_score": 0.0,
-  "prev_objective_score": 0.0,
-  "prev_strict_score": 0.0,
-  "prev_verified_strict_score": 0.0,
-  "profile": "objective",
-  "noise_budget": 10,
-  "noise_global_budget": 0,
-  "hidden_by_detector": {
-    "orphaned": 502,
-    "boilerplate_duplication": 368,
-    "test_coverage": 40
-  },
-  "hidden_total": 910,
-  "diff": {
-    "new": 954,
-    "auto_resolved": 0,
-    "reopened": 0,
-    "total_current": 954,
-    "suspect_detectors": [],
-    "chronic_reopeners": [],
-    "skipped_other_lang": 0,
-    "resolved_out_of_scope": 0,
-    "ignored": 0,
-    "ignore_patterns": 0,
-    "raw_issues": 954,
-    "suppressed_pct": 0.0
-  },
-  "stats": {
-    "total": 954,
-    "auto_resolved": 0,
-    "deferred": 0,
-    "false_positive": 0,
-    "fixed": 0,
-    "open": 954,
-    "triaged_out": 0,
-    "wontfix": 0,
-    "by_tier": {
-      "2": {
-        "auto_resolved": 0,
-        "deferred": 0,
-        "false_positive": 0,
-        "fixed": 0,
-        "open": 7,
-        "triaged_out": 0,
-        "wontfix": 0
-      },
-      "3": {
-        "auto_resolved": 0,
-        "deferred": 0,
-        "false_positive": 0,
-        "fixed": 0,
-        "open": 947,
-        "triaged_out": 0,
-        "wontfix": 0
-      }
-    }
-  },
-  "open_scope": {
-    "in_scope": 954,
-    "out_of_scope": 0,
-    "global": 954
-  },
-  "warnings": [
-    "954 new issues with few resolutions \u2014 likely cascading.",
-    "Coverage reduced (eslint_warning): ESLint tooling unavailable (parser_error) Repercussion: Detector results may be under-reported for this scan. Fix: Install/fix the tool command and rerun scan."
-  ],
   "dimension_scores": {
     "Code quality": {
       "score": 36.4,
@@ -590,6 +524,148 @@
       }
     }
   },
+  "scorecard_dimensions": [
+    {
+      "name": "File health",
+      "score": 99.8,
+      "strict": 99.8,
+      "checks": 554,
+      "failing": 3,
+      "tier": 3,
+      "subjective": false
+    },
+    {
+      "name": "Code quality",
+      "score": 36.4,
+      "strict": 36.4,
+      "checks": 566,
+      "failing": 514,
+      "tier": 3,
+      "subjective": false
+    },
+    {
+      "name": "Duplication",
+      "score": 58.4,
+      "strict": 58.4,
+      "checks": 643,
+      "failing": 381,
+      "tier": 3,
+      "subjective": false
+    },
+    {
+      "name": "Security",
+      "score": 99.9,
+      "strict": 99.9,
+      "checks": 1108,
+      "failing": 1,
+      "tier": 4,
+      "subjective": false
+    },
+    {
+      "name": "Test health",
+      "score": 81.4,
+      "strict": 81.4,
+      "checks": 3219,
+      "failing": 50,
+      "tier": 4,
+      "subjective": false
+    }
+  ],
+  "subjective_measures": [],
+  "stats": {
+    "total": 954,
+    "auto_resolved": 0,
+    "deferred": 0,
+    "false_positive": 0,
+    "fixed": 0,
+    "open": 954,
+    "triaged_out": 0,
+    "wontfix": 0,
+    "by_tier": {
+      "2": {
+        "auto_resolved": 0,
+        "deferred": 0,
+        "false_positive": 0,
+        "fixed": 0,
+        "open": 7,
+        "triaged_out": 0,
+        "wontfix": 0
+      },
+      "3": {
+        "auto_resolved": 0,
+        "deferred": 0,
+        "false_positive": 0,
+        "fixed": 0,
+        "open": 947,
+        "triaged_out": 0,
+        "wontfix": 0
+      }
+    }
+  },
+  "scan_count": 1,
+  "last_scan": "2026-04-30T06:46:31+00:00",
+  "scan_metadata": {
+    "source": "scan"
+  },
+  "by_tier": {
+    "2": {
+      "auto_resolved": 0,
+      "deferred": 0,
+      "false_positive": 0,
+      "fixed": 0,
+      "open": 7,
+      "triaged_out": 0,
+      "wontfix": 0
+    },
+    "3": {
+      "auto_resolved": 0,
+      "deferred": 0,
+      "false_positive": 0,
+      "fixed": 0,
+      "open": 947,
+      "triaged_out": 0,
+      "wontfix": 0
+    }
+  },
+  "ignores": [],
+  "suppression": {
+    "last_ignored": 0,
+    "last_raw_issues": 954,
+    "last_suppressed_pct": 0.0,
+    "last_ignore_patterns": 0,
+    "recent_scans": 1,
+    "recent_ignored": 0,
+    "recent_raw_issues": 954,
+    "recent_suppressed_pct": 0.0
+  },
+  "potentials": {
+    "javascript": {
+      "structural": 554,
+      "flat_dirs": 12,
+      "empty_catch": 4,
+      "unused_imports": 1,
+      "security": 554,
+      "single_use": 0,
+      "cycles": 554,
+      "orphaned": 554,
+      "test_coverage": 3219,
+      "boilerplate_duplication": 499,
+      "dupes": 144,
+      "stale_wontfix": 0
+    }
+  },
+  "codebase_metrics": {
+    "javascript": {
+      "total_files": 554,
+      "total_loc": 23736,
+      "total_directories": 6
+    }
+  },
+  "open_scope": {
+    "in_scope": 954,
+    "out_of_scope": 0,
+    "global": 954
+  },
   "score_breakdown": {
     "overall_score": 19.8,
     "mechanical_fraction": 0.25,
@@ -924,91 +1000,7 @@
       }
     ]
   },
-  "subjective_integrity": {
-    "status": "pass",
-    "target_score": 85.0,
-    "matched_count": 0,
-    "matched_dimensions": [],
-    "reset_dimensions": []
-  },
-  "score_confidence": {
-    "status": "reduced",
-    "confidence": 0.0,
-    "detectors": [
-      {
-        "detector": "eslint_warning",
-        "status": "reduced",
-        "confidence": 0.0,
-        "summary": "ESLint tooling unavailable (parser_error)",
-        "impact": "Detector results may be under-reported for this scan.",
-        "remediation": "Install/fix the tool command and rerun scan.",
-        "tool": "ESLint",
-        "reason": "parser_error"
-      }
-    ],
-    "dimensions": []
-  },
-  "potentials": {
-    "javascript": {
-      "structural": 554,
-      "flat_dirs": 12,
-      "empty_catch": 4,
-      "unused_imports": 1,
-      "security": 554,
-      "single_use": 0,
-      "cycles": 554,
-      "orphaned": 554,
-      "test_coverage": 3219,
-      "boilerplate_duplication": 499,
-      "dupes": 144,
-      "stale_wontfix": 0
-    }
-  },
-  "scan_coverage": {
-    "javascript": {
-      "status": "reduced",
-      "confidence": 0.0,
-      "detectors": {
-        "eslint_warning": {
-          "detector": "eslint_warning",
-          "status": "reduced",
-          "confidence": 0.0,
-          "summary": "ESLint tooling unavailable (parser_error)",
-          "impact": "Detector results may be under-reported for this scan.",
-          "remediation": "Install/fix the tool command and rerun scan.",
-          "tool": "ESLint",
-          "reason": "parser_error"
-        },
-        "security": {
-          "detector": "security",
-          "status": "full",
-          "confidence": 1.0,
-          "summary": "Security coverage complete for enabled detectors.",
-          "impact": "",
-          "remediation": "",
-          "tool": "",
-          "reason": ""
-        }
-      },
-      "warnings": [
-        {
-          "detector": "eslint_warning",
-          "status": "reduced",
-          "confidence": 0.0,
-          "summary": "ESLint tooling unavailable (parser_error)",
-          "impact": "Detector results may be under-reported for this scan.",
-          "remediation": "Install/fix the tool command and rerun scan.",
-          "tool": "ESLint",
-          "reason": "parser_error"
-        }
-      ],
-      "updated_at": "2026-04-30T06:46:31+00:00"
-    }
-  },
-  "zone_distribution": {
-    "production": 545,
-    "script": 9
-  },
+  "next_command": "desloppify show orphaned --status open",
   "narrative": {
     "phase": "first_scan",
     "headline": "\u26a0 1 security issue \u2014 review before other cleanup. First scan complete. 954 open issues across 3 dimensions.",
@@ -1223,10 +1215,10 @@
         "description": "Generate prioritized markdown cleanup plan"
       },
       "badge": {
-        "generated": false,
+        "generated": true,
         "in_readme": false,
         "path": "scorecard.png",
-        "recommendation": null
+        "recommendation": "Add to README: <img src=\"scorecard.png\" width=\"100%\">"
       }
     },
     "debt": {
@@ -1261,20 +1253,19 @@
         "command": "desloppify zone show",
         "priority": 2,
         "severity": "medium"
-      },
-      {
-        "type": "report_scores",
-        "message": "ALWAYS share ALL scores with the user: overall, objective, and strict, plus every dimension score (lenient + strict), including subjective dimensions. The goal is to maximize strict scores.",
-        "command": null,
-        "no_decay": true,
-        "priority": 3,
-        "severity": "low"
       }
     ],
     "reminder_history": {
-      "zone_classification": 1,
+      "zone_classification": 2,
       "report_scores": 1
     }
+  },
+  "plan": {
+    "active": true,
+    "focus": null,
+    "total_ordered": 20,
+    "total_skipped": 0,
+    "plan_overrides_narrative": true
   },
   "config": {
     "target_strict_score": 85,
@@ -1306,12 +1297,5 @@
       "execute": "openrouter:x-ai/grok-4.20-beta",
       "review": "openrouter:google/gemini-3.1-pro-preview"
     }
-  },
-  "plan": {
-    "active": true,
-    "focus": null,
-    "total_ordered": 20,
-    "total_skipped": 0,
-    "plan_overrides_narrative": true
   }
 }
