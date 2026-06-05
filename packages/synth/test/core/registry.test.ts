@@ -247,6 +247,10 @@ describe('HydraTransformRegistry', () => {
 
     expect(output.passes.length).toBe(5)
     expect(output.passes[1].wgsl).toContain('fn bloomThreshold')
+    expect(output.passes[1].variant).toBe('compute')
+    expect(output.passes[1].wgsl).toContain('@compute')
+    expect(output.passes[1].wgsl).toContain('texture_storage_2d<rgba16float, write>')
+    expect(output.passes[1].wgsl).toContain('textureStore(outImage')
     expect(output.passes[2].wgsl).toContain('fn bloomDownsample')
     expect(output.passes[2].schedule?.resolutionScale).toBe(0.5)
     expect(output.passes[3].wgsl).toContain('fn bloomUpsample')
@@ -350,7 +354,7 @@ describe('HydraTransformRegistry', () => {
       .exposure(0.1)
       .out()
 
-    expect(output.passes.length).toBe(13)
+    expect(output.passes.length).toBe(12)
 
     const wgsl = output.passes.map((pass) => pass.wgsl).join('\n')
     expect(wgsl).toContain('fn sharpen')
@@ -370,7 +374,7 @@ describe('HydraTransformRegistry', () => {
     expect(wgsl).toContain('fn hydraMod')
   })
 
-  it('emits fragment entry points for directional blur kernels', () => {
+  it('emits compute entry points with fragment fallbacks for directional blur kernels', () => {
     const output = new CaptureOutput()
     const registry = new HydraTransformRegistry({ defaultOutput: output })
 
@@ -379,11 +383,15 @@ describe('HydraTransformRegistry', () => {
     expect(output.passes.length).toBe(3)
     expect(output.passes[1].wgsl).toContain('fn blurX')
     expect(output.passes[2].wgsl).toContain('fn blurY')
-    expect(output.passes[1].wgsl).toContain('@fragment')
-    expect(output.passes[2].wgsl).toContain('@fragment')
+    expect(output.passes[1].variant).toBe('compute')
+    expect(output.passes[2].variant).toBe('compute')
+    expect(output.passes[1].wgsl).toContain('@compute')
+    expect(output.passes[2].wgsl).toContain('@compute')
+    expect(output.passes[1].fallback?.wgsl).toContain('@fragment')
+    expect(output.passes[2].fallback?.wgsl).toContain('@fragment')
   })
 
-  it('compiles blurFast as a fragment pass', () => {
+  it('compiles blurFast as a compute-preferred pass with fragment fallback', () => {
     const output = new CaptureOutput()
     const registry = new HydraTransformRegistry({ defaultOutput: output })
 
@@ -393,9 +401,11 @@ describe('HydraTransformRegistry', () => {
     const blurPass = output.passes[1]
 
     expect(blurPass.wgsl).toContain('fn blurFast')
+    expect(blurPass.variant).toBe('compute')
+    expect(blurPass.fallback?.wgsl).toContain('@fragment')
   })
 
-  it('compiles edgeDetect/edgeLaplacian as fragment passes', () => {
+  it('compiles edgeDetect/edgeLaplacian as compute-preferred passes with fragment fallbacks', () => {
     const output = new CaptureOutput()
     const registry = new HydraTransformRegistry({ defaultOutput: output })
 
@@ -407,6 +417,40 @@ describe('HydraTransformRegistry', () => {
 
     expect(edgeDetectPass.wgsl).toContain('fn edgeDetect')
     expect(edgeLaplacianPass.wgsl).toContain('fn edgeLaplacian')
+    expect(edgeDetectPass.variant).toBe('compute')
+    expect(edgeLaplacianPass.variant).toBe('compute')
+    expect(edgeDetectPass.fallback?.wgsl).toContain('@fragment')
+    expect(edgeLaplacianPass.fallback?.wgsl).toContain('@fragment')
+  })
+
+  it('compiles dual Kawase effects as compute-preferred passes with fragment fallbacks', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators.osc(8, 0.1, 0).dualKawaseBlur(1.5, 1).dualKawaseBloom(0.8, 1, 0.6, 0.1).out()
+
+    expect(output.passes.length).toBe(3)
+    const blurPass = output.passes[1]
+    const bloomPass = output.passes[2]
+    expect(blurPass.variant).toBe('compute')
+    expect(bloomPass.variant).toBe('compute')
+    expect(blurPass.fallback?.wgsl).toContain('@fragment')
+    expect(bloomPass.fallback?.wgsl).toContain('@fragment')
+  })
+
+  it('fuses safe color transforms after renderpass boundaries', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators.osc(8, 0.1, 0).blurX(1).contrast(1.2).brightness(0.1).out()
+
+    expect(output.passes.length).toBe(2)
+    expect(output.passes[1].variant).toBe('compute')
+    expect(output.passes[1].wgsl).toContain('fn blurX')
+    expect(output.passes[1].wgsl).toContain('fn contrast')
+    expect(output.passes[1].wgsl).toContain('fn brightness')
+    expect(output.passes[1].fallback?.wgsl).toContain('fn contrast')
+    expect(output.passes[1].fallback?.wgsl).toContain('fn brightness')
   })
 
   it('injects prev() when chaining non-src transforms after renderpass boundaries', () => {
@@ -610,24 +654,29 @@ describe('HydraTransformRegistry', () => {
     expect(reverseRate).toEqual({ everyNFrames: 5 })
   })
 
-  it('accepts float array inputs as sequenced dynamic uniforms', () => {
+  it('compiles static float array sequences into WGSL helpers', () => {
     const output = new CaptureOutput()
     const registry = new HydraTransformRegistry({ defaultOutput: output })
-    const frequencySequence = [0.2, 0.8, 0.4]
+    const frequencySequence = [0.2, 0.8, 0.4] as number[] & {
+      _speed?: number
+      _smooth?: number
+      _offset?: number
+    }
+    frequencySequence._speed = 2
+    frequencySequence._smooth = 1
+    frequencySequence._offset = 0.25
 
     registry.generators
       .osc(frequencySequence, 0.1, 0)
       .out()
 
     expect(output.passes.length).toBe(1)
-    const frequencyUniform = output.passes[0].uniforms.find((uniform) => uniform.name.startsWith('frequency'))
-    if (!frequencyUniform) throw new Error('Expected frequency uniform to be present.')
-
-    const probe = { time: 1.25, bpm: 120, resolution: [640, 360] as [number, number], deltaMs: 16 }
-    expect(Number(frequencyUniform.value(probe))).toBeCloseTo(0.4, 5)
+    expect(output.passes[0].uniforms.find((uniform) => uniform.name.startsWith('frequency'))).toBeUndefined()
+    expect(output.passes[0].wgsl).toContain('fn hydraSeq_frequency_0_')
+    expect(output.passes[0].wgsl).toContain('globals.time * sequenceSpeed * (globals.bpm / 60.0)')
   })
 
-  it('evaluates shared array sequences once per frame across uniforms', () => {
+  it('keeps function-eased array sequences on the dynamic uniform fallback', () => {
     const output = new CaptureOutput()
     const registry = new HydraTransformRegistry({ defaultOutput: output })
     let easeCallCount = 0
@@ -647,6 +696,7 @@ describe('HydraTransformRegistry', () => {
       .out()
 
     expect(output.passes.length).toBe(1)
+    expect(output.passes[0].wgsl).not.toContain('fn hydraSeq_')
     const frequencyUniform = output.passes[0].uniforms.find((uniform) => uniform.name.startsWith('frequency'))
     const angleUniform = output.passes[0].uniforms.find((uniform) => uniform.name.startsWith('angle'))
     if (!frequencyUniform || !angleUniform) throw new Error('Expected sequenced uniforms are missing.')

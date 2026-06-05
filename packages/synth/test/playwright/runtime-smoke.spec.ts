@@ -85,7 +85,7 @@ test.afterAll(async () => {
 
 const runFixture = async (
   page: import('@playwright/test').Page,
-  mode: 'default' | 'fragment' | 'auto' | 'force-unavailable'
+  mode: 'default' | 'fragment' | 'auto' | 'compute' | 'force-unavailable'
 ) => {
   if (!fixtureServer) throw new Error('Fixture server was not initialized.')
   const target = `${fixtureServer.baseUrl}${fixturePath}?mode=${mode}`
@@ -190,6 +190,20 @@ test('browser runtime smoke: auto mode init + one frame + dispose', async ({ pag
     expect(result.requestedMode).toBe('auto')
     expect(result.configuredMode).toBe('auto')
     expect(result.activeMode).toBe('fragment')
+  }
+})
+
+test('browser runtime smoke: compute-preferred pass compiles and dispatches', async ({ page }) => {
+  const result = await runFixture(page, 'compute')
+  expect(['ok', 'no-webgpu'], `unexpected result: ${JSON.stringify(result)}`).toContain(result.status)
+  if (result.status === 'ok') {
+    expect(result.configuredMode).toBe('auto')
+    expect(result.activeMode).toBe('fragment')
+    expect(result.passVariants).toContain('compute')
+    expect(result.computeCapability).toMatchObject({
+      storageTextureFormat: 'rgba16float',
+      maxComputeInvocationsPerWorkgroup: expect.any(Number)
+    })
   }
 })
 

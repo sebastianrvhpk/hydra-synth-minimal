@@ -6,6 +6,7 @@ import { HydraAutotuner } from '../src/runtime/autotune.ts'
 import { WebGPUOutputNode } from '../src/runtime/output-node.ts'
 import { buildProfilerSnapshot } from '../src/runtime/profiler.ts'
 import { HydraBrowserRuntime, normalizeRuntimeExecutionMode } from '../src/runtime/runtime.ts'
+import { WebGPURenderer } from '../src/webgpu/renderer.ts'
 
 const createMinimalExecutionPlan = (): HydraExecutionPlan => ({
   version: '1.0',
@@ -165,14 +166,87 @@ describe('browser foundation', () => {
     expect(snapshot.scheduler.routingActiveMode).toBe('fragment')
     expect(snapshot.scheduler.routingCompileFailures).toBe(0)
     expect(snapshot.scheduler.routingRouteFailureCount).toBe(0)
+    expect(snapshot.scheduler.routingRouteCount).toBe(0)
+    expect(snapshot.scheduler.graphCompileCount).toBe(0)
+    expect(snapshot.scheduler.executePlanCount).toBe(0)
     expect(snapshot.passes['o0:passA']?.gpuTimingSource).toBe('unavailable')
+    expect(snapshot.passes['o0:passA']?.cpuBreakdown.dynamicUniformEvalMsAvg).toBe(0)
+    expect(snapshot.passes['o0:passA']?.counters.bindGroupCacheHits).toBe(0)
+  })
+
+  it('coalesces unchanged global uniform writes', () => {
+    let writeCount = 0
+    const renderer = new WebGPURenderer({
+      canvas: { width: 4, height: 4 } as HTMLCanvasElement
+    })
+    ;(renderer as unknown as {
+      ready: boolean
+      device: { queue: { writeBuffer: () => void } }
+      globalUniformBuffer: GPUBuffer
+    }).ready = true
+    ;(renderer as unknown as {
+      ready: boolean
+      device: { queue: { writeBuffer: () => void } }
+      globalUniformBuffer: GPUBuffer
+    }).device = {
+      queue: {
+        writeBuffer: () => {
+          writeCount += 1
+        }
+      }
+    }
+    ;(renderer as unknown as {
+      ready: boolean
+      device: { queue: { writeBuffer: () => void } }
+      globalUniformBuffer: GPUBuffer
+    }).globalUniformBuffer = { destroy: () => {} } as unknown as GPUBuffer
+
+    expect(renderer.updateGlobalUniforms({ time: 1, bpm: 120, width: 4, height: 4 })).toBe(true)
+    expect(renderer.updateGlobalUniforms({ time: 1, bpm: 120, width: 4, height: 4 })).toBe(false)
+    expect(renderer.updateGlobalUniforms({ time: 2, bpm: 120, width: 4, height: 4 })).toBe(true)
+    expect(writeCount).toBe(2)
+
+    renderer.setResolution(8, 4)
+    expect(renderer.updateGlobalUniforms({ time: 2, bpm: 120, width: 8, height: 4 })).toBe(true)
+    expect(writeCount).toBe(3)
+    renderer.dispose()
   })
 
   it('does not infer gpu timing from cpu encode durations', () => {
     const output = new WebGPUOutputNode({ renderer: null, width: 4, height: 4, label: 'timing-audit' })
     ;(output as unknown as {
-      recordPassStat: (signature: string, cpuEncodeMs: number, fallbackUsed: boolean, variant: 'fragment') => void
-    }).recordPassStat('pass-a', 3.75, false, 'fragment')
+      recordPassStat: (
+        signature: string,
+        cpuEncodeMs: number,
+        fallbackUsed: boolean,
+        variant: 'fragment' | 'compute',
+        profile: {
+          dynamicUniformEvalMs: number
+          dynamicUniformWriteMs: number
+          textureResolutionMs: number
+          bindGroupMs: number
+          renderPassEncodeMs: number
+          computePassEncodeMs: number
+          globalUniformWrote: boolean
+          dynamicUniformWrote: boolean
+          dynamicUniformSkipped: boolean
+          bindGroupCacheHit: boolean
+          bindGroupCreated: boolean
+        }
+      ) => void
+    }).recordPassStat('pass-a', 3.75, false, 'fragment', {
+      dynamicUniformEvalMs: 0,
+      dynamicUniformWriteMs: 0,
+      textureResolutionMs: 0,
+      bindGroupMs: 0,
+      renderPassEncodeMs: 3.75,
+      computePassEncodeMs: 0,
+      globalUniformWrote: false,
+      dynamicUniformWrote: false,
+      dynamicUniformSkipped: false,
+      bindGroupCacheHit: false,
+      bindGroupCreated: false
+    })
 
     const stats = output.getPassStats()
     expect(stats['pass-a']?.lastGpuMs).toBeNull()
@@ -237,6 +311,420 @@ describe('browser foundation', () => {
       'dynamic-uniform-regression-dynamic-uniforms-pass-1'
     ])
 
+    output.dispose()
+  })
+
+  it('reuses active pipeline entries and bind groups across stable ticks', () => {
+    let pipelineRequests = 0
+    let bindGroupCreations = 0
+    let dynamicUniformWrites = 0
+    const ids = new WeakMap<object, number>()
+    let nextId = 1
+    const getObjectId = (value: object | null | undefined): number => {
+      if (!value) return 0
+      const current = ids.get(value)
+      if (current) return current
+      ids.set(value, nextId)
+      nextId += 1
+      return nextId - 1
+    }
+    const texture = () => ({ destroy: () => {} }) as unknown as GPUTexture
+    const fallbackTexture = texture()
+    const pipeline = {
+      getBindGroupLayout: () => ({})
+    } as unknown as GPURenderPipeline
+    const renderer = {
+      ready: true,
+      globalUniformBuffer: {} as GPUBuffer,
+      device: {
+        queue: {
+          writeBuffer: () => {
+            dynamicUniformWrites += 1
+          }
+        },
+        createBindGroup: () => {
+          bindGroupCreations += 1
+          return {}
+        }
+      },
+      createDynamicUniformBuffer: () => ({ destroy: () => {} }),
+      createOutputTexture: () => texture(),
+      getFallbackTexture: () => fallbackTexture,
+      getTextureView: () => ({}),
+      getSampler: () => null,
+      getObjectId,
+      updateGlobalUniforms: () => true,
+      getOutputPipelineEntry: (signature: string, code: string) => {
+        pipelineRequests += 1
+        return {
+          cacheKey: `${signature}|${code}`,
+          signature,
+          code,
+          pipeline,
+          error: null
+        }
+      }
+    }
+    const renderPass = {
+      setPipeline: () => {},
+      setBindGroup: () => {},
+      draw: () => {},
+      end: () => {}
+    }
+    const encoder = {
+      beginRenderPass: () => renderPass
+    }
+    const output = new WebGPUOutputNode({
+      renderer: renderer as unknown as never,
+      width: 4,
+      height: 4,
+      label: 'stable-hot-path'
+    })
+    output.render([{
+      signature: 'stable-pass',
+      wgsl: 'stable-code',
+      uniforms: [{
+        name: 'amount_0',
+        index: 0,
+        size: 1,
+        type: 'float' as const,
+        value: () => 0.5
+      }],
+      textures: [],
+      output: {
+        name: 'outImage',
+        variableName: 'outImage',
+        format: 'rgba16float',
+        binding: 0
+      }
+    }])
+
+    output.tick({ time: 0, bpm: 30, resolution: [4, 4], deltaMs: 16 }, encoder as unknown as GPUCommandEncoder)
+    output.tick({ time: 0, bpm: 30, resolution: [4, 4], deltaMs: 16 }, encoder as unknown as GPUCommandEncoder)
+
+    const stats = Object.values(output.getPassStats())[0]
+    expect(pipelineRequests).toBe(1)
+    expect(bindGroupCreations).toBe(1)
+    expect(stats?.bindGroupCacheHits).toBe(1)
+    expect(stats?.bindGroupCacheMisses).toBe(1)
+    expect(stats?.bindGroupCreationCount).toBe(1)
+    expect(stats?.pipelineCacheMissCount).toBe(1)
+    expect(dynamicUniformWrites).toBe(1)
+    expect(stats?.dynamicUniformWriteCount).toBe(1)
+    expect(stats?.dynamicUniformSkipCount).toBe(1)
+    output.dispose()
+  })
+
+  it('dispatches compute passes with storage output bind groups', () => {
+    let computePipelineRequests = 0
+    let renderPipelineRequests = 0
+    let bindGroupCreations = 0
+    let renderPassBegins = 0
+    let computePassBegins = 0
+    let dispatchArgs: number[] | null = null
+    let createdBindGroupEntries: Array<{ binding: number, resource: unknown }> = []
+    const ids = new WeakMap<object, number>()
+    let nextId = 1
+    const getObjectId = (value: object | null | undefined): number => {
+      if (!value) return 0
+      const current = ids.get(value)
+      if (current) return current
+      ids.set(value, nextId)
+      nextId += 1
+      return nextId - 1
+    }
+    const texture = (label = '') => ({ label, destroy: () => {} }) as unknown as GPUTexture
+    const fallbackTexture = texture('fallback')
+    const sampler = {} as GPUSampler
+    const pipeline = {
+      getBindGroupLayout: () => ({})
+    } as unknown as GPUComputePipeline
+    const renderer = {
+      ready: true,
+      globalUniformBuffer: {} as GPUBuffer,
+      device: {
+        queue: {
+          writeBuffer: () => {}
+        },
+        createBindGroup: ({ entries }: { entries: Array<{ binding: number, resource: unknown }> }) => {
+          bindGroupCreations += 1
+          createdBindGroupEntries = entries
+          return {}
+        }
+      },
+      createDynamicUniformBuffer: () => ({ destroy: () => {} }),
+      createOutputTexture: ({ label = '' }: { label?: string } = {}) => texture(label),
+      getFallbackTexture: () => fallbackTexture,
+      getTextureView: (target: GPUTexture) => ({ target }),
+      getSampler: () => sampler,
+      getObjectId,
+      updateGlobalUniforms: () => true,
+      getOutputPipelineEntry: () => {
+        renderPipelineRequests += 1
+        return null
+      },
+      getOutputComputePipelineEntry: (signature: string, code: string) => {
+        computePipelineRequests += 1
+        return {
+          cacheKey: `${signature}|${code}|compute`,
+          signature,
+          code,
+          pipeline,
+          error: null
+        }
+      }
+    }
+    const computePass = {
+      setPipeline: () => {},
+      setBindGroup: () => {},
+      dispatchWorkgroups: (x: number, y?: number, z?: number) => {
+        dispatchArgs = [x, y ?? 1, z ?? 1]
+      },
+      end: () => {}
+    }
+    const encoder = {
+      beginRenderPass: () => {
+        renderPassBegins += 1
+        return {
+          setPipeline: () => {},
+          setBindGroup: () => {},
+          draw: () => {},
+          end: () => {}
+        }
+      },
+      beginComputePass: () => {
+        computePassBegins += 1
+        return computePass
+      }
+    }
+    const output = new WebGPUOutputNode({
+      renderer: renderer as unknown as never,
+      width: 10,
+      height: 9,
+      label: 'compute-pass'
+    })
+    output.render([{
+      signature: 'compute-threshold',
+      wgsl: 'compute-code',
+      variant: 'compute',
+      compute: {
+        workgroupSize: [8, 8]
+      },
+      uniforms: [],
+      textures: [{
+        name: 'prevBuffer',
+        variableName: 'prevBuffer',
+        getTexture: null,
+        isPrev: true,
+        binding: 3
+      }],
+      output: {
+        name: 'outImage',
+        variableName: 'outImage',
+        format: 'rgba16float',
+        binding: 4
+      }
+    }])
+
+    output.tick({ time: 0, bpm: 30, resolution: [10, 9], deltaMs: 16 }, encoder as unknown as GPUCommandEncoder)
+
+    const stats = Object.values(output.getPassStats())[0]
+    expect(computePipelineRequests).toBe(1)
+    expect(renderPipelineRequests).toBe(0)
+    expect(renderPassBegins).toBe(0)
+    expect(computePassBegins).toBe(1)
+    expect(dispatchArgs).toEqual([2, 2, 1])
+    expect(bindGroupCreations).toBe(1)
+    expect(createdBindGroupEntries.map((entry) => entry.binding)).toEqual([0, 2, 3, 4])
+    expect(stats?.variant).toBe('compute')
+    expect(stats?.lastRenderPassEncodeMs).toBe(0)
+    expect(stats?.lastComputePassEncodeMs).toBeGreaterThanOrEqual(0)
+    output.dispose()
+  })
+
+  it('falls back to fragment when a compute-preferred pass cannot use compute', () => {
+    let renderPipelineRequests = 0
+    let renderPassBegins = 0
+    let computePassBegins = 0
+    const texture = () => ({ destroy: () => {} }) as unknown as GPUTexture
+    const fallbackTexture = texture()
+    const pipeline = {
+      getBindGroupLayout: () => ({})
+    } as unknown as GPURenderPipeline
+    const renderer = {
+      ready: true,
+      globalUniformBuffer: {} as GPUBuffer,
+      device: {
+        queue: { writeBuffer: () => {} },
+        createBindGroup: () => ({})
+      },
+      createDynamicUniformBuffer: () => ({ destroy: () => {} }),
+      createOutputTexture: () => texture(),
+      getFallbackTexture: () => fallbackTexture,
+      getTextureView: () => ({}),
+      getSampler: () => null,
+      getObjectId: () => 1,
+      updateGlobalUniforms: () => true,
+      supportsComputePasses: () => false,
+      getOutputPipelineEntry: (signature: string, code: string) => {
+        renderPipelineRequests += 1
+        return {
+          cacheKey: `${signature}|${code}|fragment`,
+          signature,
+          code,
+          pipeline,
+          error: null
+        }
+      }
+    }
+    const encoder = {
+      beginRenderPass: () => {
+        renderPassBegins += 1
+        return {
+          setPipeline: () => {},
+          setBindGroup: () => {},
+          draw: () => {},
+          end: () => {}
+        }
+      },
+      beginComputePass: () => {
+        computePassBegins += 1
+        return {
+          setPipeline: () => {},
+          setBindGroup: () => {},
+          dispatchWorkgroups: () => {},
+          end: () => {}
+        }
+      }
+    }
+    const output = new WebGPUOutputNode({
+      renderer: renderer as unknown as never,
+      width: 4,
+      height: 4,
+      label: 'compute-fallback'
+    })
+    output.render([{
+      signature: 'compute-pass',
+      wgsl: 'compute-code',
+      variant: 'compute',
+      compute: { workgroupSize: [8, 8] },
+      uniforms: [],
+      textures: [],
+      output: {
+        name: 'outImage',
+        variableName: 'outImage',
+        format: 'rgba16float',
+        binding: 3
+      },
+      fallback: {
+        signature: 'fragment-pass',
+        wgsl: 'fragment-code',
+        variant: 'fragment',
+        uniforms: [],
+        textures: [],
+        output: {
+          name: 'outImage',
+          variableName: 'outImage',
+          format: 'rgba16float',
+          binding: 0
+        }
+      }
+    }])
+
+    output.tick({ time: 0, bpm: 30, resolution: [4, 4], deltaMs: 16 }, encoder as unknown as GPUCommandEncoder)
+
+    const stats = output.getPassStats()
+    expect(renderPipelineRequests).toBe(1)
+    expect(renderPassBegins).toBe(1)
+    expect(computePassBegins).toBe(0)
+    expect(stats['compute-pass']?.computeAttemptCount).toBe(1)
+    expect(stats['compute-pass']?.computeFallbackCount).toBe(1)
+    expect(stats['fragment-pass']?.fallbackCount).toBe(1)
+    expect(stats['fragment-pass']?.variant).toBe('fragment')
+    output.dispose()
+  })
+
+  it('attaches timestamp writes when renderer timing is available', () => {
+    let renderPassDescriptor: { timestampWrites?: unknown } | null = null
+    let timingCallback: ((gpuMs: number) => void) | null = null
+    const texture = () => ({ destroy: () => {} }) as unknown as GPUTexture
+    const fallbackTexture = texture()
+    const pipeline = {
+      getBindGroupLayout: () => ({})
+    } as unknown as GPURenderPipeline
+    const renderer = {
+      ready: true,
+      globalUniformBuffer: {} as GPUBuffer,
+      device: {
+        queue: { writeBuffer: () => {} },
+        createBindGroup: () => ({})
+      },
+      createDynamicUniformBuffer: () => ({ destroy: () => {} }),
+      createOutputTexture: () => texture(),
+      getFallbackTexture: () => fallbackTexture,
+      getTextureView: () => ({}),
+      getSampler: () => null,
+      getObjectId: () => 1,
+      updateGlobalUniforms: () => true,
+      allocatePassTiming: (callback: (gpuMs: number) => void) => {
+        timingCallback = callback
+        return {
+          timestampWrites: {
+            querySet: {},
+            beginningOfPassWriteIndex: 0,
+            endOfPassWriteIndex: 1
+          }
+        }
+      },
+      getOutputPipelineEntry: (signature: string, code: string) => ({
+        cacheKey: `${signature}|${code}`,
+        signature,
+        code,
+        pipeline,
+        error: null
+      })
+    }
+    const encoder = {
+      beginRenderPass: (descriptor: { timestampWrites?: unknown }) => {
+        renderPassDescriptor = descriptor
+        return {
+          setPipeline: () => {},
+          setBindGroup: () => {},
+          draw: () => {},
+          end: () => {}
+        }
+      }
+    }
+    const output = new WebGPUOutputNode({
+      renderer: renderer as unknown as never,
+      width: 4,
+      height: 4,
+      label: 'timed-pass'
+    })
+    output.render([{
+      signature: 'timed-fragment',
+      wgsl: 'fragment-code',
+      variant: 'fragment',
+      uniforms: [],
+      textures: [],
+      output: {
+        name: 'outImage',
+        variableName: 'outImage',
+        format: 'rgba16float',
+        binding: 0
+      }
+    }])
+
+    output.tick({ time: 0, bpm: 30, resolution: [4, 4], deltaMs: 16 }, encoder as unknown as GPUCommandEncoder)
+    if (!timingCallback) throw new Error('Expected timing callback to be captured.')
+    timingCallback(0.42)
+
+    const stats = output.getPassStats()['timed-fragment']
+    expect(renderPassDescriptor?.timestampWrites).toBeTruthy()
+    expect(stats?.timestampQueryCount).toBe(1)
+    expect(stats?.gpuTimingSampleCount).toBe(1)
+    expect(stats?.lastGpuMs).toBeCloseTo(0.42, 5)
+    expect(stats?.gpuTimingSource).toBe('timestamp_query')
     output.dispose()
   })
 
@@ -637,6 +1125,56 @@ describe('browser foundation', () => {
     expect(snapshot.scheduler.routingActiveMode).toBe('fragment')
     expect(snapshot.scheduler.routingCompileFailures).toBe(0)
     expect(snapshot.scheduler.routingRouteFailureCount).toBe(0)
+    expect(snapshot.scheduler.routingRouteCount).toBe(1)
+    expect(snapshot.scheduler.graphCompileCount).toBe(1)
+    expect(snapshot.scheduler.executePlanCount).toBe(1)
+    runtime.dispose()
+  })
+
+  it('does not reroute or compile stable graph structure during frame ticks', async () => {
+    const runtime = createRuntimeHarness('fragment')
+    ;(runtime as unknown as {
+      executor: {
+        executePlan: (output: unknown, plan: HydraExecutionPlan) => {
+          submittedPasses: number
+          scheduledBarriers: number
+          allocatedResourceCount: number
+        }
+        getResidentByteEstimate: () => number
+        getResidencySnapshot: () => null
+        dispose: () => void
+      }
+    }).executor = {
+      executePlan: () => ({
+        submittedPasses: 0,
+        scheduledBarriers: 0,
+        allocatedResourceCount: 0
+      }),
+      getResidentByteEstimate: () => 0,
+      getResidencySnapshot: () => null,
+      dispose: () => {}
+    }
+    await runtime.init()
+
+    const output = runtime.outputs[0]
+    if (!output) throw new Error('Missing runtime output.')
+    output.renderGraph({
+      transforms: [],
+      compilePasses: () => [],
+      compilePlan: () => createMinimalExecutionPlan()
+    })
+
+    const beforeTicks = runtime.getProfilerSnapshot().scheduler
+    runtime.tick(16)
+    runtime.tick(16)
+    runtime.tick(16)
+    const afterTicks = runtime.getProfilerSnapshot().scheduler
+
+    expect(afterTicks.routingRouteCount).toBe(beforeTicks.routingRouteCount)
+    expect(afterTicks.graphCompileCount).toBe(beforeTicks.graphCompileCount)
+    expect(afterTicks.executePlanCount).toBe(beforeTicks.executePlanCount)
+    expect(afterTicks.routingCompileFailures).toBe(0)
+    expect(afterTicks.routingRouteFailureCount).toBe(0)
     runtime.dispose()
   })
 

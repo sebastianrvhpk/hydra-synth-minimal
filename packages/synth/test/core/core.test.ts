@@ -49,7 +49,7 @@ describe('core foundation', () => {
     expect(validateExecutionPlan(planA).some((issue) => issue.type === 'error')).toBe(false)
   })
 
-  it('keeps fragment variant metadata stable across recompiles', () => {
+  it('keeps compute-preferred variant metadata stable across recompiles', () => {
     const registry = new HydraTransformRegistry({ defaultOutput: new NullOutput() })
     const node = registry.generators.osc(8, 0.1, 0).blurX(1.0)
     const plan = compileGraph(node.transforms, {
@@ -58,7 +58,22 @@ describe('core foundation', () => {
 
     const step = plan.steps[1]
     if (!step) throw new Error('Expected blur step missing.')
-    expect(step.variant).toBe('fragment')
+    expect(step.variant).toBe('compute')
+    expect(step.compiledPass.fallback?.variant).toBe('fragment')
+  })
+
+  it('surfaces compute variant metadata for compute-preferred render passes', () => {
+    const registry = new HydraTransformRegistry({ defaultOutput: new NullOutput() })
+    const node = registry.generators.osc(8, 0.1, 0).bloomThreshold(0.6, 0.1)
+    const plan = compileGraph(node.transforms, {
+      graphId: 'compute-variant'
+    })
+
+    const step = plan.steps[1]
+    if (!step) throw new Error('Expected bloomThreshold step missing.')
+    expect(step.variant).toBe('compute')
+    expect(step.compiledPass.variant).toBe('compute')
+    expect(step.compiledPass.compute?.workgroupSize).toEqual([8, 8])
   })
 
   it('reports validation errors for malformed execution plans', () => {
