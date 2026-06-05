@@ -37,7 +37,7 @@ const resourceByteEstimate = (resource: HydraKernelGraph['resources'][number]): 
   return width * height * depth * 4
 }
 
-const variantOfPass = (_pass: HydraCompiledPass): HydraExecutionStep['variant'] => 'fragment'
+const variantOfPass = (pass: HydraCompiledPass): HydraExecutionStep['variant'] => pass.variant ?? 'fragment'
 
 const resolveResourceRef = (resourceIds: Set<string>, reference: string): string | null => {
   if (resourceIds.has(reference)) return reference

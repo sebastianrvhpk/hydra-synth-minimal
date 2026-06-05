@@ -1,4 +1,4 @@
-import type { HydraCompiledPass } from '../types.js'
+import type { HydraCompiledPass, HydraPassVariant } from '../types.js'
 import type {
   HydraDependencyEdge,
   HydraKernelGraph,
@@ -16,7 +16,7 @@ export interface HydraExecutionStep {
   id: string
   nodeId: string
   signature: string
-  variant: 'fragment'
+  variant: HydraPassVariant
   compiledPass: HydraCompiledPass
   barriersBefore: HydraExecutionBarrier[]
 }

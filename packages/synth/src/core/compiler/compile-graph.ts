@@ -1,6 +1,6 @@
 import { compileWgslPass } from '../transforms/compile-wgsl.js'
 import { lowerDslToIr, type LowerDslToIrOptions } from '../lowering/dsl-to-ir.js'
-import type { HydraTransformCall } from '../types.js'
+import type { HydraPassVariant, HydraTransformCall } from '../types.js'
 import {
   buildExecutionBarriers,
   buildExecutionSteps,
@@ -28,7 +28,7 @@ const hashString = (value = ''): string => {
 const serializePlanShape = (input: {
   nodeSignatures: string[]
   resources: Array<{ id: string, slot: string, aliasGroup: string, bytes: number }>
-  variants: Array<'fragment'>
+  variants: HydraPassVariant[]
 }): string => {
   const data = {
     nodeSignatures: input.nodeSignatures,

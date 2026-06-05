@@ -35,6 +35,7 @@ export type {
   HydraOutputAdapter,
   HydraOutputGraphSource,
   HydraOutputTextureBinding,
+  HydraPassVariant,
   HydraPassIRNode,
   HydraPassIRResourceRef,
   HydraPassSchedule,

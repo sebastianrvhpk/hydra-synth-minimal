@@ -1,4 +1,4 @@
-import type { HydraCompiledPass, HydraDependencyEdgeKind, HydraKernelGraph, HydraKernelResourceSpec, HydraTransformCall } from '../index.js'
+import type { HydraCompiledPass, HydraDependencyEdgeKind, HydraKernelGraph, HydraKernelResourceSpec, HydraPassVariant, HydraTransformCall } from '../index.js'
 
 export interface HydraExecutionBarrier {
   fromNodeId: string
@@ -11,7 +11,7 @@ export interface HydraExecutionStep {
   id: string
   nodeId: string
   signature: string
-  variant: 'fragment'
+  variant: HydraPassVariant
   compiledPass: HydraCompiledPass
   barriersBefore: HydraExecutionBarrier[]
 }

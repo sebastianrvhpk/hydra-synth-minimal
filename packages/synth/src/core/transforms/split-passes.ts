@@ -24,6 +24,11 @@ const containsRenderpassDeep = (transforms: HydraTransformCall[]): boolean =>
     (transform.userArgs ?? []).some((arg) => isGraphNodeLike(arg) && containsRenderpassDeep(arg.transforms))
   ))
 
+const isSafePostRenderpassFusion = (transform: HydraTransformCall): boolean => (
+  transform.transform.type === 'color' &&
+  !(transform.userArgs ?? []).some((arg) => isGraphNodeLike(arg) && containsRenderpassDeep(arg.transforms))
+)
+
 const createInternalPassTextureProvider = (internalPassIndex: number): InternalPassTextureProvider => ({
   internalPassIndex,
   getTexture: () => null
@@ -79,12 +84,23 @@ const splitLinearPasses = (transforms: HydraTransformCall[]): HydraTransformCall
     currentPass = []
   }
 
-  for (const transform of transforms) {
+  for (let transformIndex = 0; transformIndex < transforms.length; transformIndex += 1) {
+    const transform = transforms[transformIndex]
     if (STANDALONE_PASS_TYPES.has(transform.transform.type)) {
       pushCurrentPass()
       const isIdentityRenderpass =
         transform.transform.type === 'renderpass' && transform.name === 'renderpass'
-      if (!isIdentityRenderpass) passes.push([transform])
+      if (!isIdentityRenderpass) {
+        const fusedPass = [transform]
+        while (
+          transformIndex + 1 < transforms.length &&
+          isSafePostRenderpassFusion(transforms[transformIndex + 1])
+        ) {
+          transformIndex += 1
+          fusedPass.push(transforms[transformIndex])
+        }
+        passes.push(fusedPass)
+      }
       shouldInjectPrev = true
       continue
     }

@@ -1,22 +1,23 @@
-interface PipelineCacheEntry {
+interface BasePipelineCacheEntry<TPipeline> {
   cacheKey: string
   signature: string
   code: string
   module: GPUShaderModule
-  pipeline: GPURenderPipeline | null
+  pipeline: TPipeline | null
   error: unknown | null
-  promise: Promise<GPURenderPipeline> | null
+  promise: Promise<TPipeline> | null
 }
 
-export class PipelineCache {
-  private readonly device: GPUDevice
-  private readonly targetFormat: GPUTextureFormat
-  private readonly maxEntries: number
-  private readonly entries = new Map<string, PipelineCacheEntry>()
+export type PipelineCacheEntry = BasePipelineCacheEntry<GPURenderPipeline>
+export type ComputePipelineCacheEntry = BasePipelineCacheEntry<GPUComputePipeline>
 
-  constructor ({ device, targetFormat, maxEntries = 256 }: { device: GPUDevice, targetFormat: GPUTextureFormat, maxEntries?: number }) {
+class PipelineCacheStore<TPipeline> {
+  private readonly device: GPUDevice
+  private readonly maxEntries: number
+  private readonly entries = new Map<string, BasePipelineCacheEntry<TPipeline>>()
+
+  constructor ({ device, maxEntries = 256 }: { device: GPUDevice, maxEntries?: number }) {
     this.device = device
-    this.targetFormat = targetFormat
     this.maxEntries = Math.max(1, Math.floor(maxEntries))
   }
 
@@ -35,7 +36,7 @@ export class PipelineCache {
     return `${base}|c${collisionIndex}`
   }
 
-  private findEntry (signature: string, code: string): { cacheKey: string, entry: PipelineCacheEntry | null } {
+  private findEntry (signature: string, code: string): { cacheKey: string, entry: BasePipelineCacheEntry<TPipeline> | null } {
     let collisionIndex = 0
     while (true) {
       const cacheKey = this.buildEntryKey(signature, code, collisionIndex)
@@ -46,7 +47,7 @@ export class PipelineCache {
     }
   }
 
-  private touch (cacheKey: string, entry: PipelineCacheEntry): void {
+  private touch (cacheKey: string, entry: BasePipelineCacheEntry<TPipeline>): void {
     this.entries.delete(cacheKey)
     this.entries.set(cacheKey, entry)
   }
@@ -59,7 +60,11 @@ export class PipelineCache {
     }
   }
 
-  requestPipeline (signature: string, code: string): PipelineCacheEntry {
+  requestPipeline (
+    signature: string,
+    code: string,
+    createPipeline: (module: GPUShaderModule, labelSuffix: string) => Promise<TPipeline>
+  ): BasePipelineCacheEntry<TPipeline> {
     const { cacheKey, entry: cachedEntry } = this.findEntry(signature, code)
     if (cachedEntry) {
       this.touch(cacheKey, cachedEntry)
@@ -72,7 +77,7 @@ export class PipelineCache {
       code
     })
 
-    const entry: PipelineCacheEntry = {
+    const entry: BasePipelineCacheEntry<TPipeline> = {
       cacheKey,
       signature,
       code,
@@ -82,24 +87,7 @@ export class PipelineCache {
       promise: null
     }
 
-    // Pipelines are compiled asynchronously to avoid blocking the render loop.
-    // The caller may observe a transient "not ready" state for first-use shaders.
-    entry.promise = this.device.createRenderPipelineAsync({
-      label: `hydra-pipeline-${labelSuffix}`,
-      layout: 'auto',
-      vertex: {
-        module,
-        entryPoint: 'vsMain'
-      },
-      fragment: {
-        module,
-        entryPoint: 'fsMain',
-        targets: [{ format: this.targetFormat }]
-      },
-      primitive: {
-        topology: 'triangle-list'
-      }
-    }).then((pipeline) => {
+    entry.promise = createPipeline(module, labelSuffix).then((pipeline) => {
       entry.pipeline = pipeline
       return pipeline
     }).catch((error) => {
@@ -117,4 +105,66 @@ export class PipelineCache {
   }
 }
 
-export type { PipelineCacheEntry }
+export class PipelineCache {
+  private readonly device: GPUDevice
+  private readonly targetFormat: GPUTextureFormat
+  private readonly store: PipelineCacheStore<GPURenderPipeline>
+
+  constructor ({ device, targetFormat, maxEntries = 256 }: { device: GPUDevice, targetFormat: GPUTextureFormat, maxEntries?: number }) {
+    this.device = device
+    this.targetFormat = targetFormat
+    this.store = new PipelineCacheStore({ device, maxEntries })
+  }
+
+  requestPipeline (signature: string, code: string): PipelineCacheEntry {
+    return this.store.requestPipeline(signature, code, (module, labelSuffix) =>
+      this.device.createRenderPipelineAsync({
+        label: `hydra-pipeline-${labelSuffix}`,
+        layout: 'auto',
+        vertex: {
+          module,
+          entryPoint: 'vsMain'
+        },
+        fragment: {
+          module,
+          entryPoint: 'fsMain',
+          targets: [{ format: this.targetFormat }]
+        },
+        primitive: {
+          topology: 'triangle-list'
+        }
+      })
+    ) as PipelineCacheEntry
+  }
+
+  clear (): void {
+    this.store.clear()
+  }
+}
+
+export class ComputePipelineCache {
+  private readonly device: GPUDevice
+  private readonly store: PipelineCacheStore<GPUComputePipeline>
+
+  constructor ({ device, maxEntries = 256 }: { device: GPUDevice, maxEntries?: number }) {
+    this.device = device
+    this.store = new PipelineCacheStore({ device, maxEntries })
+  }
+
+  requestPipeline (signature: string, code: string): ComputePipelineCacheEntry {
+    return this.store.requestPipeline(signature, code, (module, labelSuffix) =>
+      this.device.createComputePipelineAsync({
+        label: `hydra-compute-pipeline-${labelSuffix}`,
+        layout: 'auto',
+        compute: {
+          module,
+          entryPoint: 'csMain'
+        }
+      })
+    ) as ComputePipelineCacheEntry
+  }
+
+  clear (): void {
+    this.store.clear()
+  }
+}

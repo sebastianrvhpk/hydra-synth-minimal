@@ -13,10 +13,39 @@ export interface HydraProfilerSnapshot {
     fallbackCount: number
     cpuEncodeMsAvg: number
     cpuEncodeMsLast: number
+    cpuBreakdown: {
+      dynamicUniformEvalMsAvg: number
+      dynamicUniformEvalMsLast: number
+      dynamicUniformWriteMsAvg: number
+      dynamicUniformWriteMsLast: number
+      textureResolutionMsAvg: number
+      textureResolutionMsLast: number
+      bindGroupMsAvg: number
+      bindGroupMsLast: number
+      renderPassEncodeMsAvg: number
+      renderPassEncodeMsLast: number
+      computePassEncodeMsAvg: number
+      computePassEncodeMsLast: number
+    }
+    counters: {
+      globalUniformWrites: number
+      dynamicUniformWrites: number
+      dynamicUniformSkips: number
+      bindGroupCacheHits: number
+      bindGroupCacheMisses: number
+      bindGroupCreations: number
+      pipelineCacheMisses: number
+      pipelineNotReady: number
+      pipelineErrors: number
+      computeAttempts: number
+      computeFallbacks: number
+      timestampQueries: number
+      gpuTimingSamples: number
+    }
     gpuMsLast: number | null
     gpuMsAvg: number | null
     gpuTimingSource: 'timestamp_query' | 'cpu_encode_fallback' | 'history_fallback' | 'unavailable'
-    variant: 'fragment'
+    variant: 'fragment' | 'compute'
   }>
   resources: {
     residentBytesEstimate: number
@@ -28,12 +57,21 @@ export interface HydraProfilerSnapshot {
     routingActiveMode: 'fragment'
     routingCompileFailures: number
     routingRouteFailureCount: number
+    routingRouteCount: number
+    graphCompileCount: number
+    executePlanCount: number
   }
   capability: {
     features: string[]
     fragment: {
       targetFormat: string
       maxColorAttachments: number
+    } | null
+    compute: {
+      storageTextureFormat: string
+      maxComputeInvocationsPerWorkgroup: number
+      maxComputeWorkgroupSizeX: number
+      maxComputeWorkgroupSizeY: number
     } | null
   }
 }
@@ -61,6 +99,9 @@ export const buildProfilerSnapshot = ({
     activeMode: 'fragment'
     compileFailures: number
     routeFailureCount: number
+    routeCount?: number
+    graphCompileCount?: number
+    executePlanCount?: number
   } | null
 }): HydraProfilerSnapshot => {
   const avgFrameMs = frameTimesMs.length > 0
@@ -85,6 +126,35 @@ export const buildProfilerSnapshot = ({
         fallbackCount,
         cpuEncodeMsAvg: value.avgCpuEncodeMs,
         cpuEncodeMsLast: value.lastCpuEncodeMs,
+        cpuBreakdown: {
+          dynamicUniformEvalMsAvg: value.avgDynamicUniformEvalMs ?? 0,
+          dynamicUniformEvalMsLast: value.lastDynamicUniformEvalMs ?? 0,
+          dynamicUniformWriteMsAvg: value.avgDynamicUniformWriteMs ?? 0,
+          dynamicUniformWriteMsLast: value.lastDynamicUniformWriteMs ?? 0,
+          textureResolutionMsAvg: value.avgTextureResolutionMs ?? 0,
+          textureResolutionMsLast: value.lastTextureResolutionMs ?? 0,
+          bindGroupMsAvg: value.avgBindGroupMs ?? 0,
+          bindGroupMsLast: value.lastBindGroupMs ?? 0,
+          renderPassEncodeMsAvg: value.avgRenderPassEncodeMs ?? 0,
+          renderPassEncodeMsLast: value.lastRenderPassEncodeMs ?? 0,
+          computePassEncodeMsAvg: value.avgComputePassEncodeMs ?? 0,
+          computePassEncodeMsLast: value.lastComputePassEncodeMs ?? 0
+        },
+        counters: {
+          globalUniformWrites: Math.max(0, Number(value.globalUniformWriteCount ?? 0)),
+          dynamicUniformWrites: Math.max(0, Number(value.dynamicUniformWriteCount ?? 0)),
+          dynamicUniformSkips: Math.max(0, Number(value.dynamicUniformSkipCount ?? 0)),
+          bindGroupCacheHits: Math.max(0, Number(value.bindGroupCacheHits ?? 0)),
+          bindGroupCacheMisses: Math.max(0, Number(value.bindGroupCacheMisses ?? 0)),
+          bindGroupCreations: Math.max(0, Number(value.bindGroupCreationCount ?? 0)),
+          pipelineCacheMisses: Math.max(0, Number(value.pipelineCacheMissCount ?? 0)),
+          pipelineNotReady: Math.max(0, Number(value.pipelineNotReadyCount ?? 0)),
+          pipelineErrors: Math.max(0, Number(value.pipelineErrorCount ?? 0)),
+          computeAttempts: Math.max(0, Number(value.computeAttemptCount ?? 0)),
+          computeFallbacks: Math.max(0, Number(value.computeFallbackCount ?? 0)),
+          timestampQueries: Math.max(0, Number(value.timestampQueryCount ?? 0)),
+          gpuTimingSamples: Math.max(0, Number(value.gpuTimingSampleCount ?? 0))
+        },
         gpuMsLast: value.lastGpuMs ?? null,
         gpuMsAvg: value.avgGpuMs ?? null,
         gpuTimingSource,
@@ -110,7 +180,10 @@ export const buildProfilerSnapshot = ({
       routingConfiguredMode: routingMetrics?.configuredMode ?? 'fragment',
       routingActiveMode: routingMetrics?.activeMode ?? 'fragment',
       routingCompileFailures: Math.max(0, Math.floor(routingMetrics?.compileFailures ?? 0)),
-      routingRouteFailureCount: Math.max(0, Math.floor(routingMetrics?.routeFailureCount ?? 0))
+      routingRouteFailureCount: Math.max(0, Math.floor(routingMetrics?.routeFailureCount ?? 0)),
+      routingRouteCount: Math.max(0, Math.floor(routingMetrics?.routeCount ?? 0)),
+      graphCompileCount: Math.max(0, Math.floor(routingMetrics?.graphCompileCount ?? 0)),
+      executePlanCount: Math.max(0, Math.floor(routingMetrics?.executePlanCount ?? 0))
     },
     capability: {
       features: capabilities?.features ?? [],
@@ -118,6 +191,14 @@ export const buildProfilerSnapshot = ({
         ? {
             targetFormat: capabilities.fragment.targetFormat,
             maxColorAttachments: capabilities.fragment.maxColorAttachments
+          }
+        : null,
+      compute: capabilities
+        ? {
+            storageTextureFormat: capabilities.compute.storageTextureFormat,
+            maxComputeInvocationsPerWorkgroup: capabilities.compute.maxComputeInvocationsPerWorkgroup,
+            maxComputeWorkgroupSizeX: capabilities.compute.maxComputeWorkgroupSizeX,
+            maxComputeWorkgroupSizeY: capabilities.compute.maxComputeWorkgroupSizeY
           }
         : null
     }

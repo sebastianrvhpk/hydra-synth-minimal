@@ -871,6 +871,8 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
   {
     name: 'blurX',
     type: 'renderpass',
+    preferredPassVariant: 'compute',
+    computeWorkgroupSize: [8, 8],
     inputs: [
       { type: 'float', name: 'amount', default: 1 }
     ],
@@ -897,6 +899,8 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
   {
     name: 'blurY',
     type: 'renderpass',
+    preferredPassVariant: 'compute',
+    computeWorkgroupSize: [8, 8],
     inputs: [
       { type: 'float', name: 'amount', default: 1 }
     ],
@@ -961,6 +965,8 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
   {
     name: 'blurFast',
     type: 'renderpass',
+    preferredPassVariant: 'compute',
+    computeWorkgroupSize: [8, 8],
     inputs: [
       { type: 'float', name: 'amount', default: 1.0 }
     ],
@@ -1081,6 +1087,8 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
   {
     name: 'bloomThreshold',
     type: 'renderpass',
+    preferredPassVariant: 'compute',
+    computeWorkgroupSize: [8, 8],
     inputs: [
       { type: 'float', name: 'threshold', default: 0.6 },
       { type: 'float', name: 'softness', default: 0.1 }
@@ -1096,6 +1104,8 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
   {
     name: 'bloomDownsample',
     type: 'renderpass',
+    preferredPassVariant: 'compute',
+    computeWorkgroupSize: [8, 8],
     inputs: [
       { type: 'float', name: 'radius', default: 1.0 }
     ],
@@ -1116,6 +1126,8 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
   {
     name: 'bloomUpsample',
     type: 'renderpass',
+    preferredPassVariant: 'compute',
+    computeWorkgroupSize: [8, 8],
     inputs: [
       { type: 'float', name: 'radius', default: 1.0 },
       { type: 'float', name: 'boost', default: 1.0 }
@@ -1316,6 +1328,8 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
   {
     name: 'edgeDetect',
     type: 'renderpass',
+    preferredPassVariant: 'compute',
+    computeWorkgroupSize: [8, 8],
     inputs: [
       { type: 'float', name: 'amount', default: 1.0 },
       { type: 'float', name: 'mixAmount', default: 1.0 }
@@ -1357,6 +1371,8 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
   {
     name: 'edgeLaplacian',
     type: 'renderpass',
+    preferredPassVariant: 'compute',
+    computeWorkgroupSize: [8, 8],
     inputs: [
       { type: 'float', name: 'amount', default: 1.0 },
       { type: 'float', name: 'mixAmount', default: 1.0 }
@@ -1490,6 +1506,8 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
   {
     name: 'dualKawaseBlur',
     type: 'renderpass',
+    preferredPassVariant: 'compute',
+    computeWorkgroupSize: [8, 8],
     inputs: [
       { type: 'float', name: 'radius', default: 1.5 },
       { type: 'float', name: 'mixAmount', default: 1.0 }
@@ -1520,6 +1538,8 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
   {
     name: 'dualKawaseBloom',
     type: 'renderpass',
+    preferredPassVariant: 'compute',
+    computeWorkgroupSize: [8, 8],
     inputs: [
       { type: 'float', name: 'amount', default: 0.8 },
       { type: 'float', name: 'radius', default: 1.0 },

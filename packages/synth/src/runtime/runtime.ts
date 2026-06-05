@@ -72,6 +72,9 @@ interface HydraRuntimeRoutingDiagnostics {
   activeMode: 'fragment'
   compileFailures: number
   routeFailureCount: number
+  routeCount: number
+  graphCompileCount: number
+  executePlanCount: number
 }
 
 export interface HydraBrowserRuntimeOptions {
@@ -171,7 +174,10 @@ export class HydraBrowserRuntime {
       configuredMode: this.executionMode,
       activeMode: 'fragment',
       compileFailures: 0,
-      routeFailureCount: 0
+      routeFailureCount: 0,
+      routeCount: 0,
+      graphCompileCount: 0,
+      executePlanCount: 0
     }
 
     const sourceCount = coerceCount(numSources, 4, 0)
@@ -470,6 +476,7 @@ export class HydraBrowserRuntime {
   private routeGraphRender(output: WebGPUOutputNode, graphSource: HydraOutputGraphSource): void {
     this.routingDiagnostics.configuredMode = this.executionMode
     this.routingDiagnostics.activeMode = 'fragment'
+    this.routingDiagnostics.routeCount += 1
 
     let plan: HydraExecutionPlan | null = null
     try {
@@ -480,6 +487,7 @@ export class HydraBrowserRuntime {
         plan = this.compilePlan({ transforms })
       } else if (typeof graphSource.compilePlan === 'function') {
         // Compatibility path for callers that provide precompiled plans.
+        this.routingDiagnostics.graphCompileCount += 1
         plan = (graphSource.compilePlan() as HydraExecutionPlan | null) ?? null
       }
     } catch (error) {
@@ -500,6 +508,7 @@ export class HydraBrowserRuntime {
     }
 
     try {
+      this.routingDiagnostics.executePlanCount += 1
       this.lastExecuteResult = this.ensureExecutor().executePlan(
         output,
         plan,
@@ -517,6 +526,7 @@ export class HydraBrowserRuntime {
   compilePlan(graphNode: { transforms?: HydraTransformCall[] } | null | undefined): HydraExecutionPlan | null {
     const transforms = Array.isArray(graphNode?.transforms) ? graphNode?.transforms : null
     if (!transforms || transforms.length === 0) return null
+    this.routingDiagnostics.graphCompileCount += 1
     return compileGraph(transforms, {
       graphId: 'runtime-plan',
       onDebug: this.onDebugCallback
@@ -530,6 +540,7 @@ export class HydraBrowserRuntime {
   ): HydraExecutionPlan | null {
     const plan = this.compilePlan(graphNode)
     if (!plan) return null
+    this.routingDiagnostics.executePlanCount += 1
     this.lastExecuteResult = this.ensureExecutor().executePlan(output, plan, this.getCurrentFrameState(), {
       ...options
     })
@@ -555,7 +566,10 @@ export class HydraBrowserRuntime {
         configuredMode: this.routingDiagnostics.configuredMode,
         activeMode: this.routingDiagnostics.activeMode,
         compileFailures: this.routingDiagnostics.compileFailures,
-        routeFailureCount: this.routingDiagnostics.routeFailureCount
+        routeFailureCount: this.routingDiagnostics.routeFailureCount,
+        routeCount: this.routingDiagnostics.routeCount,
+        graphCompileCount: this.routingDiagnostics.graphCompileCount,
+        executePlanCount: this.routingDiagnostics.executePlanCount
       }
     })
   }

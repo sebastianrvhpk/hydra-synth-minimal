@@ -46,6 +46,15 @@ const toNumberArray = (value: unknown): number[] | null => {
   return null
 }
 
+const hashString = (value = ''): string => {
+  let hash = 2166136261
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0')
+}
+
 const buildDefaultVector = (value: unknown, len: number): number[] => {
   const fallback = toNumberArray(value)
   const defaults = fallback ? fallback.slice(0, len) : []
@@ -84,6 +93,84 @@ const isTextureLike = (value: unknown): value is { getTexture: () => unknown, id
   'getTexture' in value &&
   typeof (value as { getTexture?: unknown }).getTexture === 'function'
 )
+
+interface StaticSequenceMetadata {
+  _speed?: unknown
+  _smooth?: unknown
+  _offset?: unknown
+  _ease?: unknown
+}
+
+const sequenceEaseExpression = (ease: unknown, valueExpression: string): string | null => {
+  if (typeof ease === 'undefined' || ease === null || ease === 'linear') return valueExpression
+  if (ease === 'sin') return `((1.0 + sin(3.141592653589793 * ${valueExpression} - 1.5707963267948966)) * 0.5)`
+  return null
+}
+
+const createStaticSequenceWgsl = (
+  value: unknown,
+  fallback: unknown,
+  inputName: string,
+  inputIndex: number
+): { literal: string, declaration: { name: string, wgsl: string } } | null => {
+  if (!isArrayLikeSequenceInput(value)) return null
+
+  const metadata = value as StaticSequenceMetadata
+  if (typeof metadata._ease === 'function') return null
+
+  const source = toNumberArray(value)
+  if (!source || source.length === 0) return null
+
+  const fallbackNumber = toFiniteNumber(fallback, 0)
+  const values = source.map((entry) => toFiniteNumber(entry, fallbackNumber))
+  const speed = toFiniteNumber(metadata._speed, 1)
+  const smooth = Math.max(0, toFiniteNumber(metadata._smooth, 0))
+  const offset = toFiniteNumber(metadata._offset, 0)
+  const easeAmount = sequenceEaseExpression(metadata._ease, 'interpolation')
+  if (!easeAmount) return null
+
+  const serialized = JSON.stringify({ values, speed, smooth, offset, ease: metadata._ease ?? 'linear' })
+  const fnName = `hydraSeq_${sanitizeName(inputName)}_${inputIndex}_${hashString(serialized)}`
+  const lengthLiteral = ensureFloatLiteral(values.length)
+  const speedLiteral = ensureFloatLiteral(speed)
+  const smoothLiteral = ensureFloatLiteral(smooth)
+  const offsetLiteral = ensureFloatLiteral(offset)
+  const valueLiterals = values.map(ensureFloatLiteral).join(', ')
+
+  const wgsl = `
+fn ${fnName}() -> f32 {
+  let values = array<f32, ${values.length}>(${valueLiterals});
+  let sequenceLength = ${lengthLiteral};
+  let sequenceSpeed = ${speedLiteral};
+  let sequenceSmooth = ${smoothLiteral};
+  let sequenceOffset = ${offsetLiteral};
+  let index = globals.time * sequenceSpeed * (globals.bpm / 60.0) + sequenceOffset;
+
+  if (sequenceSmooth > 0.0) {
+    let shifted = index - sequenceSmooth * 0.5;
+    let currentWrapped = shifted - floor(shifted / sequenceLength) * sequenceLength;
+    let nextWrapped = (shifted + 1.0) - floor((shifted + 1.0) / sequenceLength) * sequenceLength;
+    let currentIndex = u32(floor(currentWrapped));
+    let nextIndex = u32(floor(nextWrapped));
+    let cycle = shifted - floor(shifted);
+    let interpolation = clamp(min(cycle / sequenceSmooth, 1.0), 0.0, 1.0);
+    let amount = ${easeAmount};
+    return values[currentIndex] + (values[nextIndex] - values[currentIndex]) * amount;
+  }
+
+  let wrapped = index - floor(index / sequenceLength) * sequenceLength;
+  return values[u32(floor(wrapped))];
+}
+`
+
+  return {
+    literal: `${fnName}()`,
+    declaration: {
+      name: fnName,
+      wgsl
+    }
+  }
+}
 
 const normalizeHistoryOffset = (value: unknown, fallback = 1): number => {
   if (typeof value !== 'number' || !Number.isFinite(value)) return Math.max(1, Math.floor(fallback))
@@ -227,6 +314,17 @@ export const formatArguments = (
 
     if (typedArg.type === 'float') {
       if (isArrayLikeSequenceInput(typedArg.value)) {
+        const staticSequence = createStaticSequenceWgsl(
+          typedArg.value,
+          input.default,
+          input.name,
+          startIndex + index
+        )
+        if (staticSequence) {
+          typedArg.literal = staticSequence.literal
+          typedArg.wgslDeclarations = [staticSequence.declaration]
+          return typedArg
+        }
         typedArg.isUniform = true
         typedArg.uniformName = `${sanitizeName(input.name)}_${startIndex + index}`
         typedArg.value = createArraySequenceUniformEvaluator(typedArg.value, input.default)

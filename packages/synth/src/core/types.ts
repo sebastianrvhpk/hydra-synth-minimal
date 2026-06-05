@@ -165,6 +165,8 @@ export type HydraResourceFormat =
   | 'rg32float'
   | 'r32uint'
 
+export type HydraPassVariant = 'fragment' | 'compute'
+
 export type HydraPassUpdateRate =
   | 'everyFrame'
   | { everyNFrames: number }
@@ -186,6 +188,8 @@ export interface HydraTransformDefinition {
   type: HydraTransformType
   inputs?: HydraTransformInput[]
   wgsl: string
+  preferredPassVariant?: HydraPassVariant
+  computeWorkgroupSize?: [number, number]
   resolutionScale?: 1 | 0.5 | 0.25 | number
   updateRate?: HydraPassUpdateRate
   sparse?: boolean
@@ -204,6 +208,10 @@ export interface HydraTypedArgument {
   default: unknown
   value: unknown
   literal?: string
+  wgslDeclarations?: Array<{
+    name: string
+    wgsl: string
+  }>
   isUniform: boolean
   isTexture: boolean
   uniformName?: string
@@ -262,6 +270,11 @@ export interface HydraPassIRNode {
 export interface HydraCompiledPass {
   signature: string
   wgsl: string
+  variant?: HydraPassVariant
+  compute?: {
+    workgroupSize: [number, number]
+  }
+  fallback?: HydraCompiledPass
   uniforms: HydraUniformBinding[]
   textures: HydraTextureBinding[]
   output?: HydraOutputTextureBinding

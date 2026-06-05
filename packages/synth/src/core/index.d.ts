@@ -154,6 +154,7 @@ export type HydraWgslType =
   | 'vec4f'
   | 'texture_2d<f32>'
 export type HydraResourceFormat = 'rgba8unorm' | 'rgba16float' | 'rgba32float' | 'r32float' | 'rg32float' | 'r32uint'
+export type HydraPassVariant = 'fragment' | 'compute'
 
 export type HydraPassUpdateRate = 'everyFrame' | { everyNFrames: number } | { onEvent: string }
 
@@ -168,6 +169,8 @@ export interface HydraTransformDefinition {
   type: HydraTransformType
   inputs?: HydraTransformInput[]
   wgsl: string
+  preferredPassVariant?: HydraPassVariant
+  computeWorkgroupSize?: [number, number]
   resolutionScale?: 1 | 0.5 | 0.25 | number
   updateRate?: HydraPassUpdateRate
   sparse?: boolean
@@ -186,6 +189,10 @@ export interface HydraTypedArgument {
   default: unknown
   value: unknown
   literal?: string
+  wgslDeclarations?: Array<{
+    name: string
+    wgsl: string
+  }>
   isUniform: boolean
   isTexture: boolean
   uniformName?: string
@@ -316,7 +323,7 @@ export interface HydraExecutionStep {
   id: string
   nodeId: string
   signature: string
-  variant: 'fragment'
+  variant: HydraPassVariant
   compiledPass: HydraCompiledPass
   barriersBefore: HydraExecutionBarrier[]
 }
@@ -376,6 +383,11 @@ export interface HydraExecutionPlanValidationIssue {
 export interface HydraCompiledPass {
   signature: string
   wgsl: string
+  variant?: HydraPassVariant
+  compute?: {
+    workgroupSize: [number, number]
+  }
+  fallback?: HydraCompiledPass
   uniforms: HydraUniformBinding[]
   textures: HydraTextureBinding[]
   output?: HydraOutputTextureBinding

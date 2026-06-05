@@ -8,6 +8,7 @@ import {
   type HydraFrameState,
   type HydraPassIRNode,
   type HydraPassSchedule,
+  type HydraPassVariant,
   type HydraPassUpdateRate,
   type RendererAdapter,
   type HydraResourceFormat,
@@ -72,7 +73,9 @@ import {
   WEBGPU_UNAVAILABLE_MESSAGE,
   WebGPURenderer,
   type WebGPUCapabilities,
+  type WebGPUComputeCapabilities,
   type WebGPUFragmentCapabilities,
+  type WebGPUTimingCapabilities,
   type WebGPURendererOptions
 } from './webgpu/renderer.js'
 import {
@@ -112,6 +115,7 @@ export type {
   HydraFrameState,
   HydraPassIRNode,
   HydraPassSchedule,
+  HydraPassVariant,
   HydraPassUpdateRate,
   HydraResourceFormat,
   RendererAdapter,
@@ -128,7 +132,9 @@ export type {
   CaptureHydraVideoOptions,
   CaptureVideoOptions,
   WebGPUCapabilities,
+  WebGPUComputeCapabilities,
   WebGPUFragmentCapabilities,
+  WebGPUTimingCapabilities,
   HydraProfilerSnapshot,
   HydraTuningPolicy,
   HydraAutotuneProfile,

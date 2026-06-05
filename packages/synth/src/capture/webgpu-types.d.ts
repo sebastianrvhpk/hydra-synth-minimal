@@ -18,18 +18,24 @@ interface GPUBufferDescriptor {
 interface GPUDevice {
     createBuffer(descriptor: GPUBufferDescriptor): GPUBuffer;
     createTexture(descriptor: GPUTextureDescriptor): GPUTexture;
+    createQuerySet(descriptor: GPUQuerySetDescriptor): GPUQuerySet;
     createCommandEncoder(descriptor?: any): GPUCommandEncoder;
     createShaderModule(descriptor: GPUShaderModuleDescriptor): GPUShaderModule;
     createBindGroupLayout(descriptor: GPUBindGroupLayoutDescriptor): GPUBindGroupLayout;
     createPipelineLayout(descriptor: GPUPipelineLayoutDescriptor): GPUPipelineLayout;
     createRenderPipeline(descriptor: GPURenderPipelineDescriptor): GPURenderPipeline;
+    createRenderPipelineAsync(descriptor: GPURenderPipelineDescriptor): Promise<GPURenderPipeline>;
+    createComputePipelineAsync(descriptor: GPUComputePipelineDescriptor): Promise<GPUComputePipeline>;
     createBindGroup(descriptor: GPUBindGroupDescriptor): GPUBindGroup;
     queue: GPUQueue;
 }
 
 interface GPUCommandEncoder {
     copyTextureToBuffer(source: GPUImageCopyTexture, destination: GPUImageCopyBuffer, copySize: GPUExtent3D): void;
+    copyBufferToBuffer(source: GPUBuffer, sourceOffset: number, destination: GPUBuffer, destinationOffset: number, size: number): void;
+    resolveQuerySet(querySet: GPUQuerySet, firstQuery: number, queryCount: number, destination: GPUBuffer, destinationOffset: number): void;
     beginRenderPass(descriptor: GPURenderPassDescriptor): GPURenderPassEncoder;
+    beginComputePass(descriptor?: GPUComputePassDescriptor): GPUComputePassEncoder;
     finish(descriptor?: any): GPUCommandBuffer;
 }
 
@@ -144,6 +150,18 @@ interface GPURenderPipelineDescriptor {
     primitive?: GPUPrimitiveState;
 }
 
+interface GPUComputePipelineDescriptor {
+    label?: string;
+    layout: GPUPipelineLayout | 'auto';
+    compute: GPUProgrammableStage;
+}
+
+interface GPUProgrammableStage {
+    module: GPUShaderModule;
+    entryPoint: string;
+    constants?: Record<string, number>;
+}
+
 interface GPURenderPassColorAttachment {
     view: GPUTextureView;
     loadOp: 'load' | 'clear';
@@ -154,12 +172,37 @@ interface GPURenderPassColorAttachment {
 interface GPURenderPassDescriptor {
     label?: string;
     colorAttachments: GPURenderPassColorAttachment[];
+    timestampWrites?: GPUPassTimestampWrites;
 }
 
 interface GPURenderPassEncoder {
     setPipeline(pipeline: GPURenderPipeline): void;
     setBindGroup(index: number, bindGroup: GPUBindGroup, dynamicOffsets?: number[]): void;
     draw(vertexCount: number, instanceCount?: number, firstVertex?: number, firstInstance?: number): void;
+    end(): void;
+}
+
+interface GPUComputePassDescriptor {
+    label?: string;
+    timestampWrites?: GPUPassTimestampWrites;
+}
+
+interface GPUPassTimestampWrites {
+    querySet: GPUQuerySet;
+    beginningOfPassWriteIndex?: number;
+    endOfPassWriteIndex?: number;
+}
+
+interface GPUQuerySetDescriptor {
+    label?: string;
+    type: 'timestamp';
+    count: number;
+}
+
+interface GPUComputePassEncoder {
+    setPipeline(pipeline: GPUComputePipeline): void;
+    setBindGroup(index: number, bindGroup: GPUBindGroup, dynamicOffsets?: number[]): void;
+    dispatchWorkgroups(workgroupCountX: number, workgroupCountY?: number, workgroupCountZ?: number): void;
     end(): void;
 }
 
@@ -187,6 +230,8 @@ interface GPUShaderModule { }
 interface GPUBindGroupLayout { }
 interface GPUPipelineLayout { }
 interface GPURenderPipeline { }
+interface GPUComputePipeline { }
+interface GPUQuerySet { destroy(): void; }
 interface GPUBindGroup { }
 interface GPUTextureView { }
 interface GPUSampler { }
@@ -200,6 +245,7 @@ declare const GPUBufferUsage: {
     MAP_READ: number;
     COPY_DST: number;
     COPY_SRC: number;
+    QUERY_RESOLVE: number;
 };
 
 declare const GPUMapMode: {
@@ -212,6 +258,7 @@ declare const GPUTextureUsage: {
     COPY_DST: number;
     TEXTURE_BINDING: number;
     RENDER_ATTACHMENT: number;
+    STORAGE_BINDING: number;
 };
 
 declare const GPUShaderStage: {

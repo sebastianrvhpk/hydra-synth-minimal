@@ -1,4 +1,4 @@
-import { PipelineCache } from './pipeline-cache.js'
+import { ComputePipelineCache, PipelineCache } from './pipeline-cache.js'
 import { createOutputTextureUsage, MAX_DYNAMIC_UNIFORMS, OUTPUT_TEXTURE_FORMAT } from './constants.js'
 
 export const WEBGPU_UNAVAILABLE_MESSAGE =
@@ -15,12 +15,45 @@ export interface WebGPUFragmentCapabilities {
   maxColorAttachments: number
 }
 
+export interface WebGPUComputeCapabilities {
+  storageTextureFormat: GPUTextureFormat
+  maxComputeInvocationsPerWorkgroup: number
+  maxComputeWorkgroupSizeX: number
+  maxComputeWorkgroupSizeY: number
+}
+
+export interface WebGPUTimingCapabilities {
+  timestampQuery: boolean
+}
+
 export interface WebGPUCapabilities {
   fragment: WebGPUFragmentCapabilities
+  compute: WebGPUComputeCapabilities
+  timing: WebGPUTimingCapabilities
   features: string[]
 }
 
 export type WebGPUTextureFilterMode = 'nearest' | 'linear'
+
+interface GpuTimingRecord {
+  startIndex: number
+  endIndex: number
+  onResult: (gpuMs: number) => void
+}
+
+interface GpuTimingFrame {
+  querySet: GPUQuerySet
+  resolveBuffer: GPUBuffer
+  readbackBuffer: GPUBuffer
+  queryCount: number
+  records: GpuTimingRecord[]
+}
+
+interface PassTimingAllocation {
+  timestampWrites: GPUPassTimestampWrites
+}
+
+const MAX_TIMESTAMP_QUERIES_PER_FRAME = 512
 
 export class WebGPURenderer {
   readonly canvas: HTMLCanvasElement
@@ -40,10 +73,13 @@ export class WebGPURenderer {
   capabilities: WebGPUCapabilities | null = null
 
   private outputPipelineCache: PipelineCache | null = null
+  private outputComputePipelineCache: ComputePipelineCache | null = null
   private screenPipeline: GPURenderPipeline | null = null
   private screenAllPipeline: GPURenderPipeline | null = null
 
   private readonly globalUniformData = new Float32Array(4)
+  private readonly lastGlobalUniformData = new Float32Array([Number.NaN, Number.NaN, Number.NaN, Number.NaN])
+  private globalUniformDirty = true
   private textureViewCache = new WeakMap<GPUTexture, Map<string, GPUTextureView>>()
   private objectIds = new WeakMap<object, number>()
   private nextObjectId = 1
@@ -53,6 +89,7 @@ export class WebGPURenderer {
   private screenAllBindGroupCacheKey = ''
   private screenAllBindGroup: GPUBindGroup | null = null
   private readonly screenResolvedTextures: Array<GPUTexture | null> = [null, null, null, null]
+  private activeTimingFrame: GpuTimingFrame | null = null
 
   constructor ({ canvas, width = canvas.width || 1280, height = canvas.height || 720 }: WebGPURendererOptions) {
     this.canvas = canvas
@@ -80,7 +117,13 @@ export class WebGPURenderer {
       throw new Error('No compatible GPU adapter was found. Verify WebGPU is enabled and GPU acceleration is available.')
     }
 
-    this.device = await this.adapter.requestDevice()
+    const requiredFeatures: GPUFeatureName[] = []
+    if (this.adapter.features.has('timestamp-query' as GPUFeatureName)) {
+      requiredFeatures.push('timestamp-query' as GPUFeatureName)
+    }
+    this.device = await this.adapter.requestDevice(
+      requiredFeatures.length > 0 ? { requiredFeatures } : undefined
+    )
     this.canvasFormat = navigator.gpu.getPreferredCanvasFormat()
     this.capabilities = this.inspectCapabilities()
 
@@ -92,6 +135,10 @@ export class WebGPURenderer {
       device: this.device,
       targetFormat: OUTPUT_TEXTURE_FORMAT,
       maxEntries: 256
+    })
+    this.outputComputePipelineCache = new ComputePipelineCache({
+      device: this.device,
+      maxEntries: 128
     })
 
     this.ready = true
@@ -115,6 +162,15 @@ export class WebGPURenderer {
         targetFormat,
         maxColorAttachments: readLimit('maxColorAttachments')
       },
+      compute: {
+        storageTextureFormat: OUTPUT_TEXTURE_FORMAT,
+        maxComputeInvocationsPerWorkgroup: readLimit('maxComputeInvocationsPerWorkgroup'),
+        maxComputeWorkgroupSizeX: readLimit('maxComputeWorkgroupSizeX'),
+        maxComputeWorkgroupSizeY: readLimit('maxComputeWorkgroupSizeY')
+      },
+      timing: {
+        timestampQuery: this.device.features.has('timestamp-query' as GPUFeatureName)
+      },
       features
     }
   }
@@ -137,6 +193,7 @@ export class WebGPURenderer {
       size: 16,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     })
+    this.globalUniformDirty = true
 
     this.nearestSampler = this.device.createSampler({
       magFilter: 'nearest',
@@ -307,18 +364,31 @@ fn fsMain(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
     this.height = height
     this.canvas.width = width
     this.canvas.height = height
+    this.globalUniformDirty = true
     if (this.ready) this.configureCanvas()
   }
 
-  updateGlobalUniforms ({ time, bpm, width, height }: { time: number, bpm: number, width?: number, height?: number }): void {
-    if (!this.ready || !this.device || !this.globalUniformBuffer) return
+  updateGlobalUniforms ({ time, bpm, width, height }: { time: number, bpm: number, width?: number, height?: number }): boolean {
+    if (!this.ready || !this.device || !this.globalUniformBuffer) return false
     if (typeof width === 'number') this.width = width
     if (typeof height === 'number') this.height = height
     this.globalUniformData[0] = time
     this.globalUniformData[1] = bpm
     this.globalUniformData[2] = this.width
     this.globalUniformData[3] = this.height
+    if (
+      !this.globalUniformDirty &&
+      this.globalUniformData[0] === this.lastGlobalUniformData[0] &&
+      this.globalUniformData[1] === this.lastGlobalUniformData[1] &&
+      this.globalUniformData[2] === this.lastGlobalUniformData[2] &&
+      this.globalUniformData[3] === this.lastGlobalUniformData[3]
+    ) {
+      return false
+    }
     this.device.queue.writeBuffer(this.globalUniformBuffer, 0, this.globalUniformData)
+    this.lastGlobalUniformData.set(this.globalUniformData)
+    this.globalUniformDirty = false
+    return true
   }
 
   createOutputTexture ({
@@ -327,7 +397,8 @@ fn fsMain(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
     depthOrArrayLayers = 1,
     label = '',
     format = OUTPUT_TEXTURE_FORMAT,
-    includeRenderAttachment = true
+    includeRenderAttachment = true,
+    includeStorageBinding = true
   }: {
     width?: number,
     height?: number,
@@ -335,6 +406,7 @@ fn fsMain(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
     label?: string,
     format?: GPUTextureFormat,
     includeRenderAttachment?: boolean
+    includeStorageBinding?: boolean
   } = {}): GPUTexture {
     if (!this.device) throw new Error('Renderer not initialized.')
     return this.device.createTexture({
@@ -345,7 +417,7 @@ fn fsMain(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
         depthOrArrayLayers: Math.max(1, Math.floor(depthOrArrayLayers))
       },
       format,
-      usage: createOutputTextureUsage({ includeRenderAttachment })
+      usage: createOutputTextureUsage({ includeRenderAttachment, includeStorageBinding })
     })
   }
 
@@ -380,6 +452,11 @@ fn fsMain(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
   getOutputPipelineEntry (signature: string, code: string) {
     if (!this.outputPipelineCache) return null
     return this.outputPipelineCache.requestPipeline(signature, code)
+  }
+
+  getOutputComputePipelineEntry (signature: string, code: string) {
+    if (!this.outputComputePipelineCache) return null
+    return this.outputComputePipelineCache.requestPipeline(signature, code)
   }
 
   getObjectId (value: object | null | undefined): number {
@@ -417,7 +494,91 @@ fn fsMain(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
 
   beginFrame (): GPUCommandEncoder | null {
     if (!this.ready || !this.device) return null
+    this.beginGpuTimingFrame()
     return this.device.createCommandEncoder({ label: 'hydra-frame-encoder' })
+  }
+
+  private supportsTimestampQueries (): boolean {
+    return Boolean(this.device?.features.has('timestamp-query' as GPUFeatureName))
+  }
+
+  supportsComputePasses (): boolean {
+    return Boolean(this.ready && this.device && this.outputComputePipelineCache)
+  }
+
+  private beginGpuTimingFrame (): void {
+    this.activeTimingFrame = null
+    if (!this.device || !this.supportsTimestampQueries()) return
+
+    const byteLength = MAX_TIMESTAMP_QUERIES_PER_FRAME * 8
+    this.activeTimingFrame = {
+      querySet: this.device.createQuerySet({
+        label: 'hydra-pass-timestamps',
+        type: 'timestamp',
+        count: MAX_TIMESTAMP_QUERIES_PER_FRAME
+      }),
+      resolveBuffer: this.device.createBuffer({
+        label: 'hydra-pass-timestamps-resolve',
+        size: byteLength,
+        usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC
+      }),
+      readbackBuffer: this.device.createBuffer({
+        label: 'hydra-pass-timestamps-readback',
+        size: byteLength,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+      }),
+      queryCount: 0,
+      records: []
+    }
+  }
+
+  allocatePassTiming (onResult: (gpuMs: number) => void): PassTimingAllocation | null {
+    const timingFrame = this.activeTimingFrame
+    if (!timingFrame || timingFrame.queryCount + 2 > MAX_TIMESTAMP_QUERIES_PER_FRAME) return null
+
+    const startIndex = timingFrame.queryCount
+    const endIndex = startIndex + 1
+    timingFrame.queryCount += 2
+    timingFrame.records.push({ startIndex, endIndex, onResult })
+    return {
+      timestampWrites: {
+        querySet: timingFrame.querySet,
+        beginningOfPassWriteIndex: startIndex,
+        endOfPassWriteIndex: endIndex
+      }
+    }
+  }
+
+  private readGpuTimingFrame (timingFrame: GpuTimingFrame): void {
+    if (!this.device || timingFrame.queryCount <= 0 || timingFrame.records.length === 0) {
+      timingFrame.querySet.destroy()
+      timingFrame.resolveBuffer.destroy()
+      timingFrame.readbackBuffer.destroy()
+      return
+    }
+
+    void this.device.queue.onSubmittedWorkDone()
+      .then(() => timingFrame.readbackBuffer.mapAsync(GPUMapMode.READ))
+      .then(() => {
+        const mapped = timingFrame.readbackBuffer.getMappedRange(0, timingFrame.queryCount * 8)
+        const timestamps = new BigUint64Array(mapped.slice(0))
+        for (const record of timingFrame.records) {
+          const start = timestamps[record.startIndex]
+          const end = timestamps[record.endIndex]
+          if (typeof start !== 'bigint' || typeof end !== 'bigint' || end <= start) continue
+          const gpuMs = Number(end - start) / 1_000_000
+          if (Number.isFinite(gpuMs) && gpuMs >= 0) record.onResult(gpuMs)
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        try {
+          timingFrame.readbackBuffer.unmap()
+        } catch {}
+        timingFrame.querySet.destroy()
+        timingFrame.resolveBuffer.destroy()
+        timingFrame.readbackBuffer.destroy()
+      })
   }
 
   getSampler (filter: WebGPUTextureFilterMode = 'nearest'): GPUSampler | null {
@@ -426,7 +587,14 @@ fn fsMain(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
 
   submitFrame (encoder: GPUCommandEncoder | null): void {
     if (!this.ready || !this.device || !encoder) return
+    const timingFrame = this.activeTimingFrame
+    this.activeTimingFrame = null
+    if (timingFrame && timingFrame.queryCount > 0) {
+      encoder.resolveQuerySet(timingFrame.querySet, 0, timingFrame.queryCount, timingFrame.resolveBuffer, 0)
+      encoder.copyBufferToBuffer(timingFrame.resolveBuffer, 0, timingFrame.readbackBuffer, 0, timingFrame.queryCount * 8)
+    }
     this.device.queue.submit([encoder.finish()])
+    if (timingFrame) this.readGpuTimingFrame(timingFrame)
   }
 
   renderTextureToScreen (encoder: GPUCommandEncoder, texture: GPUTexture | null): void {
@@ -530,9 +698,13 @@ fn fsMain(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
 
     if (this.outputPipelineCache) this.outputPipelineCache.clear()
     this.outputPipelineCache = null
+    if (this.outputComputePipelineCache) this.outputComputePipelineCache.clear()
+    this.outputComputePipelineCache = null
 
     if (this.globalUniformBuffer) this.globalUniformBuffer.destroy()
     this.globalUniformBuffer = null
+    this.globalUniformDirty = true
+    this.lastGlobalUniformData.fill(Number.NaN)
 
     if (this.fallbackTexture) this.fallbackTexture.destroy()
     this.fallbackTexture = null

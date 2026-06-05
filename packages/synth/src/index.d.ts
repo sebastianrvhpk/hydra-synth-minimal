@@ -14,6 +14,7 @@ import type {
   HydraOutputAdapter,
   HydraPassIRNode,
   HydraPassSchedule,
+  HydraPassVariant,
   HydraPassUpdateRate,
   HydraResourceFormat,
   HydraTextureProvider,
@@ -40,6 +41,7 @@ export type {
   HydraOutputAdapter,
   HydraPassIRNode,
   HydraPassSchedule,
+  HydraPassVariant,
   HydraPassUpdateRate,
   HydraResourceFormat,
   HydraTextureProvider,
@@ -105,8 +107,21 @@ export interface WebGPUFragmentCapabilities {
   maxColorAttachments: number
 }
 
+export interface WebGPUComputeCapabilities {
+  storageTextureFormat: GPUTextureFormat
+  maxComputeInvocationsPerWorkgroup: number
+  maxComputeWorkgroupSizeX: number
+  maxComputeWorkgroupSizeY: number
+}
+
+export interface WebGPUTimingCapabilities {
+  timestampQuery: boolean
+}
+
 export interface WebGPUCapabilities {
   fragment: WebGPUFragmentCapabilities
+  compute: WebGPUComputeCapabilities
+  timing: WebGPUTimingCapabilities
   features: string[]
 }
 
@@ -131,7 +146,7 @@ export declare class WebGPURenderer {
   static assertSupport (): void
   init (): Promise<this>
   setResolution (width: number, height: number): void
-  updateGlobalUniforms (state: { time: number, bpm: number, width?: number, height?: number }): void
+  updateGlobalUniforms (state: { time: number, bpm: number, width?: number, height?: number }): boolean
   createOutputTexture (
     options?: {
       width?: number,
@@ -140,6 +155,7 @@ export declare class WebGPURenderer {
       label?: string,
       format?: GPUTextureFormat,
       includeRenderAttachment?: boolean
+      includeStorageBinding?: boolean
     }
   ): GPUTexture
   createDynamicUniformBuffer (label: string): GPUBuffer
@@ -147,6 +163,9 @@ export declare class WebGPURenderer {
   getCapabilities (): WebGPUCapabilities | null
   getFallbackTexture (): GPUTexture
   getOutputPipelineEntry (signature: string, code: string): unknown
+  getOutputComputePipelineEntry (signature: string, code: string): unknown
+  supportsComputePasses (): boolean
+  allocatePassTiming (onResult: (gpuMs: number) => void): { timestampWrites: GPUPassTimestampWrites } | null
   getObjectId (value: object | null | undefined): number
   getTextureView (texture: GPUTexture, dimension?: GPUTextureViewDimension): GPUTextureView
   beginFrame (): GPUCommandEncoder | null

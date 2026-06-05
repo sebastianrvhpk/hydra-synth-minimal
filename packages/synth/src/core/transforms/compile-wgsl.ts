@@ -4,6 +4,7 @@ import { collectUtilityDeclarations } from './utility-wgsl.js'
 import type {
   HydraCompiledPass,
   HydraPassSchedule,
+  HydraPassVariant,
   HydraResourceFormat,
   HydraTextureBinding,
   HydraTransformCall,
@@ -12,15 +13,16 @@ import type {
 } from '../types.js'
 
 /**
- * Fragment-pass compiler for Hydra transform chains.
+ * Image-pass compiler for Hydra transform chains.
  *
- * Each chain is lowered into a full-screen render pipeline:
- * - vertex stage: fullscreen triangle
- * - fragment stage: executes the transformed Hydra DSL expression tree
+ * Each chain is lowered into either:
+ * - a full-screen fragment render pipeline
+ * - a compute pipeline that writes the same expression to a storage texture
  *
  * The compiler keeps the same high-level transform semantics used by previous
  * backends (dynamic uniforms, nested graph args, texture bindings, pass
- * schedules), but emits fragment WGSL only.
+ * schedules), and only changes the WebGPU execution variant when a transform
+ * explicitly opts into compute.
  */
 interface ShaderParams {
   uniforms: HydraUniformBinding[]
@@ -36,12 +38,27 @@ interface ShaderParams {
 }
 
 const DEFAULT_PASS_OUTPUT_FORMAT: HydraResourceFormat = 'rgba16float'
+const DEFAULT_COMPUTE_WORKGROUP_SIZE: [number, number] = [8, 8]
 
 interface HydraWgslFunction {
   name: string
   transform: {
     wgsl: string
   }
+}
+
+interface PreparedShaderResources {
+  shaderInfo: ShaderParams
+  includeDynamicUniforms: boolean
+  dynamicUniformVec4Count: number
+  textureBindings: HydraTextureBinding[]
+  textureDeclarations: string
+  samplerDeclaration: string
+  dynamicUniformDeclarations: string
+  dynamicUniformHelpers: string
+  functionDeclarations: string
+  utilityDeclarations: string
+  signatureBase: string
 }
 
 type RenderpassMode = 'framebuffer' | 'expression'
@@ -264,6 +281,12 @@ const resolveInputExpression = (
   contextVar: string,
   shaderParams: ShaderParams
 ): string => {
+  if (arg.wgslDeclarations) {
+    arg.wgslDeclarations.forEach((declaration) => {
+      registerWgslFunction(shaderParams, declaration.name, declaration.wgsl)
+    })
+  }
+
   if (arg.value && typeof arg.value === 'object' && 'transforms' in arg.value) {
     return coerceExpression(generateInputName(contextVar, argIndex), 'vec4f', arg.wgslType)
   }
@@ -462,10 +485,46 @@ const generateWgsl = (transforms: HydraTransformCall[]): ShaderParams => {
   return shaderParams
 }
 
-const compileFragmentWgslPass = (
+const isGraphNodeLike = (value: unknown): value is { transforms: HydraTransformCall[] } => (
+  Boolean(value) &&
+  typeof value === 'object' &&
+  Array.isArray((value as { transforms?: unknown }).transforms)
+)
+
+const containsRenderpassDeep = (transforms: HydraTransformCall[]): boolean =>
+  transforms.some((transform) =>
+    transform.transform.type === 'renderpass' ||
+    transform.inputs.some((input) => isGraphNodeLike(input.value) && containsRenderpassDeep(input.value.transforms))
+  )
+
+const isSafeComputeTailTransform = (transform: HydraTransformCall): boolean => (
+  transform.transform.type === 'color' &&
+  !(transform.inputs ?? []).some((input) => isGraphNodeLike(input.value) && containsRenderpassDeep(input.value.transforms))
+)
+
+const selectPassVariant = (transforms: HydraTransformCall[]): HydraPassVariant => {
+  if (
+    transforms.length >= 1 &&
+    transforms[0]?.transform.preferredPassVariant === 'compute' &&
+    transforms.slice(1).every(isSafeComputeTailTransform)
+  ) {
+    return 'compute'
+  }
+  return 'fragment'
+}
+
+const computeWorkgroupSizeForPass = (transforms: HydraTransformCall[]): [number, number] => {
+  const configured = transforms[0]?.transform.computeWorkgroupSize
+  if (!configured) return DEFAULT_COMPUTE_WORKGROUP_SIZE
+  const x = Math.max(1, Math.floor(Number(configured[0]) || DEFAULT_COMPUTE_WORKGROUP_SIZE[0]))
+  const y = Math.max(1, Math.floor(Number(configured[1]) || DEFAULT_COMPUTE_WORKGROUP_SIZE[1]))
+  return [x, y]
+}
+
+const prepareShaderResources = (
   transforms: HydraTransformCall[],
-  maxDynamicUniforms = 256
-): HydraCompiledPass => {
+  maxDynamicUniforms: number
+): PreparedShaderResources => {
   const shaderInfo = generateWgsl(transforms)
   const dynamicUniformVec4Count = Math.ceil(maxDynamicUniforms / 4)
   const includeDynamicUniforms = shaderInfo.uniforms.length > 0
@@ -543,6 +602,37 @@ fn hydraDynamicUniformVec4(index: u32) -> vec4f {
     `|t${textureBindings.length}` +
     `|rs${shaderInfo.schedule.resolutionScale}|sp${shaderInfo.schedule.sparse ? 1 : 0}|f${functionSignature}`
 
+  return {
+    shaderInfo,
+    includeDynamicUniforms,
+    dynamicUniformVec4Count,
+    textureBindings,
+    textureDeclarations,
+    samplerDeclaration,
+    dynamicUniformDeclarations,
+    dynamicUniformHelpers,
+    functionDeclarations,
+    utilityDeclarations,
+    signatureBase
+  }
+}
+
+const compileFragmentWgslPass = (
+  transforms: HydraTransformCall[],
+  maxDynamicUniforms = 256
+): HydraCompiledPass => {
+  const {
+    shaderInfo,
+    textureBindings,
+    textureDeclarations,
+    samplerDeclaration,
+    dynamicUniformDeclarations,
+    dynamicUniformHelpers,
+    functionDeclarations,
+    utilityDeclarations,
+    signatureBase
+  } = prepareShaderResources(transforms, maxDynamicUniforms)
+
   // NOTE:
   // @builtin(position) in fragment stage is already at pixel centers
   // (x + 0.5, y + 0.5). Do not add another 0.5 offset here.
@@ -601,6 +691,91 @@ fn fsMain(in: FragmentInput) -> @location(0) vec4f {
   const compiled: HydraCompiledPass = {
     signature: pipelineSignature,
     wgsl,
+    variant: 'fragment',
+    uniforms: shaderInfo.uniforms,
+    textures: textureBindings,
+    output,
+    schedule: shaderInfo.schedule,
+    ir: buildPassIR({
+      signature: pipelineSignature,
+      schedule: shaderInfo.schedule,
+      uniforms: shaderInfo.uniforms,
+      textures: textureBindings,
+      output
+    })
+  }
+
+  return optimizePassIR(compiled)
+}
+
+const compileComputeWgslPass = (
+  transforms: HydraTransformCall[],
+  maxDynamicUniforms = 256
+): HydraCompiledPass => {
+  const {
+    shaderInfo,
+    textureBindings,
+    textureDeclarations,
+    samplerDeclaration,
+    dynamicUniformDeclarations,
+    dynamicUniformHelpers,
+    functionDeclarations,
+    utilityDeclarations,
+    signatureBase
+  } = prepareShaderResources(transforms, maxDynamicUniforms)
+  const [workgroupWidth, workgroupHeight] = computeWorkgroupSizeForPass(transforms)
+  const outputBinding = 3 + textureBindings.length
+
+  const output = {
+    name: 'outImage',
+    variableName: 'outImage',
+    format: DEFAULT_PASS_OUTPUT_FORMAT,
+    binding: outputBinding
+  }
+
+  const wgsl = `
+struct GlobalUniforms {
+  time: f32,
+  bpm: f32,
+  width: f32,
+  height: f32,
+};
+
+@group(0) @binding(0) var<uniform> globals: GlobalUniforms;
+${dynamicUniformDeclarations}
+${samplerDeclaration}
+${textureDeclarations}
+@group(0) @binding(${outputBinding}) var ${output.variableName}: texture_storage_2d<${output.format}, write>;
+${dynamicUniformHelpers}
+
+${utilityDeclarations}
+${functionDeclarations}
+
+@compute @workgroup_size(${workgroupWidth}, ${workgroupHeight}, 1)
+fn csMain(@builtin(global_invocation_id) globalId: vec3u) {
+  let safeWidth = max(globals.width, 1.0);
+  let safeHeight = max(globals.height, 1.0);
+  let pixel = vec2u(globalId.xy);
+  if (pixel.x >= u32(safeWidth) || pixel.y >= u32(safeHeight)) {
+    return;
+  }
+
+  var st = (vec2f(pixel) + vec2f(0.5)) / vec2f(safeWidth, safeHeight);
+  var c = vec4f(0.0);
+  ${shaderInfo.fragColor}
+  textureStore(${output.variableName}, vec2i(pixel), c);
+}
+`
+
+  const pipelineSignature = `${signatureBase}|cs${workgroupWidth}x${workgroupHeight}|ob${outputBinding}|h${hashString(wgsl)}`
+
+  const compiled: HydraCompiledPass = {
+    signature: pipelineSignature,
+    wgsl,
+    variant: 'compute',
+    compute: {
+      workgroupSize: [workgroupWidth, workgroupHeight]
+    },
     uniforms: shaderInfo.uniforms,
     textures: textureBindings,
     output,
@@ -621,6 +796,13 @@ export const compileWgslPass = (
   transforms: HydraTransformCall[],
   maxDynamicUniforms = 256
 ): HydraCompiledPass => {
-  // Single backend entry point: fragment pipeline compilation.
+  if (selectPassVariant(transforms) === 'compute') {
+    const computePass = compileComputeWgslPass(transforms, maxDynamicUniforms)
+    return {
+      ...computePass,
+      fallback: compileFragmentWgslPass(transforms, maxDynamicUniforms)
+    }
+  }
+
   return compileFragmentWgslPass(transforms, maxDynamicUniforms)
 }
