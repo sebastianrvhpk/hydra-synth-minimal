@@ -1,13 +1,12 @@
 import type {
   HydraTransformDefinition,
   HydraTransformInput,
-  HydraPassSchedule,
   HydraTransformType,
-  HydraWgslType,
+  HydraShaderValueType,
   ProcessedHydraTransform
 } from '../types.js'
 
-const typeLookup: Record<HydraTransformType, { returnType: HydraWgslType, args: HydraTransformInput[] }> = {
+const typeLookup: Partial<Record<HydraTransformType, { returnType: HydraShaderValueType, args: HydraTransformInput[] }>> = {
   src: {
     returnType: 'vec4f',
     args: [{ type: 'vec2', name: '_st', default: undefined }]
@@ -40,7 +39,7 @@ const typeLookup: Record<HydraTransformType, { returnType: HydraWgslType, args: 
   }
 }
 
-const typeToWgsl = (type: HydraTransformInput['type']): HydraWgslType => {
+const typeToShaderValue = (type: HydraTransformInput['type']): HydraShaderValueType => {
   switch (type) {
     case 'float': return 'f32'
     case 'vec2': return 'vec2f'
@@ -51,39 +50,48 @@ const typeToWgsl = (type: HydraTransformInput['type']): HydraWgslType => {
   }
 }
 
-const normalizeSchedule = (definition: HydraTransformDefinition): HydraPassSchedule => {
+const normalizeResolutionScale = (definition: HydraTransformDefinition): number => {
   const scale = Number(definition.resolutionScale ?? 1)
-  const resolutionScale = Number.isFinite(scale) && scale > 0 ? scale : 1
-  return {
-    resolutionScale,
-    updateRate: definition.updateRate ?? 'everyFrame',
-    sparse: Boolean(definition.sparse)
-  }
+  return Number.isFinite(scale) && scale > 0 ? scale : 1
 }
 
 export const processTransformDefinition = (definition: HydraTransformDefinition): ProcessedHydraTransform => {
+  if (definition.type === 'passBoundary') {
+    return {
+      ...definition,
+      inputs: [],
+      shader: null,
+      resolutionScale: normalizeResolutionScale(definition)
+    }
+  }
+
   const typeConfig = typeLookup[definition.type]
   if (!typeConfig) {
     throw new Error(`Unsupported transform type: ${definition.type}`)
   }
 
-  if (typeof definition.wgsl !== 'string' || definition.wgsl.trim() === '') {
-    throw new Error(`Transform "${definition.name}" must define a non-empty wgsl body.`)
+  if (typeof definition.shader !== 'string' || definition.shader.trim() === '') {
+    throw new Error(`Transform "${definition.name}" must define a non-empty shader body.`)
   }
 
   const inputs = typeConfig.args.concat(definition.inputs ?? [])
-  const args = inputs.map((input) => `${input.name}: ${typeToWgsl(input.type)}`).join(', ')
-  const wgslFunction = `
+  const parameterTypes = inputs.map((input) => typeToShaderValue(input.type))
+  const args = inputs.map((input, index) => `${input.name}: ${parameterTypes[index]}`).join(', ')
+  const source = `
 fn ${definition.name}(${args}) -> ${typeConfig.returnType} {
-${definition.wgsl}
+${definition.shader}
 }
 `
 
   return {
     ...definition,
     inputs: inputs.slice(1),
-    wgsl: wgslFunction,
-    wgsl_return_type: typeConfig.returnType,
-    schedule: normalizeSchedule(definition)
+    shader: {
+      name: definition.name,
+      parameterTypes,
+      returnType: typeConfig.returnType,
+      source
+    },
+    resolutionScale: normalizeResolutionScale(definition)
   }
 }

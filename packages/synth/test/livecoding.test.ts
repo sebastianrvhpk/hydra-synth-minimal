@@ -1,169 +1,41 @@
-import { describe, expect, it } from 'vitest'
-import type { HydraEngineBindingHost } from '../src/core/index.ts'
-import { attachLivecoding, createLivecodingPlugin } from '../src/index.ts'
+import { describe, expect, it, vi } from 'vitest'
+import { createLivecodingSession } from '../src/livecoding.ts'
 
-class MockBindingHost implements HydraEngineBindingHost {
-  private readonly bindings: Record<string, unknown>
-
-  constructor (initial: Record<string, unknown>) {
-    this.bindings = { ...initial }
-  }
-
-  getBindings (): Readonly<Record<string, unknown>> {
-    return this.bindings
-  }
-
-  setBinding (name: string, value: unknown): void {
-    this.bindings[name] = value
-  }
-}
-
-const testRunCode = (code: string, scope: Record<string, unknown>): unknown => {
-  if (code.includes('hydraListen')) {
-    const listen = scope.hydraListen as (
-      target: EventTarget,
-      type: string,
-      listener: EventListenerOrEventListenerObject
-    ) => void
-    const onDispose = scope.hydraOnDispose as (callback: () => void) => void
-    const markDisposed = scope.markDisposed as () => void
-    const eventTarget = scope.eventTarget as EventTarget
-
-    listen(eventTarget, 'pulse', () => {
-      scope.speed = Number(scope.speed) + 1
+describe('createLivecodingSession', () => {
+  it('runs code against the supplied scope', () => {
+    const scope: Record<string, unknown> = { speed: 1 }
+    const runCode = vi.fn((_code: string, target: Record<string, unknown>) => {
+      target.speed = 2
+      return 'done'
     })
-    onDispose(markDisposed)
-    return undefined
-  }
+    const session = createLivecodingSession({ scope, runCode })
 
-  const speedAssignment = code.match(/\bspeed\s*=\s*(\d+(?:\.\d+)?)/)
-  if (speedAssignment) scope.speed = Number(speedAssignment[1])
-  return undefined
-}
+    expect(session.run('speed = 2')).toBe('done')
+    expect(scope.speed).toBe(2)
+    expect(runCode).toHaveBeenCalledWith('speed = 2', scope)
+  })
 
-describe('attachLivecoding', () => {
-  it('injects only allowed bindings and syncs mutations back to the host', () => {
-    const host = new MockBindingHost({ speed: 1, bpm: 30, hidden: 99 })
-    const targetGlobal: Record<string, unknown> = { speed: 0, keep: 'safe' }
-
-    const session = attachLivecoding(host, {
-      targetGlobal,
-      allowedBindings: ['speed'],
-      runCode: testRunCode
+  it('installs helpers and restores the previous scope on dispose', () => {
+    const original = () => 'original'
+    const replacement = () => 'replacement'
+    const scope: Record<string, unknown> = { save: original, keep: true }
+    const session = createLivecodingSession({
+      scope,
+      helpers: { save: replacement, randomize: () => 0.5 },
+      runCode: () => undefined
     })
 
-    expect(targetGlobal.speed).toBe(1)
-    expect('bpm' in targetGlobal).toBe(false)
-    expect('hidden' in targetGlobal).toBe(false)
-
-    session.run('speed = 4')
-    expect(host.getBindings().speed).toBe(4)
-
+    expect(scope.save).toBe(replacement)
+    expect(typeof scope.randomize).toBe('function')
     session.dispose()
-    expect(targetGlobal.speed).toBe(0)
-    expect(targetGlobal.keep).toBe('safe')
+    expect(scope.save).toBe(original)
+    expect(scope.randomize).toBeUndefined()
+    expect(scope.keep).toBe(true)
   })
 
-  it('creates and injects higher output bindings referenced by livecoded patches', () => {
-    let host: MockBindingHost | null = null
-    const ensureCalls: number[] = []
-    const initial: Record<string, unknown> = {
-      o0: { label: 'o0' },
-      ensureOutput: (index: number) => {
-        if (!host) throw new Error('Host is not initialized.')
-        ensureCalls.push(index)
-        for (let outputIndex = 0; outputIndex <= index; outputIndex += 1) {
-          host.setBinding(`o${outputIndex}`, { label: `o${outputIndex}` })
-        }
-      }
-    }
-    host = new MockBindingHost(initial)
-    const targetGlobal: Record<string, unknown> = {}
-
-    const session = attachLivecoding(host, {
-      targetGlobal,
-      allowedBindings: ['speed'],
-      runCode: (_code, scope) => {
-        expect((scope.o5 as { label: string }).label).toBe('o5')
-      }
-    })
-
-    session.run('src(o5).out(o5)')
-
-    expect(ensureCalls).toEqual([5])
-    expect((targetGlobal.o5 as { label: string }).label).toBe('o5')
-
+  it('rejects execution after disposal', () => {
+    const session = createLivecodingSession({ runCode: () => undefined })
     session.dispose()
-    expect('o5' in targetGlobal).toBe(false)
-  })
-
-  it('cleans up helper-registered listeners and callbacks on dispose', () => {
-    const host = new MockBindingHost({ speed: 1 })
-    const eventTarget = new EventTarget()
-    let disposedCallbackRuns = 0
-    const targetGlobal: Record<string, unknown> = { eventTarget }
-
-    const session = attachLivecoding(host, {
-      targetGlobal,
-      allowedBindings: ['speed'],
-      runCode: testRunCode,
-      exposeHelpers: {
-        markDisposed: () => {
-          disposedCallbackRuns += 1
-        },
-        eventTarget
-      }
-    })
-
-    session.run(`
-      hydraListen(eventTarget, 'pulse', () => {
-        speed = speed + 1
-      })
-      hydraOnDispose(markDisposed)
-    `)
-
-    eventTarget.dispatchEvent(new Event('pulse'))
-    session.syncFromGlobal()
-    expect(host.getBindings().speed).toBe(2)
-
-    session.dispose()
-    eventTarget.dispatchEvent(new Event('pulse'))
-    session.syncFromGlobal()
-
-    expect(host.getBindings().speed).toBe(2)
-    expect(disposedCallbackRuns).toBe(1)
-    expect('hydraListen' in targetGlobal).toBe(false)
-    expect('hydraOnDispose' in targetGlobal).toBe(false)
-  })
-
-  it('requires an explicit code runner', () => {
-    const host = new MockBindingHost({ speed: 1 })
-    const targetGlobal: Record<string, unknown> = {}
-
-    expect(() => attachLivecoding(host, {
-      targetGlobal,
-      allowedBindings: ['speed']
-    })).toThrow(/explicit runCode/)
-  })
-})
-
-describe('createLivecodingPlugin', () => {
-  it('enforces attach-before-run and disposes cleanly', () => {
-    const host = new MockBindingHost({ speed: 1 })
-    const targetGlobal: Record<string, unknown> = {}
-    const plugin = createLivecodingPlugin({
-      targetGlobal,
-      allowedBindings: ['speed'],
-      runCode: testRunCode
-    })
-
-    expect(() => plugin.run?.('speed = 2')).toThrow()
-
-    plugin.attach(host)
-    plugin.run?.('speed = 2')
-    expect(host.getBindings().speed).toBe(2)
-
-    plugin.dispose()
-    expect('speed' in targetGlobal).toBe(false)
+    expect(() => session.run('osc().out()')).toThrow(/disposed/)
   })
 })

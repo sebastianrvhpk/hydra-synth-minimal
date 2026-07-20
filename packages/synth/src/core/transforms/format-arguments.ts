@@ -1,12 +1,13 @@
 import type {
   HydraFrameState,
+  HydraShaderFunction,
+  HydraShaderValueType,
   HydraTransformCall,
-  HydraTypedArgument,
-  HydraWgslType
+  HydraTypedArgument
 } from '../types.js'
 import { createArraySequenceUniformEvaluator, isArrayLikeSequenceInput } from './array-sequence.js'
 
-const WGSL_TYPES: Record<string, HydraWgslType> = {
+const SHADER_TYPES: Record<string, HydraShaderValueType> = {
   float: 'f32',
   vec2: 'vec2f',
   vec3: 'vec3f',
@@ -42,7 +43,7 @@ const toFiniteNumber = (value: unknown, fallback = 0): number => {
 
 const toNumberArray = (value: unknown): number[] | null => {
   if (Array.isArray(value)) return value.map((entry) => Number(entry))
-  if (ArrayBuffer.isView(value)) return Array.from(value as ArrayLike<number>).map((entry) => Number(entry))
+  if (ArrayBuffer.isView(value)) return Array.from(value as unknown as ArrayLike<number>).map((entry) => Number(entry))
   return null
 }
 
@@ -88,7 +89,7 @@ const normalizeUniformValue = (
 }
 
 const isTextureLike = (value: unknown): value is { getTexture: () => unknown, id?: unknown } => (
-  Boolean(value) &&
+  value !== null &&
   typeof value === 'object' &&
   'getTexture' in value &&
   typeof (value as { getTexture?: unknown }).getTexture === 'function'
@@ -107,22 +108,22 @@ const sequenceEaseExpression = (ease: unknown, valueExpression: string): string 
   return null
 }
 
-const createStaticSequenceWgsl = (
+const createStaticSequenceShader = (
   value: unknown,
   fallback: unknown,
   inputName: string,
   inputIndex: number
-): { literal: string, declaration: { name: string, wgsl: string } } | null => {
+): { literal: string, shaderFunction: HydraShaderFunction } | null => {
   if (!isArrayLikeSequenceInput(value)) return null
 
   const metadata = value as StaticSequenceMetadata
   if (typeof metadata._ease === 'function') return null
 
-  const source = toNumberArray(value)
-  if (!source || source.length === 0) return null
+  const sequenceValues = toNumberArray(value)
+  if (!sequenceValues || sequenceValues.length === 0) return null
 
   const fallbackNumber = toFiniteNumber(fallback, 0)
-  const values = source.map((entry) => toFiniteNumber(entry, fallbackNumber))
+  const values = sequenceValues.map((entry) => toFiniteNumber(entry, fallbackNumber))
   const speed = toFiniteNumber(metadata._speed, 1)
   const smooth = Math.max(0, toFiniteNumber(metadata._smooth, 0))
   const offset = toFiniteNumber(metadata._offset, 0)
@@ -137,7 +138,7 @@ const createStaticSequenceWgsl = (
   const offsetLiteral = ensureFloatLiteral(offset)
   const valueLiterals = values.map(ensureFloatLiteral).join(', ')
 
-  const wgsl = `
+  const source = `
 fn ${fnName}() -> f32 {
   let values = array<f32, ${values.length}>(${valueLiterals});
   let sequenceLength = ${lengthLiteral};
@@ -165,9 +166,11 @@ fn ${fnName}() -> f32 {
 
   return {
     literal: `${fnName}()`,
-    declaration: {
+    shaderFunction: {
       name: fnName,
-      wgsl
+      parameterTypes: [],
+      returnType: 'f32',
+      source
     }
   }
 }
@@ -185,17 +188,18 @@ const normalizeOutputId = (value: unknown): number | null => {
 const parsePrevNBinding = (
   userArgs: unknown[],
   fallbackValue: unknown
-): { historyOffset: number, targetId: number | null, getTexture: (() => unknown) | null } => {
+): { historyOffset: number, targetId: number | null, target: object | null, getTexture: (() => unknown) | null } => {
   const first = userArgs.length > 0 ? userArgs[0] : fallbackValue
   const second = userArgs.length > 1 ? userArgs[1] : undefined
 
   let historyOffset = 1
   let targetId: number | null = null
+  let target: object | null = null
   let getTexture: (() => unknown) | null = null
 
   if (typeof first === 'number' && Number.isFinite(first)) {
     historyOffset = normalizeHistoryOffset(first)
-    return { historyOffset, targetId, getTexture }
+    return { historyOffset, targetId, target, getTexture }
   }
 
   if (first && typeof first === 'object') {
@@ -204,12 +208,14 @@ const parsePrevNBinding = (
     if (isTextureLike(first)) {
       getTexture = () => first.getTexture()
       targetId = normalizeOutputId(first.id)
+      target = first
     }
 
     if ('source' in candidate && isTextureLike(candidate.source)) {
       const source = candidate.source
       getTexture = () => source.getTexture()
       targetId = normalizeOutputId(source.id)
+      target = source
     }
 
     if ('id' in candidate && targetId === null) {
@@ -218,7 +224,7 @@ const parsePrevNBinding = (
 
     if ('historyOffset' in candidate) {
       historyOffset = normalizeHistoryOffset(candidate.historyOffset, historyOffset)
-      return { historyOffset, targetId, getTexture }
+      return { historyOffset, targetId, target, getTexture }
     }
   }
 
@@ -226,7 +232,7 @@ const parsePrevNBinding = (
     historyOffset = normalizeHistoryOffset(second, historyOffset)
   }
 
-  return { historyOffset, targetId, getTexture }
+  return { historyOffset, targetId, target, getTexture }
 }
 
 export const formatArguments = (
@@ -241,7 +247,7 @@ export const formatArguments = (
     const typedArg: HydraTypedArgument = {
       name: input.name,
       type: input.type,
-      wgslType: WGSL_TYPES[input.type] ?? 'f32',
+      shaderType: SHADER_TYPES[input.type] ?? 'f32',
       default: input.default,
       value: input.default,
       isUniform: false,
@@ -254,7 +260,7 @@ export const formatArguments = (
     }
 
     if (input.type === 'sampler2D') {
-      if (transform.name === 'prevN') {
+      if (transform.transform.name === 'prevN') {
         const parsed = parsePrevNBinding(userArgs, typedArg.value)
 
         typedArg.isTexture = true
@@ -262,17 +268,12 @@ export const formatArguments = (
         typedArg.value = parsed.getTexture ?? (() => null)
         typedArg.textureSource = parsed.targetId === null
           ? { historyOffset: parsed.historyOffset }
-          : { id: parsed.targetId, historyOffset: parsed.historyOffset }
+          : { id: parsed.targetId, historyOffset: parsed.historyOffset, target: parsed.target }
         return typedArg
       }
 
-      if (
-        !typedArg.value ||
-        typeof typedArg.value !== 'object' ||
-        !('getTexture' in typedArg.value) ||
-        typeof typedArg.value.getTexture !== 'function'
-      ) {
-        throw new Error(`Expected texture-like argument for sampler input "${input.name}" in "${transform.name}"`)
+      if (!isTextureLike(typedArg.value)) {
+        throw new Error(`Expected texture-like argument for sampler input "${input.name}" in "${transform.transform.name}"`)
       }
 
       const textureLike = typedArg.value
@@ -300,12 +301,16 @@ export const formatArguments = (
     if (typeof typedArg.value === 'function') {
       typedArg.isUniform = true
       const fn = typedArg.value as (props: HydraFrameState) => unknown
+      let hasReportedFailure = false
       typedArg.uniformName = `${sanitizeName(input.name)}_${startIndex + index}`
       typedArg.value = (props: HydraFrameState) => {
         try {
           return normalizeUniformValue(fn(props), typedArg.type, input.default)
-        } catch {
-          // Uniform callbacks are isolated from runtime errors and fall back to defaults.
+        } catch (error) {
+          if (!hasReportedFailure) {
+            hasReportedFailure = true
+            console.error(`Hydra uniform callback failed for ${typedArg.uniformName}; using its default value.`, error)
+          }
         }
         return normalizeUniformValue(undefined, typedArg.type, input.default)
       }
@@ -314,7 +319,7 @@ export const formatArguments = (
 
     if (typedArg.type === 'float') {
       if (isArrayLikeSequenceInput(typedArg.value)) {
-        const staticSequence = createStaticSequenceWgsl(
+        const staticSequence = createStaticSequenceShader(
           typedArg.value,
           input.default,
           input.name,
@@ -322,7 +327,7 @@ export const formatArguments = (
         )
         if (staticSequence) {
           typedArg.literal = staticSequence.literal
-          typedArg.wgslDeclarations = [staticSequence.declaration]
+          typedArg.shaderFunctions = [staticSequence.shaderFunction]
           return typedArg
         }
         typedArg.isUniform = true

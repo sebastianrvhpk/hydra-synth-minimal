@@ -109,9 +109,8 @@ export class HydraAudioAnalyzer {
   private analyser: AnalyserNode | null = null
   private sourceNode: AudioNode | null = null
   private stream: MediaStream | null = null
-  private mediaElement: HTMLMediaElement | null = null
-  private frequencyData: Uint8Array | null = null
-  private timeDomainData: Float32Array | null = null
+  private frequencyData: Uint8Array<ArrayBuffer> | null = null
+  private timeDomainData: Float32Array<ArrayBuffer> | null = null
   private readonly helperNamesByTarget = new Map<Record<string, unknown>, string[]>()
   private cutoff: number
   private smooth: number
@@ -197,7 +196,6 @@ export class HydraAudioAnalyzer {
       this.stream = source
       this.sourceNode = context.createMediaStreamSource(source)
     } else if (isHtmlMediaElement(source)) {
-      this.mediaElement = source
       this.sourceNode = context.createMediaElementSource(source)
       analyser.connect(context.destination)
     } else if (isAudioNode(source)) {
@@ -248,9 +246,9 @@ export class HydraAudioAnalyzer {
 
       const normalized = sum / Math.max(1, end - start)
       const setting = this.settings[index] ?? { cutoff: this.cutoff, scale: this.scale, smooth: this.smooth }
-      const compatibilityValue = normalized * setting.scale + setting.cutoff
+      const bandValue = normalized * setting.scale + setting.cutoff
       const previous = this.bins[index] ?? 0
-      nextBins[index] = compatibilityValue * (1 - setting.smooth) + previous * setting.smooth
+      nextBins[index] = bandValue * (1 - setting.smooth) + previous * setting.smooth
     }
 
     this.prevBins = this.bins.slice()
@@ -393,7 +391,6 @@ export class HydraAudioAnalyzer {
       this.stream.getTracks().forEach((track) => track.stop())
     }
     this.stream = null
-    this.mediaElement = null
 
     if (stopStream && this.ownsContext && this.context && this.context.state !== 'closed') {
       void this.context.close().catch(() => {})

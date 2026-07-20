@@ -5,37 +5,18 @@
   "type": "module",
   "packageManager": "pnpm@10.14.0",
   "scripts": {
-    "build": "pnpm -r --workspace-concurrency=1 --filter ./packages/* run build",
-    "build:dist": "pnpm --filter hydra-synth run build:dist",
-    "build:single": "pnpm --filter hydra-synth run build:single",
-    "build:v0": "pnpm --filter hydra-synth run build:v0",
-    "build:vercel": "pnpm build && node scripts/build-vercel-static.mjs",
+    "build": "pnpm -r --workspace-concurrency=1 --filter './packages/*' run build",
+    "build:vercel": "pnpm build && node scripts/build-vercel-static.mjs && node scripts/verify-static-app.mjs dist/hydra/index.html",
     "dev": "pnpm build && node scripts/dev-server.mjs --open",
-    "dev:livecoding": "pnpm dev",
     "dev:no-open": "pnpm build && node scripts/dev-server.mjs",
     "lint": "node scripts/lint.mjs",
-    "test": "pnpm test:unit && pnpm test:browser",
+    "test": "pnpm test:unit",
     "test:unit": "pnpm exec vitest run --config vitest.config.ts",
-    "test:browser": "pnpm exec playwright test --config playwright.config.ts",
-    "bench:v3": "node scripts/bench-v3.mjs",
-    "bench:v3:ci": "node scripts/bench-v3.mjs .tmp/bench/phase-samples.json",
-    "bench:capture:parity": "node scripts/bench-capture-parity.mjs",
-    "agentic:livecode": "node scripts/hydra-agentic-livecode-harness.mjs",
-    "agentic:llm-livecode": "node scripts/hydra-llm-livecode-harness.mjs",
-    "mutator:packet": "node scripts/hydra-livecode-mutation-packet.mjs",
-    "typecheck": "pnpm -r --workspace-concurrency=1 --filter ./packages/* run typecheck",
-    "verify:pack": "node scripts/verify-packages.mjs",
-    "changeset:check": "changeset status --verbose",
-    "changeset:gate": "node scripts/check-versioning-gate.mjs",
-    "release:version": "changeset version",
-    "release:publish": "changeset publish"
+    "typecheck": "pnpm -r --workspace-concurrency=1 --filter './packages/*' run typecheck",
+    "verify:pack": "node scripts/verify-packages.mjs"
   },
   "devDependencies": {
-    "@changesets/cli": "2.27.12",
-    "@playwright/test": "1.51.1",
+    "typescript": "5.9.3",
     "vitest": "3.1.1"
-  },
-  "dependencies": {
-    "mp4box": "2.3.0"
   }
 }

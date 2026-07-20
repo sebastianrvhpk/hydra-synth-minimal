@@ -35,10 +35,14 @@ const copyVendorPackage = (packagePath) => {
 rmSync(outDir, { recursive: true, force: true })
 mkdirSync(hydraOutDir, { recursive: true })
 
-copyRecursive(path.join(repoRoot, 'packages', 'synth', 'dist'), path.join(hydraOutDir, 'synth'))
+for (const fileName of ['index.js', 'livecoding.js']) {
+  copyRecursive(
+    path.join(repoRoot, 'packages', 'synth', 'dist', fileName),
+    path.join(hydraOutDir, 'synth', fileName)
+  )
+}
 
 for (const packageName of [
-  'mp4box',
   'codemirror',
   '@codemirror/autocomplete',
   '@codemirror/commands',
@@ -64,7 +68,6 @@ const importMap = `{
         "imports": {
           "hydra-synth": "./synth/index.js",
           "hydra-synth/livecoding": "./synth/livecoding.js",
-          "mp4box": "./vendor/mp4box/dist/mp4box.all.js",
           "codemirror": "./vendor/codemirror/dist/index.js",
           "@codemirror/autocomplete": "./vendor/@codemirror/autocomplete/dist/index.js",
           "@codemirror/commands": "./vendor/@codemirror/commands/dist/index.js",

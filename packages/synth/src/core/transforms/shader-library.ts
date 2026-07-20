@@ -1,6 +1,8 @@
-const utilityWgsl = {
+import type { HydraShaderFunction, HydraShaderValueType } from '../types.js'
+
+const utilityShaders = {
   hydraMod: {
-    wgsl: `
+    source: `
 fn hydraMod(x: f32, y: f32) -> f32 {
   let safeY = select(y, 1.0e-6, abs(y) < 1.0e-6);
   return x - safeY * floor(x / safeY);
@@ -8,7 +10,7 @@ fn hydraMod(x: f32, y: f32) -> f32 {
 `
   },
   hydraLuminance: {
-    wgsl: `
+    source: `
 fn hydraLuminance(rgb: vec3f) -> f32 {
   let w = vec3f(0.2125, 0.7154, 0.0721);
   return dot(rgb, w);
@@ -16,7 +18,7 @@ fn hydraLuminance(rgb: vec3f) -> f32 {
 `
   },
   hydraRgbToHsv: {
-    wgsl: `
+    source: `
 fn hydraRgbToHsv(c: vec3f) -> vec3f {
   let k = vec4f(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
   let p = mix(vec4f(c.bg, k.wz), vec4f(c.gb, k.xy), step(c.b, c.g));
@@ -28,7 +30,7 @@ fn hydraRgbToHsv(c: vec3f) -> vec3f {
 `
   },
   hydraHsvToRgb: {
-    wgsl: `
+    source: `
 fn hydraHsvToRgb(c: vec3f) -> vec3f {
   let k = vec4f(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
   let p = abs(fract(c.xxx + k.xyz) * 6.0 - k.www);
@@ -37,52 +39,49 @@ fn hydraHsvToRgb(c: vec3f) -> vec3f {
 `
   },
   hydraMod289Vec3: {
-    wgsl: `
+    source: `
 fn hydraMod289Vec3(x: vec3f) -> vec3f {
   return x - floor(x / 289.0) * 289.0;
 }
 `
   },
   hydraMod289Vec4: {
-    wgsl: `
+    source: `
 fn hydraMod289Vec4(x: vec4f) -> vec4f {
   return x - floor(x / 289.0) * 289.0;
 }
 `
   },
   hydraMod289Scalar: {
-    wgsl: `
+    source: `
 fn hydraMod289Scalar(x: f32) -> f32 {
   return x - floor(x / 289.0) * 289.0;
 }
 `
   },
   hydraPermute: {
-    dependencies: ['hydraMod289Vec4'],
-    wgsl: `
+    source: `
 fn hydraPermute(x: vec4f) -> vec4f {
   return hydraMod289Vec4(((x * 34.0) + 1.0) * x);
 }
 `
   },
   hydraPermuteScalar: {
-    dependencies: ['hydraMod289Scalar'],
-    wgsl: `
+    source: `
 fn hydraPermuteScalar(x: f32) -> f32 {
   return hydraMod289Scalar(((x * 34.0) + 1.0) * x);
 }
 `
   },
   hydraTaylorInvSqrt: {
-    wgsl: `
+    source: `
 fn hydraTaylorInvSqrt(r: vec4f) -> vec4f {
   return vec4f(1.79284291400159) - 0.85373472095314 * r;
 }
 `
   },
   hydraNoise: {
-    dependencies: ['hydraMod289Vec3', 'hydraPermute', 'hydraTaylorInvSqrt'],
-    wgsl: `
+    source: `
 fn hydraNoise(v: vec3f) -> f32 {
   let c = vec2f(1.0 / 6.0, 1.0 / 3.0);
   let d = vec4f(0.0, 0.5, 1.0, 2.0);
@@ -158,7 +157,7 @@ fn hydraNoise(v: vec3f) -> f32 {
 `
   },
   hydraGrad4: {
-    wgsl: `
+    source: `
 fn hydraGrad4(j: f32, ip: vec4f) -> vec4f {
   let ones = vec4f(1.0, 1.0, 1.0, -1.0);
   var pxyz = floor(fract(vec3f(j, j, j) * ip.xyz) * 7.0) * ip.z - vec3f(1.0);
@@ -171,8 +170,7 @@ fn hydraGrad4(j: f32, ip: vec4f) -> vec4f {
 `
   },
   hydraNoise4: {
-    dependencies: ['hydraPermute', 'hydraPermuteScalar', 'hydraTaylorInvSqrt', 'hydraGrad4'],
-    wgsl: `
+    source: `
 fn hydraNoise4(v: vec4f) -> f32 {
   let C = vec4f(0.138196601125011, 0.276393202250021, 0.414589803375032, -0.447213595499958);
   var i = floor(v + vec4f(dot(v, vec4f(0.30901699437494745))));
@@ -253,41 +251,14 @@ fn hydraNoise4(v: vec4f) -> f32 {
 `
   },
   hydraSampleTextureWrapped: {
-    wgsl: `
+    source: `
 fn hydraSampleTextureWrapped(tex: texture_2d<f32>, uv: vec2f) -> vec4f {
   return textureSampleLevel(tex, hydraSampler, fract(uv), 0.0);
 }
 `
   },
-  hydraSampleTextureClamped: {
-    wgsl: `
-fn hydraSampleTextureClamped(tex: texture_2d<f32>, uv: vec2f) -> vec4f {
-  return textureSampleLevel(tex, hydraSampler, clamp(uv, vec2f(0.0), vec2f(1.0)), 0.0);
-}
-`
-  },
-  hydraUvFromLinearCoord: {
-    wgsl: `
-fn hydraUvFromLinearCoord(coord: vec2u, dims: vec2u) -> vec2f {
-  let safeDims = max(vec2u(1u), dims);
-  return (vec2f(f32(coord.x), f32(coord.y)) + vec2f(0.5, 0.5)) / vec2f(f32(safeDims.x), f32(safeDims.y));
-}
-`
-  },
-  hydraUvFromLinearIndex: {
-    dependencies: ['hydraUvFromLinearCoord'],
-    wgsl: `
-fn hydraUvFromLinearIndex(index: u32, dims: vec2u) -> vec2f {
-  let safeDims = max(vec2u(1u), dims);
-  let x = index % safeDims.x;
-  let y = index / safeDims.x;
-  return hydraUvFromLinearCoord(vec2u(x, y), safeDims);
-}
-`
-  },
   hydraSampleTexture: {
-    dependencies: ['hydraSampleTextureWrapped'],
-    wgsl: `
+    source: `
 fn hydraSampleTexture(tex: texture_2d<f32>, uv: vec2f) -> vec4f {
   return hydraSampleTextureWrapped(tex, uv);
 }
@@ -295,7 +266,38 @@ fn hydraSampleTexture(tex: texture_2d<f32>, uv: vec2f) -> vec4f {
   }
 }
 
-const UTILITY_ORDER = [
+type UtilityName = keyof typeof utilityShaders
+
+interface UtilitySignature {
+  parameterTypes: HydraShaderValueType[]
+  returnType: HydraShaderValueType
+}
+
+const utilitySignatures: Record<UtilityName, UtilitySignature> = {
+  hydraMod: { parameterTypes: ['f32', 'f32'], returnType: 'f32' },
+  hydraLuminance: { parameterTypes: ['vec3f'], returnType: 'f32' },
+  hydraRgbToHsv: { parameterTypes: ['vec3f'], returnType: 'vec3f' },
+  hydraHsvToRgb: { parameterTypes: ['vec3f'], returnType: 'vec3f' },
+  hydraMod289Vec3: { parameterTypes: ['vec3f'], returnType: 'vec3f' },
+  hydraMod289Vec4: { parameterTypes: ['vec4f'], returnType: 'vec4f' },
+  hydraMod289Scalar: { parameterTypes: ['f32'], returnType: 'f32' },
+  hydraPermute: { parameterTypes: ['vec4f'], returnType: 'vec4f' },
+  hydraPermuteScalar: { parameterTypes: ['f32'], returnType: 'f32' },
+  hydraTaylorInvSqrt: { parameterTypes: ['vec4f'], returnType: 'vec4f' },
+  hydraNoise: { parameterTypes: ['vec3f'], returnType: 'f32' },
+  hydraGrad4: { parameterTypes: ['f32', 'vec4f'], returnType: 'vec4f' },
+  hydraNoise4: { parameterTypes: ['vec4f'], returnType: 'f32' },
+  hydraSampleTextureWrapped: {
+    parameterTypes: ['texture_2d<f32>', 'vec2f'],
+    returnType: 'vec4f'
+  },
+  hydraSampleTexture: {
+    parameterTypes: ['texture_2d<f32>', 'vec2f'],
+    returnType: 'vec4f'
+  }
+}
+
+const UTILITY_ORDER: UtilityName[] = [
   'hydraMod',
   'hydraLuminance',
   'hydraRgbToHsv',
@@ -310,28 +312,26 @@ const UTILITY_ORDER = [
   'hydraGrad4',
   'hydraNoise4',
   'hydraSampleTextureWrapped',
-  'hydraSampleTextureClamped',
-  'hydraUvFromLinearCoord',
-  'hydraUvFromLinearIndex',
   'hydraSampleTexture'
 ]
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-const selectUtility = (utilityName: string, selected: Set<string>): void => {
+const selectUtility = (utilityName: UtilityName, selected: Set<UtilityName>): void => {
   if (selected.has(utilityName)) return
 
-  const utility = utilityWgsl[utilityName as keyof typeof utilityWgsl]
-  if (!utility) return
-
-  const dependencies = utility.dependencies ?? []
-  for (const dependencyName of dependencies) selectUtility(dependencyName, selected)
+  const utility = utilityShaders[utilityName]
+  for (const dependencyName of UTILITY_ORDER) {
+    if (dependencyName === utilityName) continue
+    const pattern = new RegExp(`\\b${escapeRegExp(dependencyName)}\\s*\\(`)
+    if (pattern.test(utility.source)) selectUtility(dependencyName, selected)
+  }
   selected.add(utilityName)
 }
 
-export const collectUtilityDeclarations = (wgslFunctions: Array<{ transform: { wgsl: string } }> = []): string => {
-  const functionBodies = wgslFunctions.map((transform) => transform.transform.wgsl).join('\n')
-  const selectedUtilities = new Set<string>()
+export const collectUtilityFunctions = (shaderFunctions: HydraShaderFunction[] = []): HydraShaderFunction[] => {
+  const functionBodies = shaderFunctions.map((shaderFunction) => shaderFunction.source).join('\n')
+  const selectedUtilities = new Set<UtilityName>()
 
   for (const utilityName of UTILITY_ORDER) {
     const pattern = new RegExp(`\\b${escapeRegExp(utilityName)}\\s*\\(`)
@@ -340,6 +340,10 @@ export const collectUtilityDeclarations = (wgslFunctions: Array<{ transform: { w
 
   return UTILITY_ORDER
     .filter((utilityName) => selectedUtilities.has(utilityName))
-    .map((utilityName) => utilityWgsl[utilityName as keyof typeof utilityWgsl].wgsl)
-    .join('\n')
+    .map((utilityName) => ({
+      name: utilityName,
+      parameterTypes: utilitySignatures[utilityName].parameterTypes,
+      returnType: utilitySignatures[utilityName].returnType,
+      source: utilityShaders[utilityName].source
+    }))
 }

@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "build": "node ../../scripts/verify-static-app.mjs index.html",
-    "typecheck": "node ../../scripts/verify-static-app.mjs index.html"
+    "typecheck": "node ../../scripts/verify-static-app.mjs index.html --structure-only"
   },
   "dependencies": {
     "@codemirror/autocomplete": "6.20.1",

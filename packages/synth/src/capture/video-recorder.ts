@@ -87,15 +87,21 @@ export class VideoRecorder {
     this.mp4File = createFile()
     this.trackId = null
 
-    this.encoder = new VideoEncoder({
-      output: (chunk: EncodedVideoChunk, metadata?: EncodedVideoChunkMetadata) =>
-        this.handleEncodedChunk(chunk, metadata),
-      error: (error: DOMException) => {
-        this.encoderError = error
-        this.recording = false
-        console.error('[VideoRecorder] encoder error:', error)
-      }
-    })
+    try {
+      this.encoder = new VideoEncoder({
+        output: (chunk: EncodedVideoChunk, metadata?: EncodedVideoChunkMetadata) =>
+          this.handleEncodedChunk(chunk, metadata),
+        error: (error: DOMException) => {
+          this.encoderError = error
+          this.recording = false
+          console.error('[VideoRecorder] encoder error:', error)
+        }
+      })
+    } catch (error) {
+      this.recording = false
+      this.mp4File = null
+      throw error
+    }
 
     const baseConfig: Omit<VideoEncoderConfig, 'codec'> = {
       width: this.width,
@@ -109,29 +115,27 @@ export class VideoRecorder {
     let configuredCodec: string | null = null
 
     for (const codec of codecCandidates) {
-      const configVariants: VideoEncoderConfig[] = [
-        { ...baseConfig, codec, avc: { format: 'avc' } }
-      ]
-
-      for (const config of configVariants) {
-        try {
-          const support = await VideoEncoder.isConfigSupported(config)
-          if (!support.supported) continue
-          this.encoder.configure(config)
-          configuredCodec = codec
-          break
-        } catch {
-          // Keep trying lower capability profiles and config variants.
-        }
+      const config: VideoEncoderConfig = { ...baseConfig, codec, avc: { format: 'avc' } }
+      try {
+        const support = await VideoEncoder.isConfigSupported(config)
+        if (!support.supported) continue
+        this.encoder.configure(config)
+        configuredCodec = codec
+        break
+      } catch {
+        // Keep trying lower capability profiles.
       }
-      if (configuredCodec) break
     }
 
     if (!configuredCodec) {
       this.recording = false
+      if (this.encoder.state !== 'closed') this.encoder.close()
+      this.encoder = null
+      this.mp4File = null
+      this.trackId = null
       throw new Error(
         '[VideoRecorder] no supported H.264 AVC WebCodecs configuration found for MP4 capture. ' +
-        'Use an installed Chrome/Edge browser with H.264 WebCodecs support, or use a frame/ffmpeg capture fallback.'
+        'Use a browser with H.264 WebCodecs support or capture an image sequence instead.'
       )
     }
   }
@@ -199,7 +203,7 @@ export class VideoRecorder {
       this.throwIfEncoderErrored()
 
       if (!this.mp4File) {
-        return new Blob([], { type: 'video/mp4' })
+        throw new Error('[VideoRecorder] MP4 muxer state is unavailable.')
       }
 
       if (this.sampleCount <= 0) {
@@ -229,9 +233,9 @@ export class VideoRecorder {
 
     if (this.trackId === null && metadata?.decoderConfig?.description) {
       const description = metadata.decoderConfig.description
-      const descriptionBytes = description instanceof ArrayBuffer
-        ? new Uint8Array(description)
-        : new Uint8Array(description.buffer, description.byteOffset, description.byteLength)
+      const descriptionBytes = ArrayBuffer.isView(description)
+        ? new Uint8Array(description.buffer, description.byteOffset, description.byteLength)
+        : new Uint8Array(description)
       const avcDecoderConfigRecord = descriptionBytes.slice().buffer
 
       this.trackId = this.mp4File.addTrack({

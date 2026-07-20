@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { HydraTransformRegistry, type HydraCompiledPass, type HydraOutputAdapter } from '../../src/core/index.ts'
+import { HydraTransformRegistry } from '../../src/core/transforms/registry.ts'
+import type { HydraCompiledPass, HydraOutputAdapter } from '../../src/core/types.ts'
 
 class CaptureOutput implements HydraOutputAdapter {
   passes: HydraCompiledPass[] = []
@@ -183,7 +184,10 @@ describe('noiseLoop regression coverage', () => {
     const output = new CaptureOutput()
     const registry = new HydraTransformRegistry({ defaultOutput: output })
     registry.generators.noiseLoop(6.0, 0.2, 0.8).out()
-    const wgsl = output.passes[0]?.wgsl ?? ''
+    const pass = output.passes[0]
+    const wgsl = pass
+      ? [...pass.program.functions.map((shaderFunction) => shaderFunction.source), pass.program.entryBody].join('\n')
+      : ''
 
     expect(wgsl).toContain('let rankInput = x0 + vec4f(1.0e-7, 2.0e-7, 3.0e-7, 4.0e-7);')
 

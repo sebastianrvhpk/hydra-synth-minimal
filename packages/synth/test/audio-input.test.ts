@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { HydraAudioAnalyzer } from '../src/runtime/audio-input.ts'
 
 describe('HydraAudioAnalyzer', () => {
-  it('keeps legacy a/a0 band helpers while exposing modern audio metrics', () => {
+  it('exposes Hydra a/a0 band helpers and audio metrics', () => {
     const audio = new HydraAudioAnalyzer({
       numBins: 4,
       cutoff: 2,

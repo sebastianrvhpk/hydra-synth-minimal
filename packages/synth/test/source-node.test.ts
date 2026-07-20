@@ -43,7 +43,7 @@ describe('HydraSourceNode media sources', () => {
     const revokeObjectURL = vi.fn()
     vi.stubGlobal('URL', { createObjectURL, revokeObjectURL })
 
-    const source = new HydraSourceNode({ renderer: null, pb: null, label: 's-test' })
+    const source = new HydraSourceNode({ renderer: null, label: 's-test' })
     const file = new Blob(['video'], { type: 'video/mp4' })
 
     source.initVideo(file)
@@ -83,7 +83,7 @@ describe('HydraSourceNode media sources', () => {
       }
     })
 
-    const source = new HydraSourceNode({ renderer: null, pb: null, label: 's-screen' })
+    const source = new HydraSourceNode({ renderer: null, label: 's-screen' })
     const ready = source.initScreen({ video: true, audio: false }, { flipY: true })
     await Promise.resolve()
     videos[0]?.dispatchEvent(new Event('loadedmetadata'))
@@ -98,5 +98,38 @@ describe('HydraSourceNode media sources', () => {
     expect(stop).toHaveBeenCalled()
     expect(videos[0]?.pause).toHaveBeenCalled()
     expect(videos[0]?.srcObject).toBeNull()
+  })
+
+  it('discards an older async media request when a newer source is selected', async () => {
+    const videos: FakeVideoElement[] = []
+    vi.stubGlobal('document', {
+      createElement: (tagName: string) => {
+        if (tagName === 'video') {
+          const video = new FakeVideoElement()
+          videos.push(video)
+          return video
+        }
+        if (tagName === 'img') return new FakeImageElement()
+        throw new Error(`Unexpected element: ${tagName}`)
+      }
+    })
+
+    const stop = vi.fn()
+    const stream = { getTracks: () => [{ stop }] } as unknown as MediaStream
+    let resolveDisplayMedia: ((stream: MediaStream) => void) | null = null
+    vi.stubGlobal('navigator', {
+      mediaDevices: {
+        getDisplayMedia: () => new Promise<MediaStream>((resolve) => { resolveDisplayMedia = resolve })
+      }
+    })
+
+    const source = new HydraSourceNode({ renderer: null, label: 's-race' })
+    const olderRequest = source.initScreen()
+    source.initImage('newer-image.png')
+    resolveDisplayMedia?.(stream)
+    await olderRequest
+
+    expect(stop).toHaveBeenCalledOnce()
+    expect(videos).toHaveLength(0)
   })
 })

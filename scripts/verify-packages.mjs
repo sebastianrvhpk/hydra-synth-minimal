@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { pathToFileURL } from 'node:url'
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const packagesDir = path.join(rootDir, 'packages')
@@ -81,6 +82,28 @@ for (const packageDir of packageDirs) {
   const typeTarget = typeof exportEntry === 'object' ? exportEntry?.types : undefined
   if (importTarget !== './dist/index.js') addFailure(packageName, 'exports["."].import must be ./dist/index.js')
   if (typeTarget !== './dist/index.d.ts') addFailure(packageName, 'exports["."].types must be ./dist/index.d.ts')
+
+  for (const [subpath, declaration] of Object.entries(packageJson.exports ?? {})) {
+    const exportedImport = typeof declaration === 'string' ? declaration : declaration?.import
+    const exportedTypes = typeof declaration === 'object' ? declaration?.types : undefined
+    if (typeof exportedImport !== 'string') {
+      addFailure(packageName, `missing import target for export ${subpath}`)
+    } else {
+      const modulePath = path.resolve(packageDir, exportedImport)
+      if (!existsSync(modulePath)) {
+        addFailure(packageName, `missing runtime target for export ${subpath}: ${exportedImport}`)
+      } else {
+        try {
+          await import(`${pathToFileURL(modulePath).href}?verify=${Date.now()}`)
+        } catch (error) {
+          addFailure(packageName, `runtime target for export ${subpath} cannot be imported: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      }
+    }
+    if (typeof exportedTypes !== 'string' || !existsSync(path.resolve(packageDir, exportedTypes))) {
+      addFailure(packageName, `missing declaration target for export ${subpath}`)
+    }
+  }
 
   const packageFiles = walk(packageDir).map((filePath) => normalizePath(path.relative(packageDir, filePath)))
   for (const relativePath of packageFiles) {

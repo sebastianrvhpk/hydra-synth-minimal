@@ -109,6 +109,10 @@ describe('captureHydraFrameSequence', () => {
     let stopCalls = 0
     let startCalls = 0
     let queueWaitCalls = 0
+    const presentationState = { mode: 'all', output: {} }
+    const setPresentationState = vi.fn()
+    const render = vi.fn()
+    const captureOutput = {}
 
     const runtime = {
       host: {
@@ -116,12 +120,8 @@ describe('captureHydraFrameSequence', () => {
         isRunning: true
       },
       renderer: {
-        device: {
-          queue: {
-            onSubmittedWorkDone: async () => {
-              queueWaitCalls += 1
-            }
-          }
+        waitForSubmittedWork: async () => {
+          queueWaitCalls += 1
         }
       },
       synth: {
@@ -142,18 +142,20 @@ describe('captureHydraFrameSequence', () => {
         canvas.width = width
         canvas.height = height
       },
-      render: () => { }
+      getPresentationState: () => presentationState,
+      setPresentationState,
+      render
     }
 
     await captureHydraFrameSequence({
       runtime: runtime as never,
+      output: captureOutput as never,
       fps: 12,
       totalFrames: 2,
       width: 641,
       height: 361,
       waitForRAF: false,
       downloadFallback: false,
-      gpuReadback: false,
       onFrameBlob: () => { }
     })
 
@@ -163,11 +165,14 @@ describe('captureHydraFrameSequence', () => {
     expect(queueWaitCalls).toBe(2)
     expect(setResolutionCalls).toEqual([[640, 360], [320, 240]])
     expect(runtime.synth.fps).toBe(120)
+    expect(render).toHaveBeenCalledWith(captureOutput)
+    expect(setPresentationState).toHaveBeenCalledWith(presentationState)
   })
 
   it('does not resume the runtime loop when it was not already running', async () => {
     const canvas = createMockCanvas()
     let startCalls = 0
+    const presentationState = { mode: 'single', output: {} }
 
     const runtime = {
       host: {
@@ -175,7 +180,7 @@ describe('captureHydraFrameSequence', () => {
         isRunning: false
       },
       renderer: {
-        device: null
+        waitForSubmittedWork: async () => {}
       },
       synth: {},
       init: async () => { },
@@ -188,6 +193,8 @@ describe('captureHydraFrameSequence', () => {
         canvas.width = width
         canvas.height = height
       },
+      getPresentationState: () => presentationState,
+      setPresentationState: vi.fn(),
       render: () => { }
     }
 
@@ -197,77 +204,10 @@ describe('captureHydraFrameSequence', () => {
       totalFrames: 1,
       waitForRAF: false,
       downloadFallback: false,
-      gpuReadback: false,
       onFrameBlob: () => { }
     })
 
     expect(startCalls).toBe(0)
   })
 
-  it('uses GPU readback path when enabled', async () => {
-    const canvas = createMockCanvas()
-    const readbackData: any[] = []
-
-    // Mock WebGPU device
-    const mockBuffer = {
-      mapAsync: vi.fn(),
-      getMappedRange: vi.fn(() => new ArrayBuffer(1024)),
-      unmap: vi.fn(),
-      destroy: vi.fn()
-    }
-
-    const mockEncoder = {
-      copyTextureToBuffer: vi.fn(),
-      finish: vi.fn()
-    }
-
-    const mockDevice = {
-      createBuffer: vi.fn(() => mockBuffer),
-      createCommandEncoder: vi.fn(() => mockEncoder),
-      queue: {
-        submit: vi.fn(),
-        onSubmittedWorkDone: vi.fn()
-      }
-    }
-
-    const runtime = {
-      host: {
-        canvas,
-        isRunning: true
-      },
-      renderer: {
-        device: mockDevice
-      },
-      synth: { fps: 60 },
-      outputs: [
-        {
-          getCurrent: () => ({ label: 'mock-texture' })
-        }
-      ],
-      init: async () => { },
-      start: async () => { },
-      stop: () => { },
-      tick: () => { },
-      setResolution: () => { },
-      render: () => { }
-    }
-
-    await captureHydraFrameSequence({
-      runtime: runtime as any,
-      fps: 30,
-      totalFrames: 2,
-      gpuReadback: true,
-      waitForRAF: false,
-      downloadFallback: false,
-      onFrameBuffer: (info) => {
-        readbackData.push(info)
-      }
-    })
-
-    expect(mockDevice.createBuffer).toHaveBeenCalledTimes(2) // Double buffered
-    expect(mockEncoder.copyTextureToBuffer).toHaveBeenCalledTimes(2) // 2 frames
-    expect(readbackData.length).toBe(2)
-    expect(readbackData[0].frame).toBe(0)
-    expect(readbackData[1].frame).toBe(1)
-  })
 })

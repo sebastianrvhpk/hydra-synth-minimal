@@ -1,6 +1,6 @@
 import type { HydraTransformCall } from '../types.js'
 
-const STANDALONE_PASS_TYPES = new Set(['renderpass'])
+const STANDALONE_PASS_TYPES = new Set(['passBoundary', 'renderpass'])
 
 type InternalHydraTransformCall = HydraTransformCall & {
   __hydraInjectedPrev?: boolean
@@ -12,7 +12,7 @@ interface InternalPassTextureProvider {
 }
 
 const isGraphNodeLike = (value: unknown): value is { transforms: HydraTransformCall[] } => (
-  Boolean(value) &&
+  value !== null &&
   typeof value === 'object' &&
   'transforms' in value &&
   Array.isArray((value as { transforms?: unknown }).transforms)
@@ -42,35 +42,31 @@ const cloneTransformWithArgs = (
   userArgs
 })
 
-const createPrevTransform = (anchor: HydraTransformCall): HydraTransformCall | null => {
+const createPrevTransform = (anchor: HydraTransformCall): HydraTransformCall => {
   const prevGenerator = anchor.synth.generators.prev
-  if (typeof prevGenerator !== 'function') return null
+  if (typeof prevGenerator !== 'function') throw new Error('Hydra internal invariant failed: prev() is not registered.')
 
-  try {
-    const prevNode = prevGenerator()
-    if (!prevNode || !Array.isArray(prevNode.transforms) || prevNode.transforms.length === 0) return null
-    const transform = prevNode.transforms[0] as InternalHydraTransformCall
-    transform.__hydraInjectedPrev = true
-    return transform
-  } catch {
-    return null
+  const prevNode = prevGenerator()
+  if (!prevNode || !Array.isArray(prevNode.transforms) || prevNode.transforms.length === 0) {
+    throw new Error('Hydra internal invariant failed: prev() did not produce a transform.')
   }
+  const transform = prevNode.transforms[0] as InternalHydraTransformCall
+  transform.__hydraInjectedPrev = true
+  return transform
 }
 
 const createInternalSrcTransform = (
   anchor: HydraTransformCall,
   internalPassIndex: number
-): HydraTransformCall | null => {
+): HydraTransformCall => {
   const srcGenerator = anchor.synth.generators.src
-  if (typeof srcGenerator !== 'function') return null
+  if (typeof srcGenerator !== 'function') throw new Error('Hydra internal invariant failed: src() is not registered.')
 
-  try {
-    const srcNode = srcGenerator(createInternalPassTextureProvider(internalPassIndex))
-    if (!srcNode || !Array.isArray(srcNode.transforms) || srcNode.transforms.length === 0) return null
-    return srcNode.transforms[0]
-  } catch {
-    return null
+  const srcNode = srcGenerator(createInternalPassTextureProvider(internalPassIndex))
+  if (!srcNode || !Array.isArray(srcNode.transforms) || srcNode.transforms.length === 0) {
+    throw new Error('Hydra internal invariant failed: src() did not produce a transform.')
   }
+  return srcNode.transforms[0] as HydraTransformCall
 }
 
 const splitLinearPasses = (transforms: HydraTransformCall[]): HydraTransformCall[][] => {
@@ -86,18 +82,20 @@ const splitLinearPasses = (transforms: HydraTransformCall[]): HydraTransformCall
 
   for (let transformIndex = 0; transformIndex < transforms.length; transformIndex += 1) {
     const transform = transforms[transformIndex]
+    if (!transform) continue
     if (STANDALONE_PASS_TYPES.has(transform.transform.type)) {
       pushCurrentPass()
-      const isIdentityRenderpass =
-        transform.transform.type === 'renderpass' && transform.name === 'renderpass'
-      if (!isIdentityRenderpass) {
+      const isPassBoundary = transform.transform.type === 'passBoundary'
+      if (!isPassBoundary) {
         const fusedPass = [transform]
         while (
           transformIndex + 1 < transforms.length &&
-          isSafePostRenderpassFusion(transforms[transformIndex + 1])
+          Boolean(transforms[transformIndex + 1]) &&
+          isSafePostRenderpassFusion(transforms[transformIndex + 1] as HydraTransformCall)
         ) {
           transformIndex += 1
-          fusedPass.push(transforms[transformIndex])
+          const nextTransform = transforms[transformIndex]
+          if (nextTransform) fusedPass.push(nextTransform)
         }
         passes.push(fusedPass)
       }
@@ -106,8 +104,7 @@ const splitLinearPasses = (transforms: HydraTransformCall[]): HydraTransformCall
     }
 
     if (currentPass.length === 0 && shouldInjectPrev && transform.transform.type !== 'src') {
-      const prevTransform = createPrevTransform(transform)
-      if (prevTransform) currentPass.push(prevTransform)
+      currentPass.push(createPrevTransform(transform))
     }
 
     currentPass.push(transform)
@@ -155,8 +152,7 @@ const stageNestedRenderpassArgs = (
       previousPassIndex !== null &&
       firstTransform?.__hydraInjectedPrev
     ) {
-      const replacement = createInternalSrcTransform(firstTransform, previousPassIndex)
-      if (replacement) processedPass[0] = replacement
+      processedPass[0] = createInternalSrcTransform(firstTransform, previousPassIndex)
     }
 
     stagedPasses.push(processedPass)

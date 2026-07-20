@@ -7,6 +7,8 @@ interface HydraSequenceMetadata {
   _ease?: ((value: number) => number) | string
 }
 
+interface HydraSequenceArray extends Array<number>, HydraSequenceMetadata {}
+
 type HydraSequenceSource = ArrayLike<number> & HydraSequenceMetadata
 interface HydraSequenceFrameCacheEntry {
   lastTime: number
@@ -57,6 +59,8 @@ const EASING_FUNCTIONS: Record<string, (value: number) => number> = {
   sin: (value) => (1 + Math.sin(Math.PI * value - Math.PI / 2)) * 0.5
 }
 
+let sequenceMethodsInstalled = false
+
 const modulo = (value: number, divisor: number): number => {
   if (!Number.isFinite(divisor) || divisor === 0) return 0
   return (value % divisor + divisor) % divisor
@@ -84,8 +88,8 @@ const readSequenceValue = (
 
 const resolveEase = (value: HydraSequenceMetadata['_ease']): ((value: number) => number) => {
   if (typeof value === 'function') return value
-  if (typeof value === 'string' && value in EASING_FUNCTIONS) return EASING_FUNCTIONS[value]
-  return EASING_FUNCTIONS.linear
+  if (typeof value === 'string' && value in EASING_FUNCTIONS) return EASING_FUNCTIONS[value] ?? ((input) => input)
+  return EASING_FUNCTIONS.linear ?? ((input) => input)
 }
 
 const sequenceFrameCache = new WeakMap<object, HydraSequenceFrameCacheEntry>()
@@ -179,4 +183,80 @@ export const createArraySequenceUniformEvaluator = (
     const nextValue = readSequenceValue(sequence, cacheEntry.nextIndex, fallbackNumber)
     return currentValue + (nextValue - currentValue) * cacheEntry.amount
   }
+}
+
+const defineArrayMethod = (name: string, value: (...args: any[]) => unknown): void => {
+  if (Object.prototype.hasOwnProperty.call(Array.prototype, name)) return
+  Object.defineProperty(Array.prototype, name, {
+    configurable: true,
+    enumerable: false,
+    writable: true,
+    value
+  })
+}
+
+const copySequenceMetadata = (from: HydraSequenceArray, to: HydraSequenceArray): void => {
+  if (typeof from._speed === 'number') to._speed = from._speed
+  if (typeof from._smooth === 'number') to._smooth = from._smooth
+  if (typeof from._offset === 'number') to._offset = from._offset
+  if (typeof from._ease === 'function' || typeof from._ease === 'string') to._ease = from._ease
+}
+
+export const installArraySequenceMethods = (): void => {
+  if (sequenceMethodsInstalled) return
+  sequenceMethodsInstalled = true
+
+  defineArrayMethod('fast', function (this: HydraSequenceArray, speed = 1): HydraSequenceArray {
+    this._speed = toFiniteNumber(speed, 1)
+    return this
+  })
+
+  defineArrayMethod('smooth', function (this: HydraSequenceArray, smooth = 1): HydraSequenceArray {
+    this._smooth = toFiniteNumber(smooth, 1)
+    return this
+  })
+
+  defineArrayMethod('ease', function (
+    this: HydraSequenceArray,
+    ease: string | ((value: number) => number) = 'linear'
+  ): HydraSequenceArray {
+    if (typeof ease === 'function') {
+      this._smooth = 1
+      this._ease = ease
+      return this
+    }
+
+    if (EASING_FUNCTIONS[ease]) {
+      this._smooth = 1
+      this._ease = ease
+    }
+    return this
+  })
+
+  defineArrayMethod('offset', function (this: HydraSequenceArray, offset = 0.5): HydraSequenceArray {
+    this._offset = modulo(toFiniteNumber(offset, 0.5), 1)
+    return this
+  })
+
+  defineArrayMethod('fit', function (
+    this: HydraSequenceArray,
+    low = 0,
+    high = 1
+  ): HydraSequenceArray {
+    if (this.length === 0) return this
+
+    const values = this.map((entry) => toFiniteNumber(entry, 0))
+    const min = Math.min(...values)
+    const max = Math.max(...values)
+    const range = max - min
+    const targetLow = toFiniteNumber(low, 0)
+    const targetHigh = toFiniteNumber(high, 1)
+    const targetRange = targetHigh - targetLow
+    const fitted = values.map((value) => (
+      range === 0 ? targetLow : ((value - min) * targetRange) / range + targetLow
+    )) as HydraSequenceArray
+
+    copySequenceMetadata(this, fitted)
+    return fitted
+  })
 }

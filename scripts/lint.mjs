@@ -32,22 +32,25 @@ for (const pkgDir of packageDirs) {
 const forbiddenPatterns = [
   {
     pattern: /\bmakeGlobal\b/u,
-    allow: new Set([
-      'packages/synth/README.md',
-      'packages/synth/src/index.d.ts',
-      'packages/synth/src/legacy-hydra.ts',
-      'packages/synth/test/legacy-hydra.test.ts'
-    ])
+    allow: new Set()
   },
   {
     pattern: /\bloadScript\s*\(/u,
-    allow: new Set([
-      'packages/synth/src/index.d.ts',
-      'packages/synth/src/legacy-hydra.ts'
-    ])
+    allow: new Set()
+  },
+  {
+    pattern: /~unstable/u,
+    allow: new Set()
   }
 ]
 const skippedDirectories = new Set(['node_modules', 'dist', '.npm-cache', '.vite', '.vite-temp'])
+const typeGpuBackendPath = 'packages/synth/src/webgpu/renderer.ts'
+const nativeWebGpuPatterns = [
+  /(?:\bdevice|this\.device)\??\.create(?:RenderPipelineAsync|ComputePipelineAsync|RenderPipeline|ComputePipeline|ShaderModule|PipelineLayout|BindGroupLayout|BindGroup|CommandEncoder|QuerySet)\s*\(/u,
+  /(?:\bdevice|this\.device)\??\.queue\.(?:submit|writeBuffer|writeTexture|copyExternalImageToTexture|onSubmittedWorkDone)\s*\(/u,
+  /\bencoder\.(?:beginRenderPass|beginComputePass|copyTextureToTexture|copyTextureToBuffer|copyBufferToBuffer|resolveQuerySet)\s*\(/u,
+  /\bbuffer\.mapAsync\s*\(/u
+]
 
 const scan = (dir) => {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -66,6 +69,13 @@ const scan = (dir) => {
       }
       if (relative.startsWith('packages/synth/src/core/') && /\beval\s*\(/u.test(content)) {
         fail(`Synth core cannot include eval() usage: ${relative}`)
+      }
+      if (relative.startsWith('packages/synth/src/') && relative !== typeGpuBackendPath) {
+        for (const pattern of nativeWebGpuPatterns) {
+          if (pattern.test(content)) {
+            fail(`Native WebGPU operation must stay inside the TypeGPU backend (${typeGpuBackendPath}): ${relative}`)
+          }
+        }
       }
     }
   }

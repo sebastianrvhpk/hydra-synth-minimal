@@ -8,7 +8,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'scale', default: 10 },
       { type: 'float', name: 'offset', default: 0.1 }
     ],
-    wgsl: `
+    shader: `
   return vec4f(vec3f(hydraNoise(vec3f(_st * scale, offset * globals.time))), 1.0);
 `
   },
@@ -20,7 +20,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'speed', default: 0.1 },
       { type: 'float', name: 'radius', default: 1.0 }
     ],
-    wgsl: `
+    shader: `
   let loopRadius = max(radius, 0.0001);
   let phase = globals.time * speed * 6.28318530718;
   let p = vec4f(_st * scale, cos(phase) * loopRadius, sin(phase) * loopRadius);
@@ -38,7 +38,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'lacunarity', default: 2.0 },
       { type: 'float', name: 'gain', default: 0.5 }
     ],
-    wgsl: `
+    shader: `
   let octaveCount = clamp(i32(round(max(octaves, 1.0))), 1, 8);
   var frequency = max(scale, 0.0001);
   var amplitude = 0.5;
@@ -70,7 +70,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'lacunarity', default: 2.0 },
       { type: 'float', name: 'gain', default: 0.55 }
     ],
-    wgsl: `
+    shader: `
   let octaveCount = clamp(i32(round(max(octaves, 1.0))), 1, 8);
   var frequency = max(scale, 0.0001);
   var amplitude = 0.5;
@@ -103,7 +103,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'lacunarity', default: 2.0 },
       { type: 'float', name: 'gain', default: 0.5 }
     ],
-    wgsl: `
+    shader: `
   let octaveCount = clamp(i32(round(max(octaves, 1.0))), 1, 8);
   var frequency = max(scale, 0.0001);
   var amplitude = 0.5;
@@ -133,7 +133,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'speed', default: 0.3 },
       { type: 'float', name: 'blending', default: 0.3 }
     ],
-    wgsl: `
+    shader: `
   var color = vec3f(0.0);
   let stScaled = _st * scale;
   let i_st = floor(stScaled);
@@ -172,7 +172,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'sync', default: 0.1 },
       { type: 'float', name: 'offset', default: 0 }
     ],
-    wgsl: `
+    shader: `
   let safeFrequency = select(frequency, 0.0001, abs(frequency) < 0.0001);
   let phase = globals.time * sync;
   let r = sin((_st.x - offset / safeFrequency + phase) * safeFrequency) * 0.5 + 0.5;
@@ -189,7 +189,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'radius', default: 0.3 },
       { type: 'float', name: 'smoothing', default: 0.01 }
     ],
-    wgsl: `
+    shader: `
   let st = _st * 2.0 - 1.0;
   let a = atan2(st.x, st.y) + 3.1416;
   let safeSides = max(abs(sides), 1.0);
@@ -205,7 +205,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'speed', default: 0 }
     ],
-    wgsl: `
+    shader: `
   return vec4f(_st, sin(globals.time * speed), 1.0);
 `
   },
@@ -215,7 +215,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'sampler2D', name: 'tex', default: NaN }
     ],
-    wgsl: `
+    shader: `
   return hydraSampleTexture(tex, fract(_st));
 `
   },
@@ -228,7 +228,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'b', default: 0 },
       { type: 'float', name: 'a', default: 1 }
     ],
-    wgsl: `
+    shader: `
   return vec4f(r, g, b, a);
 `
   },
@@ -239,7 +239,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'angle', default: 10 },
       { type: 'float', name: 'speed', default: 0 }
     ],
-    wgsl: `
+    shader: `
   let xy = _st - vec2f(0.5);
   let ang = angle + speed * globals.time;
   let cs = cos(ang);
@@ -258,7 +258,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'offsetX', default: 0.5 },
       { type: 'float', name: 'offsetY', default: 0.5 }
     ],
-    wgsl: `
+    shader: `
   var xy = _st - vec2f(offsetX, offsetY);
   let safeScale = vec2f(
     max(abs(amount * xMult), 0.0001),
@@ -276,7 +276,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'pixelX', default: 20 },
       { type: 'float', name: 'pixelY', default: 20 }
     ],
-    wgsl: `
+    shader: `
   let xy = vec2f(
     max(abs(pixelX), 1.0),
     max(abs(pixelY), 1.0)
@@ -291,7 +291,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'bins', default: 3 },
       { type: 'float', name: 'gamma', default: 0.6 }
     ],
-    wgsl: `
+    shader: `
   let safeGamma = max(abs(gamma), 0.0001);
   let safeBins = max(abs(bins), 1.0);
   let signalSign = sign(_c0.xyz);
@@ -310,7 +310,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'b', default: 0 },
       { type: 'float', name: 'a', default: 0 }
     ],
-    wgsl: `
+    shader: `
   var c2 = _c0;
   c2.x += fract(r);
   c2.y += fract(g);
@@ -328,7 +328,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'offsetX', default: 0 },
       { type: 'float', name: 'offsetY', default: 0 }
     ],
-    wgsl: `
+    shader: `
   var st = _st * vec2f(repeatX, repeatY);
   st.x += step(1.0, hydraMod(st.y, 2.0)) * offsetX;
   st.y += step(1.0, hydraMod(st.x, 2.0)) * offsetY;
@@ -344,7 +344,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'offsetX', default: 0.5 },
       { type: 'float', name: 'offsetY', default: 0.5 }
     ],
-    wgsl: `
+    shader: `
   var st = _st * vec2f(repeatX, repeatY);
   st.x += step(1.0, hydraMod(st.y, 2.0)) * offsetX + _c0.x * offsetX;
   st.y += step(1.0, hydraMod(st.x, 2.0)) * offsetY + _c0.y * offsetY;
@@ -358,7 +358,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'reps', default: 3 },
       { type: 'float', name: 'offset', default: 0 }
     ],
-    wgsl: `
+    shader: `
   var st = _st * vec2f(reps, 1.0);
   st.y += step(1.0, hydraMod(st.x, 2.0)) * offset;
   return fract(st);
@@ -371,7 +371,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'reps', default: 3 },
       { type: 'float', name: 'offset', default: 0.5 }
     ],
-    wgsl: `
+    shader: `
   var st = _st * vec2f(reps, 1.0);
   st.y += step(1.0, hydraMod(st.x, 2.0)) * offset + _c0.x * offset;
   return fract(st);
@@ -384,7 +384,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'reps', default: 3 },
       { type: 'float', name: 'offset', default: 0 }
     ],
-    wgsl: `
+    shader: `
   var st = _st * vec2f(1.0, reps);
   st.x += step(1.0, hydraMod(st.y, 2.0)) * offset;
   return fract(st);
@@ -397,7 +397,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'reps', default: 3 },
       { type: 'float', name: 'offset', default: 0.5 }
     ],
-    wgsl: `
+    shader: `
   var st = _st * vec2f(1.0, reps);
   st.x += step(1.0, hydraMod(st.y, 2.0)) * offset + _c0.x * offset;
   return fract(st);
@@ -409,7 +409,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'nSides', default: 4 }
     ],
-    wgsl: `
+    shader: `
   var st = _st;
   st -= vec2f(0.5);
   let r = length(st);
@@ -428,7 +428,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'nSides', default: 4 }
     ],
-    wgsl: `
+    shader: `
   let st = _st - vec2f(0.5);
   let r = length(st);
   var a = atan2(st.y, st.x);
@@ -449,7 +449,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'speedX', default: 0 },
       { type: 'float', name: 'speedY', default: 0 }
     ],
-    wgsl: `
+    shader: `
   var st = _st;
   st.x += scrollX + globals.time * speedX;
   st.y += scrollY + globals.time * speedY;
@@ -463,7 +463,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'scrollX', default: 0.5 },
       { type: 'float', name: 'speed', default: 0 }
     ],
-    wgsl: `
+    shader: `
   var st = _st;
   st.x += scrollX + globals.time * speed;
   return fract(st);
@@ -476,7 +476,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'scrollY', default: 0.5 },
       { type: 'float', name: 'speed', default: 0 }
     ],
-    wgsl: `
+    shader: `
   var st = _st;
   st.y += scrollY + globals.time * speed;
   return fract(st);
@@ -490,7 +490,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'scrollX', default: 0.5 },
       { type: 'float', name: 'speed', default: 0 }
     ],
-    wgsl: `
+    shader: `
   var st = _st;
   st.x += _c0.x * scrollX + globals.time * speed;
   return fract(st);
@@ -504,7 +504,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'scrollY', default: 0.5 },
       { type: 'float', name: 'speed', default: 0 }
     ],
-    wgsl: `
+    shader: `
   var st = _st;
   st.y += _c0.x * scrollY + globals.time * speed;
   return fract(st);
@@ -516,7 +516,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'amount', default: 1 }
     ],
-    wgsl: `
+    shader: `
   return (_c0 + _c1) * amount + _c0 * (1.0 - amount);
 `
   },
@@ -526,7 +526,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'amount', default: 1 }
     ],
-    wgsl: `
+    shader: `
   return (_c0 - _c1) * amount + _c0 * (1.0 - amount);
 `
   },
@@ -534,7 +534,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     name: 'layer',
     type: 'combine',
     inputs: [],
-    wgsl: `
+    shader: `
   return vec4f(mix(_c0.xyz, _c1.xyz, _c1.w), clamp(_c0.w + _c1.w, 0.0, 1.0));
 `
   },
@@ -544,7 +544,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'amount', default: 0.5 }
     ],
-    wgsl: `
+    shader: `
   return _c0 * (1.0 - amount) + _c1 * amount;
 `
   },
@@ -554,7 +554,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'amount', default: 1.0 }
     ],
-    wgsl: `
+    shader: `
   let blended = vec3f(1.0) - (vec3f(1.0) - _c0.xyz) * (vec3f(1.0) - _c1.xyz);
   let mixed = mix(_c0.xyz, blended, vec3f(clamp(amount, 0.0, 1.0)));
   return vec4f(mixed, max(_c0.w, _c1.w));
@@ -566,7 +566,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'amount', default: 1.0 }
     ],
-    wgsl: `
+    shader: `
   let low = 2.0 * _c0.xyz * _c1.xyz;
   let high = vec3f(1.0) - 2.0 * (vec3f(1.0) - _c0.xyz) * (vec3f(1.0) - _c1.xyz);
   let mask = step(vec3f(0.5), _c0.xyz);
@@ -581,7 +581,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'amount', default: 1.0 }
     ],
-    wgsl: `
+    shader: `
   let blended = (vec3f(1.0) - 2.0 * _c1.xyz) * (_c0.xyz * _c0.xyz) + 2.0 * _c1.xyz * _c0.xyz;
   let mixed = mix(_c0.xyz, blended, vec3f(clamp(amount, 0.0, 1.0)));
   return vec4f(clamp(mixed, vec3f(0.0), vec3f(1.0)), max(_c0.w, _c1.w));
@@ -593,7 +593,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'amount', default: 1.0 }
     ],
-    wgsl: `
+    shader: `
   let low = 2.0 * _c0.xyz * _c1.xyz;
   let high = vec3f(1.0) - 2.0 * (vec3f(1.0) - _c0.xyz) * (vec3f(1.0) - _c1.xyz);
   let mask = step(vec3f(0.5), _c1.xyz);
@@ -608,7 +608,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'amount', default: 1.0 }
     ],
-    wgsl: `
+    shader: `
   let denom = max(vec3f(0.0001), vec3f(1.0) - _c1.xyz);
   let blended = clamp(_c0.xyz / denom, vec3f(0.0), vec3f(1.0));
   let mixed = mix(_c0.xyz, blended, vec3f(clamp(amount, 0.0, 1.0)));
@@ -621,7 +621,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'amount', default: 1.0 }
     ],
-    wgsl: `
+    shader: `
   let denom = max(vec3f(0.0001), _c1.xyz);
   let blended = vec3f(1.0) - clamp((vec3f(1.0) - _c0.xyz) / denom, vec3f(0.0), vec3f(1.0));
   let mixed = mix(_c0.xyz, blended, vec3f(clamp(amount, 0.0, 1.0)));
@@ -634,7 +634,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'amount', default: 0.8 }
     ],
-    wgsl: `
+    shader: `
   let mixAmount = max(amount, 0.0);
   return vec4f(_c1.xyz + _c0.xyz * mixAmount, _c1.w);
 `
@@ -645,7 +645,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'amount', default: 1 }
     ],
-    wgsl: `
+    shader: `
   return _c0 * (1.0 - amount) + (_c0 * _c1) * amount;
 `
   },
@@ -653,7 +653,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     name: 'diff',
     type: 'combine',
     inputs: [],
-    wgsl: `
+    shader: `
   return vec4f(abs(_c0.xyz - _c1.xyz), max(_c0.w, _c1.w));
 `
   },
@@ -663,7 +663,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'amount', default: 0.1 }
     ],
-    wgsl: `
+    shader: `
   return _st + _c0.xy * amount;
 `
   },
@@ -676,7 +676,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'multiple', default: 1 },
       { type: 'float', name: 'offset', default: 1 }
     ],
-    wgsl: `
+    shader: `
   var xy = _st - vec2f(0.5);
   let safeScale = vec2f(
     max(abs(offset + multiple * _c0.x), 0.0001),
@@ -694,7 +694,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'multiple', default: 10 },
       { type: 'float', name: 'offset', default: 3 }
     ],
-    wgsl: `
+    shader: `
   let xy = vec2f(
     max(abs(offset + _c0.x * multiple), 1.0),
     max(abs(offset + _c0.y * multiple), 1.0)
@@ -710,7 +710,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'multiple', default: 1 },
       { type: 'float', name: 'offset', default: 0 }
     ],
-    wgsl: `
+    shader: `
   let xy = _st - vec2f(0.5);
   let angle = offset + _c0.x * multiple;
   let cs = cos(angle);
@@ -726,7 +726,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'amount', default: 1 }
     ],
-    wgsl: `
+    shader: `
   let resolution = vec2f(globals.width, globals.height);
   let safeResolution = max(resolution, vec2f(1.0));
   return _st + (vec2f(_c0.y - _c0.x, _c0.z - _c0.y) * amount * (1.0 / safeResolution));
@@ -739,7 +739,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'amount', default: 1 }
     ],
-    wgsl: `
+    shader: `
   return vec4f((vec3f(1.0) - _c0.xyz) * amount + _c0.xyz * (1.0 - amount), _c0.w);
 `
   },
@@ -750,7 +750,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'amount', default: 1.6 }
     ],
-    wgsl: `
+    shader: `
   let c = (_c0 - vec4f(0.5)) * vec4f(amount) + vec4f(0.5);
   return vec4f(c.xyz, _c0.w);
 `
@@ -762,7 +762,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'amount', default: 0.4 }
     ],
-    wgsl: `
+    shader: `
   return vec4f(_c0.xyz + vec3f(amount), _c0.w);
 `
   },
@@ -770,7 +770,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     name: 'mask',
     type: 'combine',
     inputs: [],
-    wgsl: `
+    shader: `
   let a = hydraLuminance(_c1.xyz);
   return vec4f(_c0.xyz * a, a * _c0.w);
 `
@@ -782,7 +782,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'threshold', default: 0.5 },
       { type: 'float', name: 'tolerance', default: 0.1 }
     ],
-    wgsl: `
+    shader: `
   let a = smoothstep(
     threshold - (tolerance + 0.0000001),
     threshold + (tolerance + 0.0000001),
@@ -798,7 +798,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'threshold', default: 0.5 },
       { type: 'float', name: 'tolerance', default: 0.04 }
     ],
-    wgsl: `
+    shader: `
   let t = smoothstep(
     threshold - (tolerance + 0.0000001),
     threshold + (tolerance + 0.0000001),
@@ -816,7 +816,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'b', default: 1 },
       { type: 'float', name: 'a', default: 1 }
     ],
-    wgsl: `
+    shader: `
   let c = vec4f(r, g, b, a);
   let pos = step(vec4f(0.0), c);
   return mix((vec4f(1.0) - _c0) * abs(c), c * _c0, pos);
@@ -828,7 +828,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'amount', default: 2 }
     ],
-    wgsl: `
+    shader: `
   let w = vec3f(0.2125, 0.7154, 0.0721);
   let intensity = vec3f(dot(_c0.xyz, w));
   return vec4f(mix(intensity, _c0.xyz, amount), _c0.w);
@@ -840,7 +840,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'hue', default: 0.4 }
     ],
-    wgsl: `
+    shader: `
   var c = hydraRgbToHsv(_c0.xyz);
   c.x += hue;
   return vec4f(hydraHsvToRgb(c), _c0.w);
@@ -852,7 +852,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'amount', default: 0.005 }
     ],
-    wgsl: `
+    shader: `
   var c = hydraRgbToHsv(_c0.xyz);
   c += vec3f(amount);
   c = hydraHsvToRgb(c);
@@ -862,11 +862,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
   },
   {
     name: 'renderpass',
-    type: 'renderpass',
-    inputs: [],
-    wgsl: `
-  return hydraSampleTexture(prevBuffer, fract(_st));
-`
+    type: 'passBoundary'
   },
   {
     name: 'blurX',
@@ -876,7 +872,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'amount', default: 1 }
     ],
-    wgsl: `
+    shader: `
   let stepX = amount / max(globals.width, 1.0);
   let offset = vec2f(stepX, 0.0);
   let center = hydraSampleTexture(prevBuffer, fract(_st));
@@ -904,7 +900,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'amount', default: 1 }
     ],
-    wgsl: `
+    shader: `
   let stepY = amount / max(globals.height, 1.0);
   let offset = vec2f(0.0, stepY);
   let center = hydraSampleTexture(prevBuffer, fract(_st));
@@ -930,7 +926,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'amount', default: 1 }
     ],
-    wgsl: `
+    shader: `
   let stepX = amount / max(globals.width, 1.0);
   let stepY = amount / max(globals.height, 1.0);
 
@@ -970,7 +966,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'amount', default: 1.0 }
     ],
-    wgsl: `
+    shader: `
   let texel = vec2f(
     amount / max(globals.width, 1.0),
     amount / max(globals.height, 1.0)
@@ -990,7 +986,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'radius', default: 1.0 },
       { type: 'float', name: 'sigmaColor', default: 18.0 }
     ],
-    wgsl: `
+    shader: `
   let texel = vec2f(
     radius / max(globals.width, 1.0),
     radius / max(globals.height, 1.0)
@@ -1036,7 +1032,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'threshold', default: 0.6 },
       { type: 'float', name: 'softness', default: 0.1 }
     ],
-    wgsl: `
+    shader: `
   let center = hydraSampleTexture(prevBuffer, fract(_st));
   let stepSize = vec2f(
     radius / max(globals.width, 1.0),
@@ -1093,7 +1089,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'threshold', default: 0.6 },
       { type: 'float', name: 'softness', default: 0.1 }
     ],
-    wgsl: `
+    shader: `
   let src = hydraSampleTexture(prevBuffer, fract(_st));
   let knee = max(softness, 0.0001);
   let luma = hydraLuminance(src.xyz);
@@ -1110,7 +1106,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'radius', default: 1.0 }
     ],
     resolutionScale: 0.5,
-    wgsl: `
+    shader: `
   let texel = vec2f(
     radius / max(globals.width, 1.0),
     radius / max(globals.height, 1.0)
@@ -1133,7 +1129,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'boost', default: 1.0 }
     ],
     resolutionScale: 1,
-    wgsl: `
+    shader: `
   let texel = vec2f(
     radius / max(globals.width, 1.0),
     radius / max(globals.height, 1.0)
@@ -1161,7 +1157,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'amount', default: 1.0 },
       { type: 'float', name: 'radius', default: 1.0 }
     ],
-    wgsl: `
+    shader: `
   let center = hydraSampleTexture(prevBuffer, fract(_st));
   let stepSize = vec2f(
     radius / max(globals.width, 1.0),
@@ -1195,7 +1191,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'amount', default: 1.5 },
       { type: 'float', name: 'radial', default: 1.0 }
     ],
-    wgsl: `
+    shader: `
   let center = hydraSampleTexture(prevBuffer, fract(_st));
   let offsetPerAxis = vec2f(
     amount / max(globals.width, 1.0),
@@ -1218,7 +1214,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'amount', default: 1.0 },
       { type: 'float', name: 'angle', default: 0.0 }
     ],
-    wgsl: `
+    shader: `
   let center = hydraSampleTexture(prevBuffer, fract(_st));
   let direction = vec2f(cos(angle), sin(angle));
   let offset = direction * vec2f(
@@ -1239,7 +1235,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'radius', default: 0.9 },
       { type: 'float', name: 'softness', default: 0.35 }
     ],
-    wgsl: `
+    shader: `
   let center = hydraSampleTexture(prevBuffer, fract(_st));
   let aspect = max(globals.width / max(globals.height, 1.0), 0.0001);
   let p = (_st - vec2f(0.5)) * vec2f(aspect, 1.0);
@@ -1258,7 +1254,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'speed', default: 24.0 },
       { type: 'float', name: 'colored', default: 0.0 }
     ],
-    wgsl: `
+    shader: `
   let center = hydraSampleTexture(prevBuffer, fract(_st));
   let noiseUv = _st * vec2f(globals.width, globals.height);
   let t = globals.time * speed;
@@ -1283,7 +1279,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'amount', default: 0.75 },
       { type: 'float', name: 'levels', default: 8.0 }
     ],
-    wgsl: `
+    shader: `
   let center = hydraSampleTexture(prevBuffer, fract(_st));
   let px = vec2i(
     i32(floor(_st.x * globals.width)),
@@ -1334,7 +1330,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'amount', default: 1.0 },
       { type: 'float', name: 'mixAmount', default: 1.0 }
     ],
-    wgsl: `
+    shader: `
   let center = hydraSampleTexture(prevBuffer, fract(_st));
   let texel = vec2f(
     1.0 / max(globals.width, 1.0),
@@ -1377,7 +1373,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'amount', default: 1.0 },
       { type: 'float', name: 'mixAmount', default: 1.0 }
     ],
-    wgsl: `
+    shader: `
   let center = hydraSampleTexture(prevBuffer, fract(_st));
   let texel = vec2f(
     1.0 / max(globals.width, 1.0),
@@ -1401,7 +1397,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'radius', default: 1.0 }
     ],
-    wgsl: `
+    shader: `
   let texel = vec2f(
     radius / max(globals.width, 1.0),
     radius / max(globals.height, 1.0)
@@ -1427,7 +1423,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'radius', default: 1.0 }
     ],
-    wgsl: `
+    shader: `
   let texel = vec2f(
     radius / max(globals.width, 1.0),
     radius / max(globals.height, 1.0)
@@ -1454,7 +1450,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'amount', default: 1.0 },
       { type: 'float', name: 'radius', default: 0.8 }
     ],
-    wgsl: `
+    shader: `
   let centerUv = vec2f(0.5);
   let p = _st - centerUv;
   let blurAmount = amount * smoothstep(0.0, max(radius, 0.0001), length(p));
@@ -1488,7 +1484,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'centerX', default: 0.5 },
       { type: 'float', name: 'centerY', default: 0.5 }
     ],
-    wgsl: `
+    shader: `
   let centerUv = vec2f(centerX, centerY);
   let dir = centerUv - _st;
   let stepVec = dir * amount * 0.2;
@@ -1512,7 +1508,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'radius', default: 1.5 },
       { type: 'float', name: 'mixAmount', default: 1.0 }
     ],
-    wgsl: `
+    shader: `
   let center = hydraSampleTexture(prevBuffer, fract(_st));
   let texel = vec2f(
     radius / max(globals.width, 1.0),
@@ -1546,7 +1542,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'threshold', default: 0.6 },
       { type: 'float', name: 'softness', default: 0.1 }
     ],
-    wgsl: `
+    shader: `
   let center = hydraSampleTexture(prevBuffer, fract(_st));
   let texel = vec2f(
     radius / max(globals.width, 1.0),
@@ -1586,7 +1582,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'whitePoint', default: 1.0 },
       { type: 'float', name: 'gamma', default: 2.2 }
     ],
-    wgsl: `
+    shader: `
   let wp = max(whitePoint, 0.0001);
   let mapped = (_c0.xyz * (vec3f(1.0) + _c0.xyz / vec3f(wp * wp))) / (vec3f(1.0) + _c0.xyz);
   let corrected = pow(max(mapped, vec3f(0.0)), vec3f(1.0 / max(gamma, 0.0001)));
@@ -1599,7 +1595,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'float', name: 'amount', default: 0.0 }
     ],
-    wgsl: `
+    shader: `
   let scale = exp2(amount);
   return vec4f(_c0.xyz * scale, _c0.w);
 `
@@ -1608,7 +1604,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     name: 'prev',
     type: 'src',
     inputs: [],
-    wgsl: `
+    shader: `
   return hydraSampleTexture(prevBuffer, fract(_st));
 `
   },
@@ -1618,7 +1614,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
     inputs: [
       { type: 'sampler2D', name: 'historyTex', default: { historyOffset: 1 } }
     ],
-    wgsl: `
+    shader: `
   return hydraSampleTexture(historyTex, fract(_st));
 `
   },
@@ -1629,7 +1625,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'scale', default: 1 },
       { type: 'float', name: 'offset', default: 0 }
     ],
-    wgsl: `
+    shader: `
   return vec4f(_c0.x * scale + offset);
 `
   },
@@ -1640,7 +1636,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'scale', default: 1 },
       { type: 'float', name: 'offset', default: 0 }
     ],
-    wgsl: `
+    shader: `
   return vec4f(_c0.y * scale + offset);
 `
   },
@@ -1651,7 +1647,7 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'scale', default: 1 },
       { type: 'float', name: 'offset', default: 0 }
     ],
-    wgsl: `
+    shader: `
   return vec4f(_c0.z * scale + offset);
 `
   },
@@ -1662,9 +1658,8 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
       { type: 'float', name: 'scale', default: 1 },
       { type: 'float', name: 'offset', default: 0 }
     ],
-    wgsl: `
+    shader: `
   return vec4f(_c0.w * scale + offset);
 `
   }
 ]
-
