@@ -1,51 +1,40 @@
 # hydra-synth
 
-Modern Hydra-compatible WebGPU engine package. This package contains the browser runtime plus the internal core/compiler modules that used to live in a separate workspace package.
+The TypeGPU backend and browser runtime for the Hydra videosynth.
 
-## Includes
+The runtime has one intentional path:
 
-- `BrowserHost` (canvas + RAF lifecycle)
-- `WebGPURenderer` (WebGPU device/context, output presentation)
-- `HydraBrowserRuntime` (core engine + registry + host + renderer composition)
-- `HydraSourceNode` and `WebGPUOutputNode` adapters
-- `HydraAudioAnalyzer` (`a`, `a0..aN`, volume/RMS/peak/centroid/bands/waveform/beat metrics)
-- `Hydra` default-export compatibility facade for old constructor-style embeds
-- output dependency scheduling (topological when possible, stable order fallback on cycles)
-- fragment-plan execution route (`compileGraph` + `HydraExecutor`)
-- runtime profiler snapshots (`getProfilerSnapshot`) and autotune profile helpers
-- benchmark utilities (`BENCHMARK_CORPUS`, report build/validation helpers)
-- livecoding/session helpers (`attachLivecoding`, `createLivecodingPlugin`)
-
-Use `createHydraBrowserRuntime()` for default composition, or wire `BrowserHost` + `WebGPURenderer` manually.
-
-## Execution Modes
-
-`HydraBrowserRuntime` supports:
-
-- `auto` (default): fragment-plan routing with automatic policy selection
-- `fragment`: force fragment-plan routing
-- pointer-driven input via `runtime.synth.mouse` (`x/y/speed/acceleration/jerk` + smoothed channels in `0..1`, plus distinct pixel/uv/derivative channels)
-- audio-reactive input via `runtime.synth.a` and `runtime.synth.a0..aN`; pass `audio: true` or `audio: { autostart: true }` to request microphone input, or connect a `MediaStream`, media element, or `AudioNode`
-- screen sources via `s0.initScreen()` / `source.initScreen({ video: true, audio: false })`
-
-## Compatibility Facade
-
-```ts
-import Hydra from 'hydra-synth'
-
-const hydra = new Hydra({
-  canvas,
-  makeGlobal: true,
-  detectAudio: true
-})
-
-osc(20, 0.1, () => a.fft[0]).out()
-s0.initScreen()
+```text
+Hydra chain
+  → synchronous typed shader-function graph
+  → strict fragment or compute pass
+  → TypeGPU function linker, layout, pipeline, resources, and bind group
+  → output texture
+  → TypeGPU presentation
 ```
 
-The facade keeps old names such as `setFunction`, `screencap`, `getScreenImage`, `canvasToImage`, and `vidRecorder` while delegating to the typed runtime and capture APIs.
+It provides four sources, four outputs, feedback/history, renderpass effects,
+mouse and audio bindings, media sources, deterministic frame capture, and
+WebCodecs MP4 recording. It does not expose dynamic engine construction,
+transform registration, renderer adapters, plugins, scheduling policies,
+profilers, shader dumps, or device-capability mirrors.
 
-## Capture APIs
+## Runtime
+
+```ts
+import { createHydraBrowserRuntime } from 'hydra-synth'
+
+const hydra = createHydraBrowserRuntime({ autoLoop: true })
+await hydra.init()
+hydra.synth.osc(20, 0.1, 0).rotate(0.2).out()
+```
+
+Optional construction fields are limited to canvas placement, clock values,
+mouse input, and audio input. The Hydra bindings include `s0`–`s3`, `o0`–`o3`,
+the built-in transform generators, `render`, `setResolution`, `hush`, clock
+values, mouse values, and audio values.
+
+## Capture
 
 ```ts
 import {
@@ -54,51 +43,27 @@ import {
   createHydraBrowserRuntime
 } from 'hydra-synth'
 
-const runtime = createHydraBrowserRuntime({ autoLoop: false })
-await runtime.init()
+const hydra = createHydraBrowserRuntime({ autoLoop: false })
+await hydra.init()
 
-const sequence = await captureHydraFrameSequence({
-  runtime,
+await captureHydraFrameSequence({
+  runtime: hydra,
   fps: 60,
   duration: 2,
-  extension: 'png',
-  gpuReadback: 'auto'
+  extension: 'png'
 })
 
-const videoBlob = await captureHydraVideo({
-  runtime,
-  fps: 60,
-  duration: 2
-})
-
-console.log(videoBlob.type)
+const mp4 = await captureHydraVideo({ runtime: hydra, fps: 60, duration: 2 })
 ```
 
-`captureHydraFrameSequence` and `captureHydraVideo` stop the runtime loop, step deterministically, optionally wait for GPU work completion, and restore runtime state after capture.
+Frame capture has one public blob/file behavior. GPU texture readback is private
+to MP4 capture, where it is required to obtain reliable rendered pixels.
 
-## Livecoding
-
-Top-level import:
+## Trusted livecoding session
 
 ```ts
-import { attachLivecoding, createLivecodingPlugin } from 'hydra-synth'
+import { createLivecodingSession } from 'hydra-synth/livecoding'
 ```
 
-Optional subpath import:
-
-```ts
-import { attachLivecoding, createLivecodingPlugin } from 'hydra-synth/livecoding'
-```
-
-Livecoding requires a code runner supplied by the embedding app. Keep that runner at the trusted local UI boundary:
-
-```ts
-const plugin = createLivecodingPlugin({
-  runCode: (code, scope) => {
-    const compileTrustedCode = globalThis.Function
-    return compileTrustedCode('scope', `with (scope) {\n${code}\n}`)(scope)
-  }
-})
-```
-
-Advanced compiler helpers are available from `hydra-synth/core` and `hydra-synth/core/compiler`.
+The embedding app supplies both the execution function and any helper values.
+The session does not attach to an engine or add runtime extension hooks.

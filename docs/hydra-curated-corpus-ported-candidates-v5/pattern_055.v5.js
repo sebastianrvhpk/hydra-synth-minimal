@@ -1,7 +1,0 @@
-shape(4,1,0).modulate((src(o0).color(0,1)).color(0, 1 / height), wob(-1, 1, 0.05))
-.scale(.125,1,1,0,0).repeat(width/8,height/8).modulate((noise(.6,.1).color(0,1).hue(rng(-1, 0, 8, 2, 0.05)).posterize(4,1).hue(rng(0, 1, 8, 2, 0.05)).blend(noise(2,.25).color(1,0),.025).scale(1,.4,1,rn()).rotate(0,1).pixelate(width/8,height/8)).color(1 / width, 1 / height), px((.5) * Math.max(width, height)))
-.add(o0,.875)
-.scroll(1/width,1/height)
-.modulate((gradient().scale(1, (src(o0).color(1/width,0/height)).r(2, 1), (src(o0).color(1/width,0/height)).g(2, 1)).sub(gradient())).color(1 / width, 1 / height), 1)
-.modulate(src(o0).color(0/width,1/height),1)
-.out(o0)

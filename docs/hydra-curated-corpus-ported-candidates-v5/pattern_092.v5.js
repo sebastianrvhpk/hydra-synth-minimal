@@ -1,8 +1,0 @@
-shape(4,1,0).scale(.5,1,1,0,rn()).repeat(width/2,height/2).mult(ns(1,.1).thresh(.25-.5,.25))
-.diff(shape(4,1,0).scale(.25,1,1,rn(),0).scrollX(0,.05).repeat(width/4,height/4).mult(ns(1.25,.1).thresh(.375-.5,.25)))
-.diff(shape(4,1,0).scale(.125,1,1,1,rn()).repeat(width/8,height/8).mult(ns(.5,.1).thresh(.5-.5,.25)))
-.diff(shape(4,1,0).scale(.5,1,1,rn(),1).rotate(0,.01).repeat(width/2,height/2).mult(ns(1.75,.1).thresh(.75-.5,.25)))
-.diff(src(o0).mask(ns(Math.PI/4,.05).pixelate(8,1).thresh(.5,0)))
-.blend(src(o0).modulate(solid(1/width,1/height).mult(osc(TAU,.1).brightness(-.5).contrast(2)),-1),.875)
-.modulate(src(o0).brightness(-.5).color(1/width,1/height),1)
-.out(o0)

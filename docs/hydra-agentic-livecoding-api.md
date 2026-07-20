@@ -212,7 +212,7 @@ await hydraAgentLivecoder.play([
 ])
 ```
 
-## Hermes / External Agent Integration
+## External Agent Integration
 
 For an external browser-controlling agent, the integration point is the page
 JavaScript environment:
@@ -230,41 +230,11 @@ The agent does not need private app internals. It only needs:
 This keeps the demo honest: the agent edits the same CodeMirror surface the user
 sees, and Hydra runs the same livecoding evaluator.
 
-## Harness Modes
+## Browser-driven agent loop
 
-The local harness has two loop modes:
-
-```powershell
-node scripts/hydra-agentic-livecode-harness.mjs --execute --loop
-```
-
-Phrase loop mode is a carousel: it resets to the authored patch, applies a
-coherent mutation phrase, waits, then tries another phrase.
-
-```powershell
-node scripts/hydra-agentic-livecode-harness.mjs --execute --loop --evolve
-```
-
-Evolution mode is cumulative: it loads the authored patch once, then computes
-typed range edits from the current buffer to the next grammar-aware code state.
-It changes one responsibility at a time, lets the feedback breathe, and later
-backs out through nearby states instead of hard-resetting every cycle.
-
-For an actual LLM decision loop, use:
-
-```powershell
-node scripts/hydra-llm-livecode-harness.mjs --execute --once --provider mock
-```
-
-or the package script:
-
-```powershell
-pnpm agentic:llm-livecode -- --execute --once --provider command --command "your-agent-command"
-```
-
-That harness observes the current editor state, builds a grammar packet, asks a
-provider for exactly one bounded edit, validates it, then performs it through
-this same browser API.
+Use the in-app Chromium browser to inspect the current editor state and invoke
+`window.hydraAgentLivecoder` directly. Iterative compositions can be expressed
+as repeated, bounded calls to this browser API.
 
 ## Safety Boundary
 
