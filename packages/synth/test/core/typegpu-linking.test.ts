@@ -44,6 +44,19 @@ const resolvePass = (pass: HydraCompiledPass): string => {
 }
 
 describe('TypeGPU shader-function linking', () => {
+  it('links the packed-uniform helper used by dynamic callbacks', () => {
+    const output = new CaptureOutput()
+    const registry = new HydraTransformRegistry({ defaultOutput: output })
+
+    registry.generators.osc(18, 0.05, 0).rotate(({ time }) => time).out()
+
+    const pass = output.passes[0]
+    expect(pass).toBeDefined()
+    const linkedSource = resolvePass(pass!)
+    expect(linkedSource).toContain('hydraDynamicUniform')
+    expect(linkedSource).toContain('dynamicUniforms')
+  })
+
   it('links every built-in and all of its passes without raw declarations', () => {
     for (const definition of getDefaultTransforms()) {
       const output = new CaptureOutput()

@@ -101,6 +101,8 @@ describe('built-in Hydra transform registry', () => {
     const frame = { time: 3, bpm: 120, resolution: [640, 360] as [number, number], deltaMs: 16 }
     expect(frequency?.value(frame)).toBe(5)
     expect(sync?.value(frame)).toBeCloseTo(0.2)
+    expect(output.passes[0]?.program.functions.map(({ name }) => name)).toContain('hydraDynamicUniform')
+    expect(source(output.passes[0]!)).toContain('fn hydraDynamicUniform')
   })
 
   it('compiles static Hydra array sequences into shader helpers', () => {

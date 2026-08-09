@@ -534,7 +534,7 @@ const referencesFunction = (source: string, name: string): boolean => (
 
 const collectReferencedFunctions = (
   candidates: HydraShaderFunction[],
-  roots: HydraShaderFunction[]
+  roots: Array<Pick<HydraShaderFunction, 'source'>>
 ): HydraShaderFunction[] => {
   const selected = new Set<string>()
   const select = (shaderFunction: HydraShaderFunction): void => {
@@ -566,7 +566,7 @@ const prepareShaderResources = (
 
   const textureBindings = shaderInfo.textures
   const uniformFunctions = includeDynamicUniforms
-    ? collectReferencedFunctions(dynamicUniformFunctions(), shaderInfo.shaderFunctions)
+    ? collectReferencedFunctions(dynamicUniformFunctions(), [{ source: shaderInfo.fragColor }])
     : []
   const authoredFunctions = uniformFunctions.concat(shaderInfo.shaderFunctions)
   const shaderFunctions = collectUtilityFunctions(authoredFunctions).concat(authoredFunctions)
