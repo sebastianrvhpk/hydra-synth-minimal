@@ -4,7 +4,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Hydra</title>
+  <title>Hydra WebGPU — Live Video Synth</title>
+  <meta name="description" content="A browser-based WebGPU live video synthesizer for coding, mixing and performing visuals." />
+  <meta property="og:title" content="Hydra WebGPU" />
+  <meta property="og:description" content="Code, mix and perform live visuals directly in your browser." />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="/hydra/og.png" />
+  <meta property="og:image:width" content="1536" />
+  <meta property="og:image:height" content="1024" />
+  <meta property="og:image:alt" content="Hydra WebGPU live video synth in cyan and magenta" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="/hydra/og.png" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23050505'/%3E%3Ccircle cx='16' cy='16' r='10' fill='none' stroke='%2375f7ff' stroke-width='3'/%3E%3Cpath d='M9 20c4-8 10-8 14 0' fill='none' stroke='%23ff6bd6' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
   <script type="importmap">
       {
@@ -261,6 +271,166 @@
       margin: 0;
       font-size: 11px;
       line-height: 1.45;
+    }
+
+    .media-drop-zone {
+      width: 100%;
+      min-height: 54px;
+      border: 1px dashed rgba(117, 247, 255, 0.44);
+      border-radius: 5px;
+      background: rgba(117, 247, 255, 0.06);
+      color: var(--muted);
+      cursor: pointer;
+      font: inherit;
+      line-height: 1.45;
+      padding: 9px;
+      text-align: center;
+    }
+
+    .media-drop-zone:hover,
+    body[data-media-dragging="true"] .media-drop-zone {
+      border-color: rgba(117, 247, 255, 0.86);
+      background: rgba(117, 247, 255, 0.13);
+      color: var(--ink);
+    }
+
+    .media-library-list {
+      display: grid;
+      gap: 7px;
+      max-height: 246px;
+      overflow: auto;
+    }
+
+    .media-library-empty {
+      border: 1px solid rgba(238, 244, 239, 0.1);
+      border-radius: 4px;
+      color: rgba(238, 244, 239, 0.52);
+      padding: 9px;
+      text-align: center;
+    }
+
+    #media-library-status[data-state="ok"] {
+      color: var(--ok);
+    }
+
+    #media-library-status[data-state="error"] {
+      color: var(--bad);
+    }
+
+    .media-item {
+      display: grid;
+      grid-template-columns: 52px minmax(0, 1fr);
+      gap: 8px;
+      border: 1px solid rgba(238, 244, 239, 0.13);
+      border-radius: 5px;
+      background: rgba(255, 255, 255, 0.045);
+      padding: 7px;
+    }
+
+    .media-item-preview {
+      width: 52px;
+      height: 52px;
+      border-radius: 3px;
+      background:
+        linear-gradient(45deg, rgba(255, 255, 255, 0.05) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(255, 255, 255, 0.05) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.05) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.05) 75%);
+      background-position: 0 0, 0 5px, 5px -5px, -5px 0;
+      background-size: 10px 10px;
+      object-fit: cover;
+    }
+
+    .media-item-body {
+      min-width: 0;
+    }
+
+    .media-item-name {
+      overflow: hidden;
+      color: var(--ink);
+      font-size: 11px;
+      font-weight: 700;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .media-item-meta {
+      margin-top: 1px;
+      color: var(--muted);
+      font-size: 9.5px;
+    }
+
+    .media-item-code {
+      display: block;
+      overflow: hidden;
+      margin-top: 5px;
+      color: var(--cyan);
+      font-size: 9.5px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      user-select: text;
+    }
+
+    .media-item-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 6px;
+    }
+
+    .media-item-action {
+      border: 1px solid rgba(238, 244, 239, 0.16);
+      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--ink);
+      cursor: pointer;
+      font: inherit;
+      font-size: 9.5px;
+      line-height: 1;
+      padding: 4px 5px;
+    }
+
+    .media-item-action:hover {
+      border-color: rgba(117, 247, 255, 0.5);
+      background: rgba(117, 247, 255, 0.12);
+    }
+
+    #media-drop-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 60;
+      display: grid;
+      place-items: center;
+      pointer-events: none;
+      background: rgba(0, 0, 0, 0.64);
+      backdrop-filter: blur(5px);
+    }
+
+    #media-drop-overlay[hidden] {
+      display: none;
+    }
+
+    .media-drop-overlay-card {
+      width: min(430px, calc(100vw - 40px));
+      border: 1px dashed rgba(117, 247, 255, 0.9);
+      border-radius: 8px;
+      background: rgba(5, 12, 13, 0.88);
+      box-shadow: 0 20px 70px rgba(0, 0, 0, 0.55);
+      color: var(--ink);
+      padding: 28px 22px;
+      text-align: center;
+    }
+
+    .media-drop-overlay-card strong {
+      display: block;
+      color: var(--cyan);
+      font-size: 15px;
+      margin-bottom: 6px;
+    }
+
+    .media-drop-overlay-card span {
+      color: var(--muted);
+      font-size: 11px;
     }
 
     #hud {
@@ -993,6 +1163,29 @@
       <div id="code-material-status" class="panel-note">src(s3)</div>
     </div>
     <div class="panel-section">
+      <div class="panel-header">
+        <div class="panel-title">media</div>
+        <span id="media-library-count" class="panel-note">0 files</span>
+      </div>
+      <button id="media-picker-button" class="media-drop-zone" type="button">
+        drop images or videos anywhere<br />or click to choose files
+      </button>
+      <label class="panel-row" for="media-source-select">
+        <span>media buffer</span>
+        <select id="media-source-select">
+          <option value="s0">s0</option>
+          <option value="s1">s1</option>
+          <option value="s2">s2</option>
+          <option value="s3">s3</option>
+        </select>
+      </label>
+      <div id="media-library-list" class="media-library-list"></div>
+      <p id="media-library-status" class="panel-note">New media replaces the selected buffer and releases the previous file.</p>
+      <div class="panel-actions">
+        <button id="media-library-clear" class="panel-action" type="button" disabled>clear media</button>
+      </div>
+    </div>
+    <div class="panel-section">
       <div class="panel-title">grammar</div>
       <div id="utility-reference" class="utility-grid"></div>
       <pre id="utility-reference-preview" class="utility-preview"></pre>
@@ -1036,9 +1229,17 @@
     </div>
   </div>
 
+  <div id="media-drop-overlay" hidden aria-hidden="true">
+    <div class="media-drop-overlay-card">
+      <strong>drop to load the selected media buffer</strong>
+      <span>the previous file in that buffer will be released</span>
+    </div>
+  </div>
+
   <canvas id="code-material-canvas" hidden></canvas>
 
   <script type="module">
+    import { createMediaBufferManager, createMediaLibrary, isSupportedMediaFile } from './media-library.js'
     import { basicSetup, EditorView } from 'codemirror'
     import { EditorSelection, EditorState, Prec, StateEffect, StateField } from '@codemirror/state'
     import { autocompletion, startCompletion } from '@codemirror/autocomplete'
@@ -1400,10 +1601,22 @@
     const editorLayoutSelect = document.getElementById('editor-layout-select')
     const codeMaterialSourceSelect = document.getElementById('code-material-source-select')
     const codeMaterialStatus = document.getElementById('code-material-status')
+    const mediaPickerButton = document.getElementById('media-picker-button')
+    const mediaSourceSelect = document.getElementById('media-source-select')
+    const mediaLibraryList = document.getElementById('media-library-list')
+    const mediaLibraryCount = document.getElementById('media-library-count')
+    const mediaLibraryStatus = document.getElementById('media-library-status')
+    const mediaLibraryClearButton = document.getElementById('media-library-clear')
+    const mediaDropOverlay = document.getElementById('media-drop-overlay')
     const utilityReference = document.getElementById('utility-reference')
     const utilityReferencePreview = document.getElementById('utility-reference-preview')
     const utilityReferenceStatus = document.getElementById('utility-reference-status')
     const codeMaterialCanvas = document.getElementById('code-material-canvas')
+    const media = createMediaLibrary()
+    const mediaBuffers = createMediaBufferManager({
+      library: media,
+      resolveSource: (sourceName) => synth[sourceName]
+    })
     const liveEditorStorageKey = 'hydra-livecode'
     const livePanelGeometryStorageKey = 'hydra-live-panel-geometry'
     const uiSettingsStorageKey = 'hydra-ui-settings'
@@ -1623,6 +1836,11 @@ speed = 0.75`
       'toggleCode',
       'toggleRecordPanel',
       'toggleOptionsPanel',
+      'media',
+      'mediaBuffers',
+      'pickMediaFiles',
+      'loadMediaFiles',
+      'hostMediaFiles',
       'loadVideoFile',
       'loadVideoFiles',
       'restartVideos',
@@ -4405,6 +4623,17 @@ speed = 0.75`
       return { fileName, mimeType: 'image/png' }
     }
 
+    const mediaFilePicker = {
+      accept: 'image/*,video/*',
+      types: [{
+        description: 'Image and video files',
+        accept: {
+          'image/*': ['.avif', '.gif', '.jpeg', '.jpg', '.png', '.svg', '.webp'],
+          'video/*': ['.mp4', '.webm', '.mov', '.m4v', '.mpeg', '.mpg', '.ogg', '.ogv']
+        }
+      }]
+    }
+
     const videoFilePicker = {
       accept: 'video/*',
       types: [{
@@ -4475,6 +4704,318 @@ speed = 0.75`
 
     const pickVideoFile = () => pickLocalFile(videoFilePicker)
     const pickVideoFiles = (options = {}) => pickLocalFiles(videoFilePicker, options)
+    const pickMediaFiles = (options = {}) => pickFilesWithInput(
+      mediaFilePicker.accept,
+      Boolean(options.multiple)
+    )
+
+    const formatMediaFileSize = (bytes) => {
+      const size = Math.max(0, Number(bytes) || 0)
+      if (size < 1024) return `${size} B`
+      if (size < 1024 ** 2) return `${(size / 1024).toFixed(size < 10 * 1024 ? 1 : 0)} KB`
+      if (size < 1024 ** 3) return `${(size / 1024 ** 2).toFixed(size < 10 * 1024 ** 2 ? 1 : 0)} MB`
+      return `${(size / 1024 ** 3).toFixed(1)} GB`
+    }
+
+    const setMediaLibraryStatus = (message, state = '') => {
+      if (!mediaLibraryStatus) return
+      mediaLibraryStatus.textContent = message
+      mediaLibraryStatus.dataset.state = state
+    }
+
+    const readMediaSourceName = () => {
+      const sourceName = mediaSourceSelect?.value ?? 's0'
+      return ['s0', 's1', 's2', 's3'].includes(sourceName) ? sourceName : 's0'
+    }
+
+    const mediaEntrySnippet = (entry, sourceName = readMediaSourceName()) => {
+      const method = entry.kind === 'video' ? 'initVideo' : 'initImage'
+      return `${sourceName}.${method}(media(${JSON.stringify(entry.name)}))`
+    }
+
+    const loadMediaEntryIntoSource = (entry, sourceName = readMediaSourceName()) => {
+      const assignment = mediaBuffers.assign(entry, sourceName)
+      const released = (
+        assignment.previous && assignment.previous.id !== entry.id
+          ? ` Released ${assignment.previous.name}.`
+          : ''
+      )
+      setMediaLibraryStatus(`Loaded ${entry.name} into ${sourceName}.${released}`, 'ok')
+      setLiveStatus(`Media buffer ${sourceName}: ${entry.name}.${released}`, 'ok')
+      return assignment
+    }
+
+    const releaseMediaEntry = (entry) => {
+      const assignedBuffers = mediaBuffers.buffersFor(entry)
+      for (const bufferName of assignedBuffers) mediaBuffers.release(bufferName)
+      if (media.get(entry)) media.remove(entry)
+      return assignedBuffers
+    }
+
+    const copyMediaSnippet = async (entry, sourceName = readMediaSourceName()) => {
+      const snippet = mediaEntrySnippet(entry, sourceName)
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        try {
+          await navigator.clipboard.writeText(snippet)
+          setMediaLibraryStatus(`Copied: ${snippet}`, 'ok')
+          return snippet
+        } catch {
+          // Clipboard access can be unavailable on local or restricted pages.
+        }
+      }
+      setMediaLibraryStatus(`Clipboard unavailable. Select the code shown for ${entry.name}.`, 'error')
+      return null
+    }
+
+    const createMediaItemAction = (label, title, onClick) => {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'media-item-action'
+      button.textContent = label
+      button.title = title
+      button.addEventListener('click', onClick)
+      return button
+    }
+
+    const renderMediaLibrary = () => {
+      if (!mediaLibraryList) return
+      const entries = media.list()
+      const sourceName = readMediaSourceName()
+      mediaLibraryList.replaceChildren()
+      if (mediaPickerButton) {
+        mediaPickerButton.replaceChildren(
+          `drop image or video into ${sourceName}`,
+          document.createElement('br'),
+          'or click to choose a file'
+        )
+      }
+      if (mediaLibraryCount) {
+        mediaLibraryCount.textContent = `${entries.length} ${entries.length === 1 ? 'file' : 'files'}`
+      }
+      if (mediaLibraryClearButton) mediaLibraryClearButton.disabled = entries.length === 0
+
+      if (entries.length === 0) {
+        const empty = document.createElement('div')
+        empty.className = 'media-library-empty'
+        empty.textContent = 'no local media yet'
+        mediaLibraryList.appendChild(empty)
+        return
+      }
+
+      for (const entry of entries) {
+        const assignedBuffers = mediaBuffers.buffersFor(entry)
+        const snippetSourceName = assignedBuffers[0] ?? sourceName
+        const item = document.createElement('article')
+        item.className = 'media-item'
+
+        const preview = document.createElement(entry.kind === 'video' ? 'video' : 'img')
+        preview.className = 'media-item-preview'
+        preview.src = entry.url
+        preview.draggable = false
+        preview.title = entry.name
+        if (preview instanceof HTMLImageElement) {
+          preview.alt = ''
+        } else {
+          preview.muted = true
+          preview.playsInline = true
+          preview.preload = 'metadata'
+          preview.setAttribute('aria-hidden', 'true')
+        }
+        item.appendChild(preview)
+
+        const body = document.createElement('div')
+        body.className = 'media-item-body'
+        const name = document.createElement('div')
+        name.className = 'media-item-name'
+        name.textContent = entry.name
+        name.title = entry.originalName
+        body.appendChild(name)
+
+        const meta = document.createElement('div')
+        meta.className = 'media-item-meta'
+        const bufferLabel = assignedBuffers.length > 0 ? assignedBuffers.join(', ') : 'unassigned'
+        meta.textContent = `${bufferLabel} · ${entry.kind} · ${formatMediaFileSize(entry.size)}`
+        body.appendChild(meta)
+
+        const snippet = document.createElement('code')
+        snippet.className = 'media-item-code'
+        snippet.textContent = mediaEntrySnippet(entry, snippetSourceName)
+        snippet.title = snippet.textContent
+        body.appendChild(snippet)
+
+        const actions = document.createElement('div')
+        actions.className = 'media-item-actions'
+        actions.appendChild(createMediaItemAction(
+          `${assignedBuffers.includes(sourceName) ? 'reload' : 'load'} ${sourceName}`,
+          `Load ${entry.name} into ${sourceName}`,
+          () => {
+            try {
+              loadMediaEntryIntoSource(entry, sourceName)
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              setMediaLibraryStatus(message, 'error')
+            }
+          }
+        ))
+        actions.appendChild(createMediaItemAction('insert', 'Insert initImage/initVideo code at the cursor', () => {
+          const code = `${mediaEntrySnippet(entry, snippetSourceName)}\n`
+          insertEditorText(code)
+          setMediaLibraryStatus(`Inserted code for ${entry.name}.`, 'ok')
+        }))
+        actions.appendChild(createMediaItemAction('copy', 'Copy initImage/initVideo code', () => {
+          void copyMediaSnippet(entry, snippetSourceName)
+        }))
+        actions.appendChild(createMediaItemAction('remove', `Release ${entry.name}`, () => {
+          const releasedBuffers = releaseMediaEntry(entry)
+          const bufferNote = releasedBuffers.length > 0 ? ` from ${releasedBuffers.join(', ')}` : ''
+          setMediaLibraryStatus(`Released ${entry.name}${bufferNote}.`, 'ok')
+        }))
+        body.appendChild(actions)
+        item.appendChild(body)
+        mediaLibraryList.appendChild(item)
+      }
+    }
+
+    const normalizeMediaFileInput = (files) => {
+      const looksLikeSingleFile = (
+        files &&
+        typeof files === 'object' &&
+        'name' in files &&
+        'size' in files
+      )
+      return looksLikeSingleFile ? [files] : Array.from(files ?? [])
+    }
+
+    const hostMediaFiles = (files) => {
+      const candidates = normalizeMediaFileInput(files)
+      const supported = candidates.filter(isSupportedMediaFile)
+      const skipped = supported.slice(0, -1)
+      const rejected = candidates
+        .filter((file) => !isSupportedMediaFile(file))
+        .map((file) => ({
+          file,
+          error: new TypeError(`${file?.name || 'File'} is not a supported image or video.`)
+        }))
+      const selectedFile = supported.at(-1)
+
+      if (!selectedFile) {
+        setMediaLibraryStatus('No supported images or videos were found.', 'error')
+        return { accepted: [], rejected, skipped }
+      }
+
+      const result = media.addAll([selectedFile])
+      result.rejected.push(...rejected)
+      const entry = result.accepted[0]
+      if (!entry) return { ...result, skipped }
+
+      const sourceName = readMediaSourceName()
+      try {
+        const assignment = loadMediaEntryIntoSource(entry, sourceName)
+        const skippedNote = skipped.length > 0
+          ? ` Kept the last of ${supported.length} selected files.`
+          : ''
+        const rejectedNote = rejected.length > 0
+          ? ` Ignored ${rejected.length} unsupported file(s).`
+          : ''
+        const releasedNote = assignment.previous && assignment.previous.id !== entry.id
+          ? ` Released ${assignment.previous.name}.`
+          : ''
+        setMediaLibraryStatus(
+          `Buffer ${sourceName}: ${entry.name}.${releasedNote}${skippedNote}${rejectedNote}`,
+          'ok'
+        )
+        setLiveStatus(`Media buffer ${sourceName}: ${entry.name}.`, 'ok')
+        return { ...result, skipped, assignment }
+      } catch (error) {
+        media.remove(entry)
+        throw error
+      }
+    }
+
+    const loadMediaFiles = async (options = {}) => {
+      const files = await pickMediaFiles(options)
+      if (files.length === 0) {
+        setMediaLibraryStatus('Media selection cancelled.')
+        return { accepted: [], rejected: [] }
+      }
+      return hostMediaFiles(files)
+    }
+
+    const unsubscribeMediaLibrary = media.subscribe(() => renderMediaLibrary())
+    const unsubscribeMediaBuffers = mediaBuffers.subscribe(() => renderMediaLibrary())
+    renderMediaLibrary()
+
+    if (mediaPickerButton) {
+      mediaPickerButton.addEventListener('click', () => {
+        void loadMediaFiles().catch((error) => {
+          const message = error instanceof Error ? error.message : String(error)
+          setMediaLibraryStatus(`Media load failed: ${message}`, 'error')
+        })
+      })
+    }
+
+    if (mediaSourceSelect) {
+      mediaSourceSelect.addEventListener('change', () => {
+        renderMediaLibrary()
+        const sourceName = readMediaSourceName()
+        const entry = mediaBuffers.get(sourceName)
+        setMediaLibraryStatus(
+          entry
+            ? `Buffer ${sourceName} currently holds ${entry.name}. The next file will replace it.`
+            : `Buffer ${sourceName} is empty. The next file will load here.`
+        )
+      })
+    }
+
+    if (mediaLibraryClearButton) {
+      mediaLibraryClearButton.addEventListener('click', () => {
+        const count = mediaBuffers.clear()
+        setMediaLibraryStatus(`Released ${count} local media file(s).`, 'ok')
+      })
+    }
+
+    let mediaDragDepth = 0
+    const hasDraggedMedia = (dataTransfer) => {
+      const items = Array.from(dataTransfer?.items ?? [])
+      if (items.length > 0) {
+        return items.some((item) => (
+          item.kind === 'file' && (!item.type || /^(?:image|video)\//iu.test(item.type))
+        ))
+      }
+      return Array.from(dataTransfer?.types ?? []).includes('Files')
+    }
+
+    const setMediaDropOverlayVisible = (visible) => {
+      document.body.dataset.mediaDragging = visible ? 'true' : 'false'
+      if (mediaDropOverlay) mediaDropOverlay.hidden = !visible
+    }
+
+    document.addEventListener('dragenter', (event) => {
+      if (!hasDraggedMedia(event.dataTransfer)) return
+      mediaDragDepth += 1
+      setMediaDropOverlayVisible(true)
+    })
+
+    document.addEventListener('dragover', (event) => {
+      if (!hasDraggedMedia(event.dataTransfer)) return
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'copy'
+    })
+
+    document.addEventListener('dragleave', (event) => {
+      if (document.body.dataset.mediaDragging !== 'true') return
+      mediaDragDepth = Math.max(0, mediaDragDepth - 1)
+      if (!event.relatedTarget || mediaDragDepth === 0) setMediaDropOverlayVisible(false)
+    })
+
+    document.addEventListener('drop', (event) => {
+      mediaDragDepth = 0
+      setMediaDropOverlayVisible(false)
+      const files = Array.from(event.dataTransfer?.files ?? [])
+      if (!files.some(isSupportedMediaFile)) return
+      event.preventDefault()
+      hostMediaFiles(files)
+    })
 
     const isHydraSource = (value) => value && typeof value === 'object' && typeof value.initVideo === 'function'
 
@@ -5016,6 +5557,13 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
     window.loadVideoFile = loadVideoFile
     window.loadVideoFiles = loadVideoFiles
     window.restartVideos = restartVideos
+    window.media = media
+    window.hydraMedia = media
+    window.mediaBuffers = mediaBuffers
+    window.hydraMediaBuffers = mediaBuffers
+    window.pickMediaFiles = pickMediaFiles
+    window.loadMediaFiles = loadMediaFiles
+    window.hostMediaFiles = hostMediaFiles
     setCaptureDurationSeconds(loadCaptureDurationSeconds())
     setCaptureFps(loadCaptureFps())
     loadCaptureCustomSize()
@@ -5834,6 +6382,11 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
       playInterfacePerformance,
       loadInterfacePerformance,
       loadInterfacePerformanceFile,
+      media,
+      mediaBuffers,
+      pickMediaFiles,
+      loadMediaFiles,
+      hostMediaFiles,
       getUiSettings: () => applyUiSettings(readUiSettingsFromControls()),
       setUiSettings: (settings) => {
         const normalized = applyUiSettings(settings)
@@ -5889,6 +6442,11 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
           toggleRecordPanel: toggleRecordPopover,
           toggleOptionsPanel,
           toggleVideoCapture,
+          media,
+          mediaBuffers,
+          pickMediaFiles,
+          loadMediaFiles,
+          hostMediaFiles,
           pickVideoFile,
           pickVideoFiles,
           loadVideoFile,
@@ -5936,11 +6494,16 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
       livecodingSession = null
       lastFullBufferBlocks = null
       runtime.dispose()
+      unsubscribeMediaLibrary()
+      unsubscribeMediaBuffers()
+      mediaBuffers.dispose()
+      media.clear()
     }
     window.addEventListener('pagehide', disposeAppRuntime, { once: true })
 
     console.info('[hydra] ready')
     console.info('[hydra] try: osc(20, 0.1, 0).rotate(0.2).out()')
+    console.info('[hydra] local media: drop an image/video to replace the selected s0-s3 media buffer, then run src(s0).out()')
     console.info('[hydra] capture mp4 (WebCodecs): click Video button or run await captureAndSaveVideo({ duration: 3 })')
     console.info('[hydra] capture frames: await captureFrames({ duration: 2, fps: 60, extension: "png", pickDirectory: true })')
   </script>

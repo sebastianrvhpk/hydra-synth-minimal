@@ -92,6 +92,14 @@ let html = readFileSync(path.join(repoRoot, 'packages', 'hydra', 'index.html'), 
 html = html.replace(/<script type="importmap">[\s\S]*?<\/script>/u, `<script type="importmap">\n      ${importMap}\n    </script>`)
 copyFileSync(path.join(repoRoot, 'LICENSE'), path.join(outDir, 'LICENSE'))
 mkdirSync(hydraOutDir, { recursive: true })
+copyFileSync(
+  path.join(repoRoot, 'packages', 'hydra', 'media-library.js'),
+  path.join(hydraOutDir, 'media-library.js')
+)
+copyFileSync(
+  path.join(repoRoot, 'packages', 'hydra', 'og.png'),
+  path.join(hydraOutDir, 'og.png')
+)
 writeFileSync(path.join(hydraOutDir, 'index.html'), html, 'utf8')
 writeFileSync(path.join(outDir, 'index.html'), `<!doctype html>
 <html lang="en">

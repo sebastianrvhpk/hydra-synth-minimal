@@ -41,6 +41,26 @@ pnpm dev
 The app includes CodeMirror livecoding, URL sketches, random patch generation,
 image/video/camera/screen sources, audio analysis, frame capture, and MP4 capture.
 
+Images and videos can be dragged anywhere onto the app. Hydra gives each file a
+tab-local object URL and lists it under **Options → media**, so no separate media
+server is needed. The selected media buffer defaults to `s0`; dropping or
+choosing another file replaces that buffer, clears its previous decoder, and
+revokes the previous object URL. Select a different `s0`–`s3` buffer before
+loading when more than one media source must stay active:
+
+```js
+src(s0).out()
+
+// The hosted URL also remains available for an explicit reload.
+s0.initVideo(media('loop.mp4'))
+```
+
+Use `media()` for the most recently loaded file, `media.list()` to inspect the
+library, `mediaBuffers.release('s0')` to empty a buffer, or
+`await loadMediaFiles()` to choose a file without dragging it. The URLs live only
+for the current tab and are released when replaced, removed, cleared, or when
+the page closes.
+
 ## Verification
 
 ```bash
