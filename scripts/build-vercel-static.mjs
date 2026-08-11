@@ -120,7 +120,7 @@ workshopHtml = workshopHtml.replace(
   '<script type="importmap">\n      ' + workshopImportMap + '\n    </script>'
 )
 writeFileSync(path.join(workshopOutDir, 'index.html'), workshopHtml, 'utf8')
-for (const fileName of ['app.js', 'content.js', 'styles.css', 'og.png']) {
+for (const fileName of ['app.js', 'content.js', 'patches.js', 'styles.css', 'og.png']) {
   copyFileSync(
     path.join(repoRoot, 'packages', 'workshop', fileName),
     path.join(workshopOutDir, fileName)

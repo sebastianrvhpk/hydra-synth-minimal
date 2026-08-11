@@ -1,418 +1,585 @@
-export const chapters = [
-  { id: 'entrada', index: '00', label: 'entrar' },
-  { id: 'campo', index: '01', label: 'campo' },
-  { id: 'abstraccion', index: '02', label: 'abstracción' },
-  { id: 'gramatica', index: '03', label: 'gramática' },
-  { id: 'intermodulacion', index: '04', label: 'intermodulación' },
-  { id: 'multipase', index: '05', label: 'vecindad' },
-  { id: 'memoria', index: '06', label: 'memoria' },
-  { id: 'instrumento', index: '07', label: 'instrumento' },
-  { id: 'sintesis', index: '08', label: 'síntesis' }
+export const movements = [
+  { id: 'entrar', label: 'entrar', range: '00:00–00:20' },
+  { id: 'seguir', label: 'seguir', range: '00:20–00:48' },
+  { id: 'relacionar', label: 'relacionar', range: '00:48–01:21' },
+  { id: 'temporalizar', label: 'temporalizar', range: '01:21–01:50' },
+  { id: 'volver', label: 'volver', range: '01:50–02:00' }
 ]
+
+const hydraSource = {
+  label: 'Olivia Jack, Hydra: live coding networked visuals',
+  href: 'https://zenodo.org/records/3946269'
+}
+
+const sandinSource = {
+  label: 'Electronic Visualization Laboratory, Sandin Image Processor',
+  href: 'https://www.evl.uic.edu/research/1934'
+}
+
+const cordeiroSource = {
+  label: 'MoMA, Waldemar Cordeiro',
+  href: 'https://www.moma.org/artists/42856'
+}
+
+const liveCodingSource = {
+  label: 'Live Coding: A User’s Manual',
+  href: 'https://livecodingbook.toplap.org/book/'
+}
+
+const gwinSource = {
+  label: 'Video History Project, Video Feedback: A System Approach',
+  href: 'https://www.videohistoryproject.org/video-feedback-how-make-it-artists-comments-its-use-system-approach'
+}
+
+const downeySource = {
+  label: 'Museo Tamayo, Juan Downey: Una utopía de la comunicación',
+  href: 'https://www.museotamayo.org/en/exposiciones/juan-downey-una-utopia-de-la-comunicacion'
+}
 
 export const scenes = [
   {
-    id: 'la-imagen-como-senal',
-    chapter: 'entrada',
-    kind: 'title',
-    kicker: 'Hydra WebGPU · masterclass laboratorio',
+    id: 'portada',
+    movement: 'entrar',
+    time: '00:00–00:01',
+    mode: 'phenomenon',
+    kicker: 'Hypereikon · masterclass laboratorio',
     title: 'La imagen como señal',
-    body: ['Sistemas visuales, intermodulación y live coding con Hydra.'],
+    statement: 'Síntesis, feedback y live coding con Hydra',
+    body: ['Puedes observar antes de experimentar. Cámara y materiales propios son opcionales.'],
     patch: 'opening',
-    graph: ['campo', 'relación', 'memoria', 'salida']
+    code: 'hidden',
+    cue: 'Dar la bienvenida sin explicar el patch.',
+    transition: 'Primero dejemos que la imagen ocurra.'
   },
   {
     id: 'esta-imagen-esta-ocurriendo',
-    chapter: 'entrada',
+    movement: 'entrar',
+    time: '00:01–00:03',
+    mode: 'phenomenon',
     kicker: 'antes de explicar',
     title: 'Esta imagen está ocurriendo',
-    body: [
-      'No fue renderizada de antemano. Cada cuadro vuelve a producirse a partir de relaciones activas.'
-    ],
+    statement: 'El sistema vuelve a producirla cuadro a cuadro.',
     patch: 'opening',
-    graph: ['fuentes', 'operaciones', 'tiempo', 'cuadro actual']
+    code: 'hidden',
+    cue: 'Guardar ocho segundos reales de observación.',
+    transition: 'Ahora localicemos una sola diferencia.'
   },
   {
-    id: 'cambiar-una-condicion',
-    chapter: 'entrada',
-    kicker: 'experimento 00',
-    title: 'Cambia una condición y observa el sistema',
-    body: [
-      'Un número puede modificar simultáneamente millones de evaluaciones. La acción es pequeña; su alcance espacial no lo es.'
-    ],
-    patch: 'causality',
-    controls: 'causality',
-    prompt: 'Mueve primero la frecuencia. Después cambia la rotación.',
-    graph: ['frecuencia', 'oscilador', 'rotación', 'salida']
+    id: 'una-diferencia-localizada',
+    movement: 'entrar',
+    time: '00:03–00:05',
+    mode: 'coupling',
+    kicker: 'primer gesto',
+    title: 'Cambia una condición. Observa. Vuelve.',
+    statement: 'No necesitamos comprender todavía el sistema completo.',
+    patch: 'opening',
+    code: 'primary',
+    focus: ['relationAmount'],
+    controls: 'opening',
+    prompt: 'Reduce la deformación. Observa qué conserva la trama. Después vuelve al inicio.',
+    diagram: ['localizar', 'cambiar', 'observar', 'volver'],
+    cue: 'Cambiar profundidad .28 → .08 → .28.',
+    recovery: 'opening-default',
+    transition: 'Podemos tocar una relación antes de conocer todos sus nombres.'
   },
   {
-    id: 'pregunta-central',
-    chapter: 'entrada',
+    id: 'pregunta-y-contrato',
+    movement: 'entrar',
+    time: '00:05–00:08',
+    mode: 'model',
     kicker: 'pregunta de trabajo',
-    title: '¿Qué debemos aprender a ver para construir un comportamiento visual?',
-    body: [
-      'No basta con reconocer el resultado. Necesitamos leer qué lo inicia, qué lo transforma, qué lo controla y qué recuerda.'
-    ],
+    title: '¿Qué relación existe entre el código y la imagen que está ocurriendo?',
+    statement: 'No aprenderemos una lista de efectos. Construiremos puntos de entrada.',
+    body: ['Hydra es un entorno de live coding visual en el navegador: sus fuentes pueden transformarse, rutearse y recombinarse mientras el sistema está activo.'],
     patch: 'opening',
-    graph: ['origen', 'transformación', 'control', 'estado']
+    code: 'contextual',
+    diagram: ['código', 'proceso', 'imagen actual'],
+    sources: [hydraSource],
+    cue: 'Situar Hydra y el contrato en menos de tres minutos.',
+    transition: 'Si el código organiza un proceso, necesitamos seguir qué información circula.'
   },
   {
     id: 'objeto-flujo-sistema',
-    chapter: 'campo',
-    kicker: 'tres regímenes',
+    movement: 'entrar',
+    time: '00:08–00:11',
+    mode: 'model',
+    kicker: 'tres accesos compatibles',
     title: 'Una imagen puede ser objeto, flujo y sistema',
-    body: [
-      'Puede existir como archivo, actualizarse como flujo y, al mismo tiempo, ser el estado visible de un conjunto de relaciones.'
-    ],
-    patch: 'field',
-    graph: ['archivo', 'actualización', 'reglas', 'estado']
-  },
-  {
-    id: 'textura-como-campo',
-    chapter: 'campo',
-    kicker: 'unidad material',
-    title: 'Una textura es un campo de valores',
-    body: [
-      'Cada posición contiene valores que pueden leerse, transformarse, combinarse y reutilizarse.'
-    ],
-    patch: 'field',
-    graph: ['posición x/y', 'muestreo', 'rgba']
-  },
-  {
-    id: 'donde-y-que',
-    chapter: 'campo',
-    kicker: 'dos preguntas',
-    title: '¿Desde dónde leo? ¿Qué valor devuelvo?',
-    body: [
-      'Las transformaciones de coordenadas alteran el lugar de la lectura. Las transformaciones de color alteran el valor que retorna.'
-    ],
-    patch: 'whereWhat',
-    graph: ['coordenada', 'lectura', 'valor', 'salida']
-  },
-  {
-    id: 'laboratorio-donde-que',
-    chapter: 'campo',
-    kicker: 'experimento 01',
-    title: 'Separa el dónde del qué',
-    body: [
-      'Intervén la misma fuente como espacio o como valor. Antes de cambiar de modo, intenta predecir la diferencia.'
-    ],
-    patch: 'whereWhat',
-    controls: 'whereWhat',
-    prompt: 'Alterna coordenadas y valores. El material inicial permanece igual.',
-    graph: ['misma fuente', 'dos operaciones', 'dos consecuencias']
-  },
-  {
-    id: 'expresion-breve-computo-denso',
-    chapter: 'abstraccion',
-    kicker: 'escala computacional',
-    title: 'La expresión es breve; el cómputo sigue siendo denso',
-    body: [
-      'Una cadena compacta coordina operaciones sobre todo el campo, cuadro tras cuadro, mediante la GPU.'
-    ],
-    patch: 'dense',
-    graph: ['Hydra', 'grafo shader', 'WebGPU', 'GPU', 'textura']
-  },
-  {
-    id: 'abstraer-es-seleccionar',
-    chapter: 'abstraccion',
-    kicker: 'límite productivo',
-    title: 'Una abstracción decide qué podemos manipular directamente',
-    body: [
-      'Hydra expone fuentes, coordenadas, valores, parámetros, relaciones, tiempo y memoria. El motor administra compilación, recursos y ejecución.'
-    ],
-    patch: 'dense',
-    graph: ['decisiones visibles', 'maquinaria administrada']
-  },
-  {
-    id: 'una-linea-es-un-grafo',
-    chapter: 'abstraccion',
-    kicker: 'topología',
-    title: 'El código parece una línea, pero describe un grafo',
-    body: [
-      'Las ramas anidadas tienen fuentes, transformaciones y tiempos propios. Componer significa decidir sus dependencias.'
-    ],
-    patch: 'graph',
-    graph: ['osc', 'noiseLoop', 'modulate', 'shape', 'blend', 'out']
-  },
-  {
-    id: 'fuente',
-    chapter: 'gramatica',
-    kicker: 'fuente',
-    title: 'Toda cadena comienza estableciendo diferencias',
-    body: [
-      'Una fuente sintética, capturada o almacenada entrega el campo inicial que comenzará a circular.'
-    ],
-    patch: 'source',
-    controls: 'source',
-    graph: ['osc · noise · fbm · shape', 'campo inicial']
-  },
-  {
-    id: 'coordenadas',
-    chapter: 'gramatica',
-    kicker: 'geometría',
-    title: 'Transformar el espacio es transformar la lectura',
-    body: [
-      'Rotar, escalar o repetir no necesita mover objetos. Puede modificar el recorrido usado para consultar la textura.'
-    ],
-    patch: 'geometry',
-    controls: 'geometry',
-    graph: ['uv', 'rotate', 'scale', 'repeat', 'sample']
-  },
-  {
-    id: 'valores',
-    chapter: 'gramatica',
-    kicker: 'color',
-    title: 'Transformar valores también reorganiza la imagen',
-    body: [
-      'Contraste, umbral y posterización pueden convertir una variación continua en una estructura discreta o en una máscara.'
-    ],
-    patch: 'color',
-    controls: 'color',
-    graph: ['valor continuo', 'mapeo', 'umbral', 'estructura']
-  },
-  {
-    id: 'mezcla',
-    chapter: 'gramatica',
-    kicker: 'relación de valores',
-    title: 'Mezclar es decidir cómo dos campos comparten una salida',
-    body: [
-      'Blend, suma, multiplicación, diferencia y máscara definen relaciones distintas entre valores.'
-    ],
-    patch: 'blend',
-    controls: 'blend',
-    graph: ['campo A', 'operación', 'campo B', 'resultado']
-  },
-  {
-    id: 'modulacion',
-    chapter: 'gramatica',
-    kicker: 'relación espacial',
-    title: 'Modular convierte una imagen en operador',
-    body: [
-      'La segunda textura no tiene que aparecer como color. Puede transformar la manera de leer la primera.'
-    ],
-    patch: 'modulation',
-    controls: 'modulation',
-    graph: ['material', 'campo de control', 'coordenadas', 'resultado']
-  },
-  {
-    id: 'salida-y-buffer',
-    chapter: 'gramatica',
-    kicker: 'salidas',
-    title: 'Una salida también puede ser un espacio de trabajo',
-    body: [
-      'Los buffers pueden mostrarse, alimentar otras cadenas y conservar estados que volverán al sistema.'
-    ],
-    patch: 'outputs',
-    graph: ['o0', 'o1', 'o2', 'o3', 'render']
-  },
-  {
-    id: 'tres-escalas-del-parametro',
-    chapter: 'intermodulacion',
-    kicker: 'capacidad específica',
-    title: 'Un parámetro puede ser constante, señal o textura',
-    body: [
-      'Puede fijarse al ejecutar el código, variar como una señal uniforme por cuadro o adoptar un valor distinto en cada posición de una textura.'
-    ],
-    patch: 'parameterScale',
-    controls: 'parameterScale',
-    graph: ['constante', 'señal uniforme', 'textura espacio-temporal']
-  },
-  {
-    id: 'funcion-como-control',
-    chapter: 'intermodulacion',
-    kicker: 'uniforme dinámica',
-    title: 'Una función cambia con el tiempo, pero sigue siendo compartida por el cuadro',
-    body: [
-      'El parámetro se actualiza continuamente; en un instante dado, todas las posiciones reciben el mismo valor.'
-    ],
-    patch: 'parameterUniform',
-    graph: ['tiempo', 'función', 'un valor por cuadro', 'transformación']
-  },
-  {
-    id: 'campo-como-parametro',
-    chapter: 'intermodulacion',
-    kicker: 'grafo dentro del argumento',
-    title: 'Una imagen puede ocupar el lugar de un parámetro',
-    body: [
-      'La frecuencia, la escala, el umbral o el radio de blur pueden convertirse en campos con estructura propia.'
-    ],
-    patch: 'parameterField',
-    graph: ['grafo de control', 'entrada escalar', 'operación principal']
-  },
-  {
-    id: 'intermodulacion-profunda',
-    chapter: 'intermodulacion',
-    kicker: 'experimento 02',
-    title: 'Intermodular es anidar procesos dentro de procesos',
-    body: [
-      'El controlador también puede estar modulado, tener tiempo propio y alimentar más de una responsabilidad del sistema.'
-    ],
-    patch: 'deepIntermod',
-    controls: 'deepIntermod',
-    prompt: 'Cambia qué parámetro recibe el campo. Luego aumenta la profundidad.',
-    graph: ['campo A', 'modula', 'campo B', 'controla', 'parámetro C']
-  },
-  {
-    id: 'vecindad',
-    chapter: 'multipase',
-    kicker: 'más allá de una lectura',
-    title: 'Algunas operaciones necesitan mirar alrededor',
-    body: [
-      'Blur, detección de bordes y morfología comparan una posición con sus vecinas. La cadena debe materializar resultados intermedios.'
-    ],
-    patch: 'multipass',
-    graph: ['pase inicial', 'textura intermedia', 'muestras vecinas', 'pase siguiente']
-  },
-  {
-    id: 'laboratorio-multipase',
-    chapter: 'multipase',
-    kicker: 'experimento 03',
-    title: 'La misma señal puede atravesar arquitecturas distintas',
-    body: [
-      'Cambia entre blur, bordes, dilatación y bloom. No son filtros equivalentes: cada operación reorganiza el acceso a la información.'
-    ],
-    patch: 'multipass',
-    controls: 'multipass',
-    graph: ['fragment', 'compute', 'historia del pase', 'salida']
-  },
-  {
-    id: 'tiempo-como-entrada',
-    chapter: 'memoria',
-    kicker: 'dinámica',
-    title: 'El tiempo entra al sistema como otra señal',
-    body: [
-      'No es necesario organizar la imagen sobre una línea de tiempo. Los parámetros pueden depender directamente del reloj, de secuencias o de otras señales.'
-    ],
-    patch: 'time',
-    controls: 'time',
-    graph: ['reloj', 'ritmo', 'parámetro', 'estado']
-  },
-  {
-    id: 'cuadro-sin-memoria',
-    chapter: 'memoria',
-    kicker: 'estado presente',
-    title: 'Sin retorno, cada cuadro depende de las entradas actuales',
-    body: [
-      'El sistema puede variar en el tiempo sin conservar explícitamente el resultado anterior.'
-    ],
-    patch: 'stateless',
-    graph: ['fuentes actuales', 'parámetros actuales', 'Iₜ']
-  },
-  {
-    id: 'feedback',
-    chapter: 'memoria',
-    kicker: 'estado recurrente',
-    title: 'Con feedback, el resultado anterior vuelve como entrada',
-    body: [
-      'Iₜ = F(Sₜ, Pₜ, Iₜ₋₁). El sistema ya no produce solamente cuadros: produce una trayectoria.'
-    ],
-    patch: 'feedback',
-    graph: ['entrada nueva', 'transformación', 'Iₜ', 'retorno Iₜ₋₁']
-  },
-  {
-    id: 'memoria-demorada',
-    chapter: 'memoria',
-    kicker: 'historia direccionable',
-    title: 'La memoria puede tener profundidad',
-    body: [
-      'prev() recupera el estado reciente. prevN() permite relacionar el presente con estados más distantes.'
-    ],
-    patch: 'history',
-    controls: 'history',
-    graph: ['Iₜ', 'Iₜ₋₁', 'Iₜ₋ₙ', 'mezcla temporal']
-  },
-  {
-    id: 'laboratorio-feedback',
-    chapter: 'memoria',
-    kicker: 'experimento 04',
-    title: 'Busca decaimiento, persistencia e inestabilidad',
-    body: [
-      'Pequeñas diferencias en retorno, escala y rotación cambian el régimen completo del circuito.'
-    ],
-    patch: 'feedback',
-    controls: 'feedback',
-    prompt: 'Encuentra un estado estable. Después llévalo deliberadamente al límite.',
-    graph: ['retorno', 'pérdida', 'desfase', 'régimen']
-  },
-  {
-    id: 'senales-externas',
-    chapter: 'instrumento',
-    kicker: 'entradas',
-    title: 'Cámara, mouse, audio y archivos pueden cambiar de rol',
-    body: [
-      'Pueden aparecer como contenido, convertirse en máscara o controlar parámetros de otra señal.'
-    ],
-    patch: 'external',
-    controls: 'external',
-    prompt: 'Mueve el puntero o carga un archivo local. Nada se sube al servidor.',
-    graph: ['cuerpo o archivo', 'fuente/control', 'sistema visual']
-  },
-  {
-    id: 'codigo-como-textura',
-    chapter: 'instrumento',
-    kicker: 'reflexividad',
-    title: 'El código también puede entrar en la imagen',
-    body: [
-      'La superficie de escritura puede renderizarse como textura y participar en el patch que describe.'
-    ],
-    patch: 'codeTexture',
-    graph: ['código', 'canvas', 'src(s3)', 'modulación', 'imagen']
-  },
-  {
-    id: 'interfaz-como-partitura',
-    chapter: 'instrumento',
-    kicker: 'registro performativo',
-    title: 'La interfaz puede registrar una trayectoria de decisiones',
-    body: [
-      'Código, selecciones, ejecuciones, movimientos y cambios de estado pueden guardarse y reproducirse como una partitura temporal.'
-    ],
-    patch: 'score',
-    graph: ['gestos', 'eventos', 'tiempo', 'reproducción']
-  },
-  {
-    id: 'live-coding',
-    chapter: 'instrumento',
-    kicker: 'interpretación',
-    title: 'Live coding es modificar relaciones mientras actúan',
-    body: [
-      'Interpretar consiste en navegar entre estados: permanecer, introducir diferencias, conducir transiciones y recuperar control.'
-    ],
-    patch: 'performance',
-    graph: ['leer', 'decidir', 'editar', 'ejecutar', 'escuchar visualmente']
-  },
-  {
-    id: 'construir-un-sistema',
-    chapter: 'sintesis',
-    kicker: 'laboratorio final',
-    title: 'Construye un sistema, no una imagen aislada',
-    body: [
-      'Elige una fuente, una operación espacial, una transformación de valores, una relación, una temporalidad y una forma de memoria o entrada.'
-    ],
-    patch: 'finalSystem',
-    controls: 'finalSystem',
-    prompt: 'No busques una combinación correcta. Intenta explicar qué responsabilidad cumple cada parte.',
-    graph: ['origen', 'espacio', 'valor', 'relación', 'tiempo', 'memoria']
-  },
-  {
-    id: 'leer-el-sistema',
-    chapter: 'sintesis',
-    kicker: 'transferencia',
-    title: 'Leer un patch es reconstruir sus dependencias',
-    body: [
-      '¿Qué inicia el sistema? ¿Qué transforma las coordenadas? ¿Qué altera los valores? ¿Qué controla a qué? ¿Dónde entran el tiempo, la memoria y la salida?'
-    ],
-    patch: 'finalSystem',
-    graph: ['fuente', 'transformación', 'control', 'estado', 'salida']
-  },
-  {
-    id: 'estado-momentaneo',
-    chapter: 'sintesis',
-    kind: 'closing',
-    kicker: 'una definición de salida',
-    title: 'La imagen visible no es el sistema completo',
-    body: ['Es uno de sus estados momentáneos.'],
+    statement: 'Archivo, actualización y relaciones pueden coexistir.',
     patch: 'opening',
-    graph: ['relaciones activas', 'estado visible', 'posibilidades siguientes']
+    code: 'hidden',
+    diagram: [
+      ['objeto', 'algo relativamente estable'],
+      ['flujo', 'algo que continúa actualizándose'],
+      ['sistema', 'relaciones que producen estados']
+    ],
+    cue: 'No reducir representación o percepción a mecanismo.',
+    transition: 'Para seguir el proceso usaremos una palabra operacional: señal.'
+  },
+  {
+    id: 'generar-o-incorporar',
+    movement: 'entrar',
+    time: '00:11–00:16',
+    mode: 'coupling',
+    kicker: 'procedencia',
+    title: 'Una señal puede generarse o incorporarse',
+    statement: 'La ruta puede permanecer mientras cambia aquello que entra.',
+    body: ['Una fuente sintética, una imagen, un video o una cámara pueden entrar en una cadena de operaciones.'],
+    patch: 'source',
+    code: 'primary',
+    focus: ['source'],
+    controls: 'source',
+    prompt: 'Compara una fuente sintética y un medio incorporado. ¿Cambió la ruta o cambió su entrada?',
+    diagram: ['fuente', 'escala', 'rotación', 'color', 'salida'],
+    cue: 'La cámara se activa sólo desde el equipo facilitador y es prescindible.',
+    recovery: 'source-synthetic',
+    transition: 'La señal nombra lo que puede circular y asumir distintos papeles.'
+  },
+  {
+    id: 'sandin-image-processor',
+    movement: 'entrar',
+    time: '00:16–00:18',
+    mode: 'reference',
+    kicker: 'Dan Sandin · 1971–1973',
+    title: 'Un patch también puede ser un modo de pensar la imagen',
+    statement: 'Fuentes, modificadores y combinadores podían conectarse para procesar video en tiempo real.',
+    body: ['El Image Processor era un computador analógico modular y documentado para ser construido, reparado y compartido. Hydra no lo emula: recuperamos la pregunta por el ruteo.'],
+    patch: 'source',
+    code: 'hidden',
+    diagram: ['fuentes', 'modificadores', 'combinadores', 'video'],
+    sources: [sandinSource],
+    cue: 'Entrar por el problema, declarar la diferencia y volver a Hydra.',
+    transition: 'Aquí no conectamos módulos físicos; conectamos expresiones y dependencias.'
+  },
+  {
+    id: 'expresion-breve-proceso-denso',
+    movement: 'entrar',
+    time: '00:18–00:20',
+    mode: 'model',
+    kicker: 'abstracción',
+    title: 'La expresión es breve; el proceso sigue siendo denso',
+    statement: 'Hydra no elimina la complejidad: selecciona qué parte podemos manipular directamente.',
+    patch: 'source',
+    code: 'contextual',
+    diagram: ['expresión Hydra', 'operaciones gráficas', 'GPU', 'salida actual'],
+    cue: 'No descender a shaders ni arquitectura de backend.',
+    transition: 'Localicemos responsabilidades antes de abrir más posibilidades.'
+  },
+  {
+    id: 'cuatro-roles',
+    movement: 'seguir',
+    time: '00:20–00:23',
+    mode: 'model',
+    kicker: 'orientación mínima',
+    title: 'Una cadena puede recorrerse por sus roles',
+    statement: 'Fuente, transformación, parámetro y salida son preguntas antes que vocabulario.',
+    patch: 'chain',
+    code: 'contextual',
+    diagram: ['fuente', 'transformación (parámetro)', 'salida'],
+    cue: 'Formular: dónde comienza, qué recibe, qué configura, dónde llega.',
+    transition: 'Comencemos por el destino.'
+  },
+  {
+    id: 'leer-desde-el-destino',
+    movement: 'seguir',
+    time: '00:23–00:27',
+    mode: 'coupling',
+    kicker: 'D2 · cadena mínima',
+    title: 'Encuentra la salida. Después busca la fuente.',
+    statement: 'Recorre nuevamente hacia delante y pregunta qué recibe cada operación.',
+    patch: 'chain',
+    code: 'primary',
+    focus: ['output', 'source', 'transform'],
+    diagram: ['out()', 'shape()', 'repeat · rotate · color'],
+    cue: 'Señalar antes de nombrar; usar verbos, no leer signos.',
+    transition: 'Ahora una sola operación quedará abierta a intervención.'
+  },
+  {
+    id: 'ejecutar-tocar-volver',
+    movement: 'seguir',
+    time: '00:27–00:33',
+    mode: 'workshop',
+    kicker: 'práctica 01',
+    title: 'Un parámetro configura una operación existente',
+    statement: 'Cambia rotación, compara dos posiciones y vuelve a .12.',
+    patch: 'chain',
+    code: 'primary',
+    focus: ['rotation'],
+    controls: 'rotation',
+    prompt: 'Mínimo: cambia rotación y vuelve. Variación: compara dos valores. Apertura: orienta la trama hacia una tensión elegida.',
+    diagram: ['.00 neutro', '.12 inicial', '.32 contraste'],
+    cue: 'Punto de reunión: .12. Recuperar antes de avanzar.',
+    recovery: 'chain-default',
+    transition: 'Cambiar cuánto no es lo mismo que cambiar qué recibe cada operación.'
+  },
+  {
+    id: 'cada-operacion-recibe-algo',
+    movement: 'seguir',
+    time: '00:33–00:36',
+    mode: 'model',
+    kicker: 'causalidad local',
+    title: 'Una cadena no es una lista de efectos independientes',
+    statement: 'Cada operación recibe el resultado producido hasta ese punto.',
+    patch: 'chain',
+    code: 'contextual',
+    diagram: ['produce', 'repite', 'rota', 'colorea', 'entrega'],
+    cue: 'Recorrer D2 hacia delante sin agregar funciones.',
+    transition: 'Primero cambiaremos un valor. Después cambiaremos el flujo.'
+  },
+  {
+    id: 'mismo-flujo-otro-valor',
+    movement: 'seguir',
+    time: '00:36–00:40',
+    mode: 'coupling',
+    kicker: 'D3-A',
+    title: 'Mismo flujo. Otro valor.',
+    statement: 'Fuente, operaciones, orden y salida permanecen.',
+    patch: 'chain',
+    code: 'primary',
+    focus: ['rotation'],
+    controls: 'rotationCompare',
+    prompt: 'Compara .12 y .32. ¿Qué permanece igual?',
+    diagram: ['.12', '.32'],
+    cue: 'Congelar A para que la memoria visual no cargue la comparación.',
+    recovery: 'chain-default',
+    transition: 'Ahora conservaremos incluso los valores.'
+  },
+  {
+    id: 'mismas-piezas-otro-orden',
+    movement: 'seguir',
+    time: '00:40–00:44',
+    mode: 'coupling',
+    kicker: 'D3-B',
+    title: 'Mismas piezas. Otro orden.',
+    statement: 'Cambiar qué recibe cada operación modifica la estructura del flujo.',
+    patch: 'order',
+    code: 'primary',
+    focus: ['order'],
+    controls: 'order',
+    prompt: 'Alterna A/B. No adivines la apariencia: pregunta qué recibe rotate en cada versión.',
+    diagram: ['repeat → rotate', 'rotate → repeat'],
+    cue: 'Mostrar expresiones completas; no ocultar el cambio bajo un toggle abstracto.',
+    recovery: 'order-a',
+    transition: 'Una imagen computacional puede realizar un procedimiento sin contenerlo visiblemente.'
+  },
+  {
+    id: 'procedimiento-y-protocolo',
+    movement: 'seguir',
+    time: '00:44–00:48',
+    mode: 'reference',
+    kicker: 'Waldemar Cordeiro + Giorgio Moscati · 1972',
+    title: 'El resultado visible no contiene todas las decisiones que lo producen',
+    statement: 'Material, regla de traducción, ejecución y salida forman una cadena de decisiones.',
+    body: ['En Gente Ampli*2, una imagen de prensa fue traducida mediante retícula, valores y procesamiento computacional. No es un antecedente lineal de Hydra: nos ayuda a separar procedimiento y resultado.'],
+    patch: 'order',
+    code: 'hidden',
+    diagram: ['material', 'regla', 'ejecución', 'resultado'],
+    sources: [cordeiroSource],
+    cue: 'Cerrar con protocolo: destino → fuente → delante; valor o estructura.',
+    transition: 'Hasta ahora seguimos una ruta. Ahora aparecerá una segunda.'
+  },
+  {
+    id: 'aparece-una-segunda-ruta',
+    movement: 'relacionar',
+    time: '00:48–00:51',
+    mode: 'model',
+    kicker: 'de cadena a relación',
+    title: 'Una salida puede depender de más de una ruta',
+    statement: 'Antes de relacionarlas, reconoceremos la procedencia de A y B.',
+    patch: 'branches',
+    code: 'contextual',
+    diagram: [['A', 'trama triangular'], ['B', 'campo oscilatorio'], ['encuentro', 'blend']],
+    cue: 'Mostrar sólo A mientras aparece el bloque B en código.',
+    transition: 'Miremos cada rama por separado.'
+  },
+  {
+    id: 'ver-a-ver-b',
+    movement: 'relacionar',
+    time: '00:51–00:55',
+    mode: 'workshop',
+    kicker: 'D4 · dos ramas',
+    title: 'Antes de relacionarlas, reconoce cada procedencia',
+    statement: 'A es una trama cian. B es un campo magenta.',
+    patch: 'branches',
+    code: 'primary',
+    focus: ['branchA', 'branchB'],
+    controls: 'branchView',
+    prompt: 'Muestra A, muestra B y vuelve a A. Sigue cada bloque hasta su procedencia.',
+    diagram: ['sólo A', 'sólo B', 'ambas'],
+    cue: 'No combinar hasta que ambas rutas sean distinguibles.',
+    recovery: 'branches-a',
+    transition: 'Ahora encontremos dónde B entra en A.'
+  },
+  {
+    id: 'punto-de-encuentro',
+    movement: 'relacionar',
+    time: '00:55–01:02',
+    mode: 'workshop',
+    kicker: 'D4 · relación',
+    title: 'B entra aquí',
+    statement: 'Blend decide cómo A y B comparten una salida.',
+    patch: 'material',
+    code: 'primary',
+    focus: ['branchB', 'relation', 'output'],
+    controls: 'material',
+    prompt: 'Mínimo: A / B / ambas. Variación: compara B perceptible e inicial. Después vuelve a .42.',
+    diagram: ['A', 'blend(B, .42)', 'out()'],
+    cue: 'Recorrer out → blend → B → A. Punto de reunión .42.',
+    recovery: 'material-default',
+    transition: 'Saber que existen dos rutas todavía no dice qué papel cumple B.'
+  },
+  {
+    id: 'pausa',
+    movement: 'relacionar',
+    time: '01:02–01:07',
+    mode: 'pause',
+    kicker: 'cinco minutos',
+    title: 'Pausa y reentrada',
+    statement: 'Al volver: rol, tiempo, estado y feedback.',
+    patch: 'material',
+    code: 'hidden',
+    diagram: [
+      ['ya apareció', 'señal · fuente · transformación · parámetro · salida · orden · rama'],
+      ['al volver', 'rol · tiempo · estado · feedback']
+    ],
+    cue: 'Dejar visible el enlace de D4 y reducir movimiento.',
+    transition: 'Volvamos a las mismas señales y cambiemos sólo su relación.'
+  },
+  {
+    id: 'b-como-material',
+    movement: 'relacionar',
+    time: '01:07–01:13',
+    mode: 'coupling',
+    kicker: 'D5-A',
+    title: 'B aporta valores visibles a la salida',
+    statement: 'Podemos reconocer las bandas magenta compartiendo la imagen con A.',
+    patch: 'material',
+    code: 'primary',
+    focus: ['branchB', 'relation'],
+    controls: 'materialAmount',
+    prompt: 'Compara B ausente, perceptible e inicial. Nombra qué aporta.',
+    diagram: ['A', 'B como material', 'salida compartida'],
+    cue: 'Usar verbos: aparecer, cubrir, teñir, compartir.',
+    recovery: 'material-default',
+    transition: 'B puede participar sin conservar esa apariencia.'
+  },
+  {
+    id: 'b-como-control',
+    movement: 'relacionar',
+    time: '01:13–01:19',
+    mode: 'workshop',
+    kicker: 'D5-B',
+    title: 'B modifica cómo se lee A',
+    statement: 'Sigue participando, pero ya no necesita aparecer como bandas.',
+    patch: 'relation',
+    code: 'primary',
+    focus: ['branchB', 'relation'],
+    controls: 'relation',
+    prompt: 'Anticipa primero: ¿material visible o deformación? Alterna el rol y vuelve a control .32.',
+    diagram: ['B aporta valores', 'B modifica coordenadas'],
+    cue: 'No afirmar que toda modulación siempre significa lo mismo.',
+    recovery: 'relation-control',
+    transition: 'Una señal puede incluso ocupar el lugar de un parámetro.'
+  },
+  {
+    id: 'parametro-como-campo',
+    movement: 'relacionar',
+    time: '01:19–01:21',
+    mode: 'coupling',
+    kicker: 'ventana de profundidad',
+    title: 'Un parámetro puede ser número, función o campo',
+    statement: 'Puede permanecer, cambiar por cuadro o adquirir valores distintos en cada zona.',
+    patch: 'parameter',
+    code: 'primary',
+    focus: ['parameter'],
+    controls: 'parameter',
+    diagram: ['número', 'función temporal', 'campo espacio-temporal'],
+    cue: 'Tres ejecuciones. Sin práctica. Esta implementación profundiza la tercera posibilidad.',
+    transition: 'Ahora separemos movimiento, edición y memoria.'
+  },
+  {
+    id: 'el-grafo-vuelve-a-ejecutarse',
+    movement: 'temporalizar',
+    time: '01:21–01:24',
+    mode: 'model',
+    kicker: 'recálculo',
+    title: 'Una imagen estable puede seguir siendo recalculada',
+    statement: 'El mismo patch produce cuadros sucesivos aunque nada parezca moverse.',
+    patch: 'time',
+    code: 'contextual',
+    diagram: ['patch', 'cuadro t₀', 'cuadro t₁', 'cuadro t₂'],
+    cue: 'No introducir estado todavía.',
+    transition: 'El movimiento puede aparecer cuando un argumento depende del reloj.'
+  },
+  {
+    id: 'valor-constante-o-dinamico',
+    movement: 'temporalizar',
+    time: '01:24–01:27',
+    mode: 'coupling',
+    kicker: 'D6-A',
+    title: 'El grafo permanece. El argumento comienza a cambiar.',
+    statement: 'Movimiento no significa memoria.',
+    patch: 'time',
+    code: 'primary',
+    focus: ['time'],
+    controls: 'time',
+    prompt: 'Alterna valor constante y función temporal. ¿Qué parte del grafo permanece?',
+    diagram: ['rotate(.12)', 'rotate(() => time × .04)'],
+    cue: 'Comparar con el tiempo visual detenido y activo.',
+    recovery: 'time-static',
+    transition: 'También podemos cambiar la propia estructura mientras se ejecuta.'
+  },
+  {
+    id: 'editar-mientras-ocurre',
+    movement: 'temporalizar',
+    time: '01:27–01:32',
+    mode: 'coupling',
+    kicker: 'D6-B · live coding',
+    title: 'Editar una relación también puede formar parte de la ejecución',
+    statement: 'Preparación no es rigidez. Improvisar no exige empezar desde cero.',
+    patch: 'timeStructure',
+    code: 'primary',
+    focus: ['order'],
+    controls: 'timeStructure',
+    prompt: 'Detén el reloj. Cambia el orden. Ejecuta sólo estados sintácticamente completos.',
+    diagram: ['preparar', 'escuchar visualmente', 'editar', 'ejecutar', 'recuperar'],
+    sources: [liveCodingSource],
+    cue: 'Cápsula de live coding: máximo 60 segundos.',
+    recovery: 'time-structure-a',
+    transition: 'El cambio que vimos todavía no necesitaba información anterior.'
+  },
+  {
+    id: 'estado',
+    movement: 'temporalizar',
+    time: '01:32–01:34',
+    mode: 'model',
+    kicker: 'una distinción necesaria',
+    title: 'Estado es información anterior que sigue disponible ahora',
+    statement: 'El movimiento no demuestra por sí solo que exista memoria.',
+    patch: 'time',
+    code: 'hidden',
+    diagram: ['reloj', 'edición', 'estado anterior'],
+    cue: 'Definición operacional, no metáfora de memoria humana.',
+    transition: 'Si un resultado anterior permanece disponible, puede volver como señal.'
+  },
+  {
+    id: 'sin-historia-con-reentrada',
+    movement: 'temporalizar',
+    time: '01:34–01:40',
+    mode: 'coupling',
+    kicker: 'D7-A',
+    title: 'Con feedback, el pasado participa en el presente',
+    statement: 'La diferencia es una dependencia temporal, no una apariencia particular.',
+    body: ['Según la implementación, la reentrada puede escribirse como prev() o src(o0): la idea compartida es que una salida anterior vuelve como entrada.'],
+    patch: 'feedback',
+    code: 'primary',
+    focus: ['previousState', 'relation'],
+    controls: 'feedbackSwitch',
+    prompt: 'Apaga, limpia, activa y espera. ¿Qué empieza a persistir?',
+    diagram: ['estado t−1', 'cálculo t', 'estado t'],
+    cue: 'Operar K11 desde facilitación la primera vez.',
+    recovery: 'feedback-off-clean',
+    transition: 'El mismo bucle puede producir comportamientos muy distintos.'
+  },
+  {
+    id: 'feedback-como-sistema',
+    movement: 'temporalizar',
+    time: '01:40–01:44',
+    mode: 'reference',
+    kicker: 'William Gwin + Juan Downey',
+    title: 'Feedback es un sistema configurable',
+    statement: 'Reentrada, transformación, aporte y pérdida producen un régimen.',
+    body: ['Gwin permite pensar el feedback como sistema, no como un único túnel visual. Downey abre otra escala: un circuito también reorganiza posiciones de percepción, acción y comunicación.'],
+    patch: 'feedback',
+    code: 'hidden',
+    diagram: ['reentrada', 'transformación', 'pérdida / aporte', 'comportamiento'],
+    sources: [gwinSource, downeySource],
+    cue: 'Gwin 60–75 s; Downey máximo 30 s. Regresar al mecanismo concreto.',
+    transition: 'Volvamos al patch: ¿qué sobrevive y qué se transforma antes de volver?'
+  },
+  {
+    id: 'persistencia-escala-recuperacion',
+    movement: 'temporalizar',
+    time: '01:44–01:50',
+    mode: 'workshop',
+    kicker: 'práctica 03',
+    title: 'En feedback, una intervención necesita tiempo',
+    statement: 'Cambia una dimensión. Espera. Describe qué persiste. Limpia y vuelve.',
+    patch: 'feedback',
+    code: 'primary',
+    focus: ['previousState', 'persistence', 'feedbackScale'],
+    controls: 'feedback',
+    prompt: 'Mínimo: activa, espera y limpia. Variación: cambia persistencia o escala. No cambies ambas a la vez.',
+    diagram: ['breve .60', 'inicial .88', 'expansión 1.006'],
+    cue: 'Punto de reunión: off, buffer limpio, .88 / 1.006.',
+    recovery: 'feedback-off-clean',
+    transition: 'Volvamos al sistema inicial con preguntas que antes no teníamos.'
+  },
+  {
+    id: 'regreso-al-sistema',
+    movement: 'volver',
+    time: '01:50–01:53',
+    mode: 'coupling',
+    kicker: 'D8 = D0',
+    title: 'No necesitamos leerlo todo para encontrar puntos de entrada',
+    statement: 'Salida, fuente, transformaciones, B, rol, tiempo y estado anterior.',
+    patch: 'opening',
+    code: 'primary',
+    focus: ['source', 'branchB', 'relation', 'time', 'previousState', 'output'],
+    diagram: ['salida', 'A', 'B', 'rol', 'tiempo', 'estado'],
+    cue: 'Recorrer mediante preguntas, no analizar cada argumento.',
+    transition: 'Elige una sola relación conocida y úsala para volver a entrar.'
+  },
+  {
+    id: 'una-decision-y-un-enlace',
+    movement: 'volver',
+    time: '01:53–01:57',
+    mode: 'workshop',
+    kicker: 'práctica 04',
+    title: 'Escoge una relación. Conserva un punto de reentrada.',
+    statement: 'Orientación, profundidad de B, tiempo o persistencia.',
+    patch: 'final',
+    code: 'primary',
+    focus: ['selectedDimension'],
+    controls: 'final',
+    prompt: 'Elige una dimensión y sostén un verbo: conservar, desplazar, interrumpir o estabilizar. Después guarda el enlace.',
+    diagram: ['elegir', 'modificar', 'observar', 'guardar'],
+    cue: 'No abrir funciones nuevas ni pedir resultado común.',
+    recovery: 'final-default',
+    transition: 'Guardar no significa congelar el sistema para siempre.'
+  },
+  {
+    id: 'continuar-es-volver',
+    movement: 'volver',
+    time: '01:57–01:58',
+    mode: 'model',
+    kicker: 'continuidad',
+    title: 'Continuar también es volver',
+    statement: 'Ejecutar, modificar, consultar, documentar y compartir.',
+    patch: 'opening',
+    code: 'hidden',
+    diagram: ['Hydra Garden', 'documentación', 'recorrido del taller'],
+    sources: [
+      { label: 'Hydra Garden', href: 'https://hydra.ojack.xyz/garden/' },
+      { label: 'Documentación de Hydra', href: 'https://hydra.ojack.xyz/docs/' }
+    ],
+    cue: 'No abrir enlaces durante el cierre.',
+    transition: 'Podemos responder la pregunta inicial sin fingir que agotamos el sistema.'
+  },
+  {
+    id: 'la-imagen-visible-es-un-estado',
+    movement: 'volver',
+    time: '01:58–02:00',
+    mode: 'closing',
+    kicker: 'una definición de salida',
+    title: 'La imagen visible es un estado actual del sistema',
+    statement: 'El patch organiza condiciones para que otros estados puedan ocurrir.',
+    body: ['Hoy construimos una primera manera de entrar: localizar una relación, cambiarla, observar qué ocurre y saber volver.'],
+    patch: 'opening',
+    code: 'hidden',
+    cue: 'Últimos veinte segundos sin interfaz sobre la imagen.',
+    transition: ''
   }
 ]
+
+export const sceneById = new Map(scenes.map((scene, index) => [scene.id, { ...scene, index }]))

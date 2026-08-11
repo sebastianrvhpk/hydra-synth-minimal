@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#050505" />
-  <title>La imagen como señal — Hydra WebGPU</title>
-  <meta name="description" content="Una presentación-laboratorio interactiva sobre señales, intermodulación, memoria y live coding con Hydra WebGPU." />
+  <meta name="theme-color" content="#08090b" />
+  <title>La imagen como señal — Hydra</title>
+  <meta name="description" content="Una presentación-laboratorio introductoria sobre señal, patch, tiempo y feedback con Hydra." />
   <meta property="og:title" content="La imagen como señal" />
-  <meta property="og:description" content="Hydra como sistema computacional e instrumento visual." />
+  <meta property="og:description" content="Síntesis, feedback y live coding con Hydra." />
   <meta property="og:type" content="website" />
   <meta property="og:image" content="/workshop/og.png" />
   <meta property="og:image:width" content="1536" />
   <meta property="og:image:height" content="1024" />
-  <meta property="og:image:alt" content="La imagen como señal, una presentación interactiva de Hydra WebGPU" />
+  <meta property="og:image:alt" content="Trama cian y campo magenta de la presentación La imagen como señal" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:image" content="/workshop/og.png" />
   <script type="importmap">
@@ -24,107 +24,131 @@
   </script>
   <link rel="stylesheet" href="./styles.css" />
 </head>
-<body>
+<body data-scene-mode="phenomenon" data-code-visibility="hidden">
   <a class="skip-link" href="#scene-title">Ir al contenido</a>
 
-  <div id="visual-stage" aria-hidden="true">
+  <div class="signal-layer" aria-hidden="true">
     <canvas id="hydra-canvas"></canvas>
-    <div class="visual-vignette"></div>
-    <div class="visual-noise"></div>
+    <div class="signal-shade"></div>
+    <div class="signal-grain"></div>
   </div>
 
   <div id="runtime-status" class="runtime-status" role="status" aria-live="polite">
-    preparando el campo visual…
+    preparando la señal…
   </div>
 
-  <header class="topbar">
-    <a class="wordmark" href="#la-imagen-como-senal" aria-label="Volver al inicio">
-      <span>HYDRA</span>
-      <span class="wordmark-secondary">WEBGPU</span>
-    </a>
-    <div class="chapter-position" aria-live="polite">
-      <span id="chapter-index">00</span>
-      <span class="chapter-divider"></span>
-      <span id="chapter-label">entrar</span>
-    </div>
-    <div class="top-actions">
-      <button id="pause-button" class="text-button" type="button" aria-pressed="false">pausar</button>
-      <button id="code-button" class="text-button" type="button" aria-expanded="false" aria-controls="code-panel">código</button>
-      <button id="map-button" class="text-button" type="button" aria-expanded="false" aria-controls="map-panel">mapa</button>
-    </div>
-  </header>
+  <div class="workshop-shell">
+    <header class="workshop-header">
+      <button id="home-button" class="identity" type="button" aria-label="Volver al inicio">
+        <span class="identity-title">la imagen como señal</span>
+        <span class="identity-subtitle">Hydra · 2 horas</span>
+      </button>
 
-  <main id="presentation" class="presentation" tabindex="-1">
-    <article id="scene" class="scene" aria-labelledby="scene-title">
-      <div class="scene-copy">
-        <p id="scene-kicker" class="scene-kicker"></p>
-        <h1 id="scene-title"></h1>
-        <div id="scene-body" class="scene-body"></div>
-        <p id="scene-prompt" class="scene-prompt" hidden></p>
+      <div class="position" aria-live="polite">
+        <span id="movement-label">entrar</span>
+        <span class="position-rule" aria-hidden="true"></span>
+        <span id="scene-time">00:00–00:01</span>
       </div>
 
-      <div id="graph-strip" class="graph-strip" aria-label="Estructura del sistema"></div>
+      <nav class="utility-nav" aria-label="Herramientas de la presentación">
+        <button id="pause-button" class="utility-button" type="button" aria-pressed="false">detener reloj</button>
+        <button id="motion-button" class="utility-button" type="button" aria-pressed="false">menos movimiento</button>
+        <button id="map-button" class="utility-button" type="button" aria-expanded="false" aria-controls="map-panel">mapa</button>
+        <button id="notes-button" class="utility-button" type="button" aria-expanded="false" aria-controls="notes-panel" hidden>notas</button>
+      </nav>
+    </header>
 
-      <section id="experiment" class="experiment" aria-labelledby="experiment-title" hidden>
-        <div class="experiment-heading">
-          <span id="experiment-title">intervenir</span>
-          <button id="reset-controls" class="quiet-button" type="button">reiniciar</button>
-        </div>
-        <div id="experiment-controls" class="experiment-controls"></div>
-      </section>
-    </article>
-  </main>
+    <main id="presentation" class="presentation" tabindex="-1">
+      <article id="scene" class="scene" aria-labelledby="scene-title">
+        <section class="narrative" aria-label="Idea actual">
+          <p id="scene-kicker" class="scene-kicker"></p>
+          <h1 id="scene-title"></h1>
+          <p id="scene-statement" class="scene-statement"></p>
+          <div id="scene-body" class="scene-body"></div>
+          <div id="scene-sources" class="scene-sources" aria-label="Referencias" hidden></div>
+        </section>
 
-  <footer class="bottombar">
-    <div class="scene-count" aria-live="polite">
-      <span id="scene-current">01</span>
-      <span aria-hidden="true">/</span>
-      <span id="scene-total">35</span>
-    </div>
-    <div class="progress-track" aria-hidden="true">
-      <span id="progress-fill"></span>
-    </div>
-    <nav class="scene-navigation" aria-label="Navegación de la presentación">
-      <button id="previous-button" class="nav-button" type="button" aria-label="Escena anterior">←</button>
-      <button id="next-button" class="nav-button" type="button" aria-label="Escena siguiente">→</button>
-    </nav>
-  </footer>
+        <figure id="diagram-stage" class="diagram-stage" aria-labelledby="diagram-caption" hidden>
+          <div id="diagram" class="diagram"></div>
+          <figcaption id="diagram-caption">estructura actual</figcaption>
+        </figure>
 
-  <aside id="code-panel" class="side-panel code-panel" aria-labelledby="code-panel-title" hidden>
-    <div class="panel-heading">
+        <section id="code-stage" class="code-stage" aria-labelledby="code-title" hidden>
+          <header class="code-heading">
+            <div>
+              <p class="code-kicker">la estructura ejecutable</p>
+              <h2 id="code-title">patch actual</h2>
+            </div>
+            <div class="code-actions">
+              <button id="copy-code-button" type="button">copiar</button>
+              <a id="open-hydra-link" href="/hydra/" target="_blank" rel="noreferrer">abrir en Hydra ↗</a>
+            </div>
+          </header>
+          <ol id="code-lines" class="code-lines" aria-label="Código Hydra"></ol>
+          <p id="code-status" class="inline-status" aria-live="polite"></p>
+        </section>
+
+        <section id="lab-stage" class="lab-stage" aria-labelledby="lab-title" hidden>
+          <header class="lab-heading">
+            <div>
+              <p class="lab-kicker">tinkering × learn</p>
+              <h2 id="lab-title">intervenir sin perder el regreso</h2>
+            </div>
+            <button id="reset-button" class="reset-button" type="button">volver al punto de reunión</button>
+          </header>
+          <p id="scene-prompt" class="scene-prompt"></p>
+          <div id="experiment-controls" class="experiment-controls"></div>
+          <p id="experiment-status" class="inline-status" aria-live="polite"></p>
+        </section>
+      </article>
+    </main>
+
+    <footer class="workshop-footer">
+      <div class="scene-index" aria-live="polite">
+        <span id="scene-current">01</span>
+        <span aria-hidden="true">/</span>
+        <span id="scene-total">33</span>
+      </div>
+      <div class="progress" aria-hidden="true"><span id="progress-fill"></span></div>
+      <p id="scene-transition" class="scene-transition"></p>
+      <nav class="scene-navigation" aria-label="Navegación entre escenas">
+        <button id="previous-button" type="button" aria-label="Escena anterior">←</button>
+        <button id="next-button" type="button" aria-label="Escena siguiente">→</button>
+      </nav>
+    </footer>
+  </div>
+
+  <aside id="map-panel" class="overlay-panel map-panel" aria-labelledby="map-title" hidden>
+    <header class="overlay-heading">
       <div>
-        <p class="panel-kicker">la estructura ejecutable</p>
-        <h2 id="code-panel-title">código</h2>
+        <p>recorrido acumulativo · 120 minutos</p>
+        <h2 id="map-title">mapa del taller</h2>
       </div>
-      <button class="panel-close" type="button" data-close-panel="code-panel" aria-label="Cerrar código">×</button>
-    </div>
-    <pre id="scene-code" tabindex="0"><code></code></pre>
-    <div class="code-actions">
-      <button id="copy-code-button" class="panel-action" type="button">copiar</button>
-      <a id="open-hydra-link" class="panel-action" href="/hydra/" target="_blank" rel="noreferrer">abrir en Hydra ↗</a>
-    </div>
-    <p id="code-status" class="panel-status" aria-live="polite"></p>
+      <button type="button" data-close-panel="map-panel" aria-label="Cerrar mapa">cerrar</button>
+    </header>
+    <div id="movement-map" class="movement-map"></div>
   </aside>
 
-  <aside id="map-panel" class="side-panel map-panel" aria-labelledby="map-panel-title" hidden>
-    <div class="panel-heading">
+  <aside id="notes-panel" class="overlay-panel notes-panel" aria-labelledby="notes-title" hidden>
+    <header class="overlay-heading">
       <div>
-        <p class="panel-kicker">recorrido cognitivo</p>
-        <h2 id="map-panel-title">mapa</h2>
+        <p>vista de facilitación</p>
+        <h2 id="notes-title">notas de esta escena</h2>
       </div>
-      <button class="panel-close" type="button" data-close-panel="map-panel" aria-label="Cerrar mapa">×</button>
-    </div>
-    <nav id="chapter-map" class="chapter-map" aria-label="Capítulos"></nav>
-    <div class="map-arc" aria-label="Progresión conceptual">
-      <span>percibir</span><span>intervenir</span><span>leer</span><span>componer</span><span>recordar</span><span>interpretar</span>
-    </div>
+      <button type="button" data-close-panel="notes-panel" aria-label="Cerrar notas">cerrar</button>
+    </header>
+    <dl class="notes-list">
+      <div><dt>gesto</dt><dd id="scene-cue"></dd></div>
+      <div><dt>recuperación</dt><dd id="scene-recovery"></dd></div>
+      <div><dt>transición</dt><dd id="notes-transition"></dd></div>
+    </dl>
   </aside>
 
   <input id="media-input" type="file" accept="image/*,video/*" hidden />
-  <div id="drop-message" class="drop-message" hidden>soltar para incorporar el archivo como señal local</div>
+  <div id="drop-message" class="drop-message" hidden>soltar para incorporar como señal local</div>
 
   <noscript>
-    <div class="noscript">Esta presentación necesita JavaScript para ejecutar Hydra y sus experimentos.</div>
+    <div class="noscript">Esta presentación necesita JavaScript para ejecutar Hydra y sus intervenciones.</div>
   </noscript>
 
   <script type="module" src="./app.js"></script>
