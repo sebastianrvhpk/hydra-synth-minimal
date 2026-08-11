@@ -38,7 +38,6 @@ const ui = {
   presentation: byId('presentation')
 }
 
-const TAU = Math.PI * 2
 const pad = (value) => String(value).padStart(2, '0')
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
 const round = (value, precision = 3) => {
@@ -162,9 +161,9 @@ const controlSchemas = {
       label: 'tipo',
       rebuild: true,
       options: [
-        ['constant', 'número'],
-        ['uniform', 'función'],
-        ['field', 'campo']
+        ['constant', 'constante'],
+        ['uniform', 'señal'],
+        ['field', 'textura']
       ]
     }
   ],
@@ -267,8 +266,15 @@ const hydraHeight = () => Number(synth?.height ?? ui.canvas.height ?? 720)
 const aspectA = () => hydraWidth() > hydraHeight() ? hydraHeight() / hydraWidth() : 1
 const aspectB = () => hydraHeight() > hydraWidth() ? hydraWidth() / hydraHeight() : 1
 
-const fieldNoise = (frequency = 2.5, velocity = 0.05, radius = 0.7) =>
-  synth.noiseLoop(frequency, velocity, radius).scale(1, aspectA(), aspectB())
+const fieldNoise = (
+  frequency = 2.5,
+  velocity = 0.05,
+  radius = 0.7,
+  seedX = Math.random(),
+  seedY = Math.random()
+) => synth.noiseLoop(frequency, velocity, radius)
+  .scale(1, aspectA, aspectB)
+  .modulate(synth.solid(seedX, seedY), 1)
 
 const parameterField = (scale = 1, offset = 0) =>
   fieldNoise(
@@ -322,7 +328,7 @@ const parameterModeGraph = () => {
   if (controls.parameterMode === 'uniform') {
     return ({ time }) => 26 + Math.sin(time * 0.8) * 18
   }
-  return synth.noiseLoop(2.2, 0.045, 0.7).r(38, 8)
+  return fieldNoise(2.2, 0.045, 0.7).r(38, 8)
 }
 
 const drawCodeTexture = (code) => {
@@ -628,7 +634,7 @@ const patchLibrary = {
         ? '26'
         : controls.parameterMode === 'uniform'
           ? '() => 26 + Math.sin(time * .8) * 18'
-          : 'noiseLoop(2.2, .045, .7).r(38, 8)'
+          : 'nsloop(2.2, .045, .7).r(38, 8)'
       return codeLines(
         'osc(' + parameter + ', .04, .18)',
         '  .modulate(noiseLoop(2.3, .035, .7), .06)',
@@ -873,7 +879,7 @@ const patchLibrary = {
       }
       if (externalMode === 'file' || externalMode === 'camera') {
         synth.src(synth.s0)
-          .scale(1, aspectA(), aspectB())
+          .scale(1, aspectA, aspectB)
           .modulate(fieldNoise(2.2, 0.035, 0.7), 0.11)
           .color(0.82, 0.66, 1.08)
           .out()

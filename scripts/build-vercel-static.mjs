@@ -105,6 +105,10 @@ copyFileSync(
   path.join(hydraOutDir, 'media-library.js')
 )
 copyFileSync(
+  path.join(repoRoot, 'packages', 'hydra', 'grammar-utilities.js'),
+  path.join(hydraOutDir, 'grammar-utilities.js')
+)
+copyFileSync(
   path.join(repoRoot, 'packages', 'hydra', 'og.png'),
   path.join(hydraOutDir, 'og.png')
 )

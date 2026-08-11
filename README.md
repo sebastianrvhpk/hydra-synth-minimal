@@ -71,6 +71,22 @@ library, `mediaBuffers.release('s0')` to empty a buffer, or
 for the current tab and are released when replaced, removed, cleared, or when
 the page closes.
 
+## Grammar utilities
+
+The browser instrument adds six small utilities, organized by the kind of value
+they produce:
+
+| Regime | Utilities | Meaning |
+| --- | --- | --- |
+| Constant | `rn(max = 1)`, `btw(min = 0, max = 1)` | Uniform random values chosen once when the code runs |
+| Signal | `A`, `B` | Live aspect callbacks for `.scale(1, A, B)` |
+| Texture | `ns(scale = 10, speed = .1)`, `nsloop(scale = 10, speed = .1, radius = 1)` | Aspect-correct noise fields with a fresh spatial seed per call |
+
+`A` is `() => Math.min(1, height / width)` and `B` is
+`() => Math.min(1, width / height)`, so both continue to respond after a
+resolution change. `ns` and `nsloop` also accept explicit `seedX` and `seedY`
+arguments after their native source parameters when a field must be reproduced.
+
 ## Verification
 
 ```bash

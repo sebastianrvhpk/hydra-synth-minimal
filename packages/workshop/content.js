@@ -210,13 +210,13 @@ export const scenes = [
     id: 'tres-escalas-del-parametro',
     chapter: 'intermodulacion',
     kicker: 'capacidad específica',
-    title: 'Un parámetro puede ser número, función o campo',
+    title: 'Un parámetro puede ser constante, señal o textura',
     body: [
-      'Puede permanecer constante, variar una vez por cuadro o adoptar un valor diferente en cada posición de la imagen.'
+      'Puede fijarse al ejecutar el código, variar como una señal uniforme por cuadro o adoptar un valor distinto en cada posición de una textura.'
     ],
     patch: 'parameterScale',
     controls: 'parameterScale',
-    graph: ['escalar', 'uniforme temporal', 'campo espacio-temporal']
+    graph: ['constante', 'señal uniforme', 'textura espacio-temporal']
   },
   {
     id: 'funcion-como-control',

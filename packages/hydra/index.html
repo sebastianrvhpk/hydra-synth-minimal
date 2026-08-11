@@ -1244,6 +1244,7 @@
   <canvas id="code-material-canvas" hidden></canvas>
 
   <script type="module">
+    import { createGrammarUtilities } from './grammar-utilities.js'
     import { createMediaBufferManager, createMediaLibrary, isSupportedMediaFile } from './media-library.js'
     import { basicSetup, EditorView } from 'codemirror'
     import { EditorSelection, EditorState, Prec, StateEffect, StateField } from '@codemirror/state'
@@ -1432,95 +1433,11 @@
 
     const readHydraWidth = () => Number(synth.width ?? runtime.host?.canvas?.width ?? window.innerWidth ?? 1) || 1
     const readHydraHeight = () => Number(synth.height ?? runtime.host?.canvas?.height ?? window.innerHeight ?? 1) || 1
-    const readAspectA = () => {
-      const width = readHydraWidth()
-      const height = readHydraHeight()
-      return width > height ? height / width : 1
-    }
-    const readAspectB = () => {
-      const width = readHydraWidth()
-      const height = readHydraHeight()
-      return height > width ? width / height : 1
-    }
-
-    const grammarUtilities = {
-      px: (value = 0, max = 6) => Math.max(-max, Math.min(max, Number(value) || 0)),
-      rn: (max = 1) => Math.random() * max,
-      btw: (min = 0, max = 1, power = 1) => min + Math.random() ** power * (max - min),
-      intgr: (min = 0, max = 1, power = 1) => {
-        const lo = Math.ceil(min)
-        const hi = Math.floor(max)
-        return lo + Math.floor(Math.random() ** power * (hi - lo + 1))
-      },
-      maybe: (p = 0.5) => Math.random() < p,
-      bi: (p = 0.5) => Math.random() > p ? 1 : -1,
-      bl: (p = 0.5, power = 1) => Math.random() ** power > p ? 1 : 0,
-      pick: (p, a, b) => Math.random() < p ? a : b,
-      choice2: (a, b, power = 1) => Math.random() ** power < 0.5 ? a : b,
-      choice3: (a, b, c, power = 1) => {
-        const r = Math.random() ** power
-        return r < 1 / 3 ? a : r < 2 / 3 ? b : c
-      },
-      choice4: (a, b, c, d, power = 1) => {
-        const r = Math.random() ** power
-        return r < 0.25 ? a : r < 0.5 ? b : r < 0.75 ? c : d
-      },
-      pixelX: () => grammarUtilities.choice3(1, grammarUtilities.intgr(4, 13), readHydraWidth()),
-      pixelY: () => grammarUtilities.choice3(1, grammarUtilities.intgr(4, 13), readHydraHeight()),
-      ns: (freq = 3, vel = 0, x = grammarUtilities.rn(), y = grammarUtilities.rn()) =>
-        synth.noise(freq, vel)
-          .scale(1, readAspectA(), readAspectB())
-          .modulate(synth.solid(readHydraWidth() * x, readHydraHeight() * y), 1),
-      nsloop: (freq = 35, vel = 0.25, rad = 0.8, x = grammarUtilities.rn(), y = grammarUtilities.rn()) =>
-        (typeof synth.noiseLoop === 'function' ? synth.noiseLoop(freq, vel, rad) : synth.noise(freq, vel))
-          .scale(1, readAspectA(), readAspectB())
-          .modulate(synth.solid(readHydraWidth() * x, readHydraHeight() * y), 1),
-      knob: (base = 0, amount = 1, bins = 4, freq = 2, vel = 0.05) =>
-        grammarUtilities.ns(freq, vel)
-          .posterize(bins, 1)
-          .pixelate(1, 1)
-          .r(amount, base),
-      rng: (min = 0, max = 1, bins = 4, freq = 2, vel = 0.05) =>
-        grammarUtilities.knob((min + max) / 2, (max - min) / 2, bins, freq, vel),
-      hit: (base = 0, amount = 1, threshold = 0.65, freq = 1, vel = 0.05) =>
-        synth.solid(base)
-          .add(grammarUtilities.ns(freq, vel).pixelate(1, 1).thresh(threshold, 0), amount),
-      wob: (min = 0, max = 1, sync = 0.05) =>
-        synth.osc(Math.PI * 2, sync, 1)
-          .pixelate(1, 1)
-          .r(max - min, min),
-      wobc: (base = 0, amount = 1, sync = 0.05) =>
-        synth.osc(Math.PI * 2, sync, 1)
-          .brightness(-0.5)
-          .pixelate(1, 1)
-          .r(amount * 2, base),
-      pxknob: (base = 0, amount = 1, bins = 4, freq = 2, vel = 0.05, max = 6) => {
-        const center = grammarUtilities.px(base * Math.max(readHydraWidth(), readHydraHeight()), max)
-        const room = Math.max(0, max - Math.abs(center))
-        const range = Math.min(Math.abs(amount * Math.max(readHydraWidth(), readHydraHeight())), room)
-        return grammarUtilities.knob(center, range, bins, freq, vel)
-      },
-      pxrng: (min = 0, maxValue = 1, bins = 4, freq = 2, vel = 0.05, max = 6) =>
-        grammarUtilities.rng(
-          grammarUtilities.px(min * Math.max(readHydraWidth(), readHydraHeight()), max),
-          grammarUtilities.px(maxValue * Math.max(readHydraWidth(), readHydraHeight()), max),
-          bins,
-          freq,
-          vel
-        ),
-      pxwob: (min = 0, maxValue = 1, sync = 0.05, max = 6) =>
-        grammarUtilities.wob(
-          grammarUtilities.px(min * Math.max(readHydraWidth(), readHydraHeight()), max),
-          grammarUtilities.px(maxValue * Math.max(readHydraWidth(), readHydraHeight()), max),
-          sync
-        ),
-      pxwobc: (base = 0, amount = 1, sync = 0.05, max = 6) => {
-        const center = grammarUtilities.px(base * Math.max(readHydraWidth(), readHydraHeight()), max)
-        const room = Math.max(0, max - Math.abs(center))
-        const range = Math.min(Math.abs(amount * Math.max(readHydraWidth(), readHydraHeight())), room)
-        return grammarUtilities.wobc(center, range, sync)
-      }
-    }
+    const grammarUtilities = createGrammarUtilities({
+      synth,
+      readWidth: readHydraWidth,
+      readHeight: readHydraHeight
+    })
 
     const installGrammarUtilityBinding = (name, descriptor) => {
       Object.defineProperty(synth, name, {
@@ -1535,10 +1452,6 @@
       })
     }
 
-    installGrammarUtilityBinding('TAU', { get: () => Math.PI * 2, set: () => { } })
-    installGrammarUtilityBinding('A', { get: readAspectA, set: () => { } })
-    installGrammarUtilityBinding('B', { get: readAspectB, set: () => { } })
-    installGrammarUtilityBinding('PX_MAX', { get: () => 6, set: () => { } })
     for (const [name, value] of Object.entries(grammarUtilities)) {
       installGrammarUtilityBinding(name, { writable: true, value })
     }
@@ -1658,108 +1571,54 @@ speed = 0.75`
     let liveEditorView = null
     const grammarUtilityGroups = [
       {
-        title: 'constants',
-        items: [
-          ['TAU', 'TAU'],
-          ['A', 'A'],
-          ['B', 'B'],
-          ['PX_MAX', 'PX_MAX']
-        ]
-      },
-      {
-        title: 'random scalars',
+        title: 'constant',
         items: [
           ['rn', 'rn()'],
-          ['btw', 'btw(0, 1)'],
-          ['intgr', 'intgr(2, 8)'],
-          ['maybe', 'maybe(.5)'],
-          ['bi', 'bi(.5)'],
-          ['bl', 'bl(.5)'],
-          ['pick', 'pick(.5, .25, .75)'],
-          ['choice2', 'choice2(.25, .75)'],
-          ['choice3', 'choice3(.25, .5, .75)'],
-          ['choice4', 'choice4(.125, .25, .5, .75)']
+          ['btw', 'btw(0, 1)']
         ]
       },
       {
-        title: 'raster units',
+        title: 'signal',
         items: [
-          ['px', 'px(1)'],
-          ['pixelX', 'pixelX()'],
-          ['pixelY', 'pixelY()']
+          ['A', 'A'],
+          ['B', 'B']
         ]
       },
       {
-        title: 'texture fields',
+        title: 'texture',
         items: [
-          ['ns', 'ns(3, .05)'],
-          ['nsloop', 'nsloop(35, .25, .8)']
-        ]
-      },
-      {
-        title: 'parameter signals',
-        items: [
-          ['knob', 'knob(0, 1, 4, 2, .05)'],
-          ['rng', 'rng(0, 1, 4, 2, .05)'],
-          ['hit', 'hit(0, 1, .65, 1, .05)'],
-          ['wob', 'wob(0, 1, .05)'],
-          ['wobc', 'wobc(0, 1, .05)']
-        ]
-      },
-      {
-        title: 'pixel-bounded signals',
-        items: [
-          ['pxknob', 'pxknob(0, .01, 4)'],
-          ['pxrng', 'pxrng(0, .01, 4)'],
-          ['pxwob', 'pxwob(0, .01, .05)'],
-          ['pxwobc', 'pxwobc(0, .01, .05)']
+          ['ns', 'ns(10, .1)'],
+          ['nsloop', 'nsloop(10, .1, 1)']
         ]
       }
     ]
     const grammarUtilitySnippets = grammarUtilityGroups.flatMap((group) => group.items)
     const grammarUtilityNames = grammarUtilitySnippets.map(([name]) => name)
     const grammarUtilitySource = new Map([
-      ['TAU', 'TAU = Math.PI * 2'],
-      ['A', 'A = width > height ? height / width : 1'],
-      ['B', 'B = height > width ? width / height : 1'],
-      ['PX_MAX', 'PX_MAX = 6'],
-      ['px', 'px(value = 0, max = 6) => clamp value into [-max, max]'],
-      ['rn', 'rn(max = 1) => Math.random() * max'],
-      ['btw', 'btw(min = 0, max = 1, power = 1) => min + Math.random() ** power * (max - min)'],
-      ['intgr', 'intgr(min = 0, max = 1, power = 1) => integer in [min, max]'],
-      ['maybe', 'maybe(p = .5) => Math.random() < p'],
-      ['bi', 'bi(p = .5) => Math.random() > p ? 1 : -1'],
-      ['bl', 'bl(p = .5, power = 1) => Math.random() ** power > p ? 1 : 0'],
-      ['pick', 'pick(p, a, b) => maybe(p) ? a : b'],
-      ['choice2', 'choice2(a, b, power = 1) => weighted random choice'],
-      ['choice3', 'choice3(a, b, c, power = 1) => weighted random choice'],
-      ['choice4', 'choice4(a, b, c, d, power = 1) => weighted random choice'],
-      ['pixelX', 'pixelX() => choice3(1, intgr(4, 13), width)'],
-      ['pixelY', 'pixelY() => choice3(1, intgr(4, 13), height)'],
-      ['ns', `ns(freq = 3, vel = 0, x = rn(), y = rn()) =>
-  noise(freq, vel)
+      ['rn', `rn(max = 1) => Math.random() * max
+
+Evaluated once when the code runs.`],
+      ['btw', `btw(min = 0, max = 1) => min + Math.random() * (max - min)
+
+Evaluated once when the code runs.`],
+      ['A', `A = () => Math.min(1, height / width)
+
+Pass the callback directly: .scale(1, A, B)`],
+      ['B', `B = () => Math.min(1, width / height)
+
+Pass the callback directly: .scale(1, A, B)`],
+      ['ns', `ns(scale = 10, speed = .1, seedX = rn(), seedY = rn()) =>
+  noise(scale, speed)
     .scale(1, A, B)
-    .modulate(solid(width * x, height * y), 1)`],
-      ['nsloop', `nsloop(freq = 35, vel = .25, rad = .8, x = rn(), y = rn()) =>
-  noiseLoop(freq, vel, rad)
+    .modulate(solid(seedX, seedY), 1)
+
+Each call gets a distinct spatial seed; explicit seeds reproduce it.`],
+      ['nsloop', `nsloop(scale = 10, speed = .1, radius = 1, seedX = rn(), seedY = rn()) =>
+  noiseLoop(scale, speed, radius)
     .scale(1, A, B)
-    .modulate(solid(width * x, height * y), 1)`],
-      ['knob', `knob(base = 0, amount = 1, bins = 4, freq = 2, vel = .05) =>
-  ns(freq, vel)
-    .posterize(bins, 1)
-    .pixelate(1, 1)
-    .r(amount, base)`],
-      ['rng', 'rng(min = 0, max = 1, bins = 4, freq = 2, vel = .05) => knob((min + max) / 2, (max - min) / 2, bins, freq, vel)'],
-      ['hit', `hit(base = 0, amount = 1, threshold = .65, freq = 1, vel = .05) =>
-  solid(base).add(ns(freq, vel).pixelate(1, 1).thresh(threshold, 0), amount)`],
-      ['wob', `wob(min = 0, max = 1, sync = .05) =>
-  osc(TAU, sync, 1).pixelate(1, 1).r(max - min, min)`],
-      ['wobc', `wobc(base = 0, amount = 1, sync = .05) =>
-  osc(TAU, sync, 1).brightness(-.5).pixelate(1, 1).r(amount * 2, base)`],
-      ['pxknob', 'pxknob(base = 0, amount = 1, bins = 4, freq = 2, vel = .05, max = PX_MAX)'],
-      ['pxrng', 'pxrng(min = 0, maxValue = 1, bins = 4, freq = 2, vel = .05, max = PX_MAX)'],
-      ['pxwob', 'pxwob(min = 0, maxValue = 1, sync = .05, max = PX_MAX)'],
-      ['pxwobc', 'pxwobc(base = 0, amount = 1, sync = .05, max = PX_MAX)']
+    .modulate(solid(seedX, seedY), 1)
+
+Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
     ])
 
     const hydraCompletionNames = [
