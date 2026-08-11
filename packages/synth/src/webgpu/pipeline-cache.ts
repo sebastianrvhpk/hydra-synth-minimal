@@ -1,10 +1,9 @@
 import tgpu, {
   d,
-  type TgpuComputePipeline,
   type TgpuRenderPipeline,
   type TgpuRoot
 } from 'typegpu'
-import type { HydraCompiledPass, HydraComputePass, HydraFragmentPass } from '../core/types.js'
+import type { HydraCompiledPass, HydraFragmentPass } from '../core/types.js'
 import {
   createPassBindGroupLayout,
   type HydraTypeGPUBindGroupLayout
@@ -25,11 +24,7 @@ export interface PipelineCacheEntry extends PipelineCacheEntryBase {
   typegpuPipeline: TgpuRenderPipeline<any>
 }
 
-export interface ComputePipelineCacheEntry extends PipelineCacheEntryBase {
-  typegpuPipeline: TgpuComputePipeline
-}
-
-type AnyPipelineCacheEntry = PipelineCacheEntry | ComputePipelineCacheEntry
+type AnyPipelineCacheEntry = PipelineCacheEntry
 
 const hashString = (value = ''): string => {
   let hash = 2166136261
@@ -131,36 +126,6 @@ export class PipelineCache extends TypeGPUPipelineCache<HydraFragmentPass, Pipel
       return { cacheKey, signature: pass.signature, programSource, layout, typegpuPipeline }
     } catch (cause) {
       throw new Error(`TypeGPU fragment pipeline creation failed for ${pass.signature}.`, { cause })
-    }
-  }
-}
-
-export class ComputePipelineCache extends TypeGPUPipelineCache<HydraComputePass, ComputePipelineCacheEntry> {
-  constructor ({ root, maxEntries = 128 }: { root: TgpuRoot, maxEntries?: number }) {
-    super({ root, maxEntries })
-  }
-
-  protected createEntry (pass: HydraComputePass, cacheKey: string, programSource: string): ComputePipelineCacheEntry {
-    try {
-      const layout = createPassBindGroupLayout(pass)
-      const externals = createTypeGPUShaderExternals(
-        pass.program,
-        createResourceExternals(layout)
-      )
-      const [workgroupWidth, workgroupHeight] = pass.compute.workgroupSize
-      const compute = tgpu.computeFn({
-        in: { globalId: d.builtin.globalInvocationId },
-        workgroupSize: [workgroupWidth, workgroupHeight, 1]
-      })(pass.program.entryBody)
-        .$uses(externals)
-        .$name(`hydraCompute_${hashString(pass.signature)}`)
-      const typegpuPipeline = this.root.createComputePipeline({ compute })
-        .$name(`hydraComputePipeline_${hashString(cacheKey)}`)
-
-      this.root.unwrap(typegpuPipeline)
-      return { cacheKey, signature: pass.signature, programSource, layout, typegpuPipeline }
-    } catch (cause) {
-      throw new Error(`TypeGPU compute pipeline creation failed for ${pass.signature}.`, { cause })
     }
   }
 }

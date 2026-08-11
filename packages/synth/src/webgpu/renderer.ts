@@ -8,12 +8,14 @@ import tgpu, {
   type TgpuRoot,
   type TgpuTexture
 } from 'typegpu'
-import type { HydraCompiledPass, HydraComputePass, HydraFragmentPass } from '../core/types.js'
+import type { HydraCompiledPass } from '../core/types.js'
+import type {
+  HydraRenderPassExecution,
+  HydraTextureReadback
+} from '../runtime/renderer.js'
 import {
-  ComputePipelineCache,
   PipelineCache,
   fullscreenVertex,
-  type ComputePipelineCacheEntry,
   type PipelineCacheEntry
 } from './pipeline-cache.js'
 import { MAX_DYNAMIC_UNIFORMS, OUTPUT_TEXTURE_FORMAT } from './constants.js'
@@ -40,8 +42,21 @@ type AnyTypeGPUBuffer = TgpuBuffer<any>
 type AnyTypeGPUTexture = TgpuTexture<any>
 type DeviceLostListener = (info: GPUDeviceLostInfo) => void
 
+interface PassBindGroupCacheEntry {
+  pipelineId: number
+  globalBufferId: number
+  dynamicBufferId: number
+  samplerId: number
+  textureIds: number[]
+  bindGroup: TgpuBindGroup
+  lastUsed: number
+}
+
+const MAX_PASS_BIND_GROUP_CACHE_ENTRIES = 64
+
 export class WebGPURenderer {
   readonly canvas: HTMLCanvasElement
+  readonly backend = 'webgpu' as const
   width: number
   height: number
   ready = false
@@ -52,7 +67,6 @@ export class WebGPURenderer {
   root: TgpuRoot | null = null
 
   private outputPipelineCache: PipelineCache | null = null
-  private outputComputePipelineCache: ComputePipelineCache | null = null
   private screenPipeline: TgpuRenderPipeline<any> | null = null
   private screenAllPipeline: TgpuRenderPipeline<any> | null = null
   private captureConversionPipeline: TgpuRenderPipeline<any> | null = null
@@ -75,6 +89,8 @@ export class WebGPURenderer {
   private screenAllBindGroup: TgpuBindGroup | null = null
   private readonly screenResolvedTextures: Array<GPUTexture | null> = [null, null, null, null]
   private readonly deviceLostListeners = new Set<DeviceLostListener>()
+  private readonly passBindGroupCache: PassBindGroupCacheEntry[] = []
+  private passBindGroupUseOrdinal = 0
   private disposed = false
 
   constructor ({ canvas, width = canvas.width || 1280, height = canvas.height || 720 }: WebGPURendererOptions) {
@@ -113,10 +129,6 @@ export class WebGPURenderer {
         root: this.root,
         targetFormat: OUTPUT_TEXTURE_FORMAT,
         maxEntries: 256
-      })
-      this.outputComputePipelineCache = new ComputePipelineCache({
-        root: this.root,
-        maxEntries: 128
       })
 
       const activeDevice = this.root.device
@@ -252,6 +264,7 @@ export class WebGPURenderer {
     this.canvas.width = this.width
     this.canvas.height = this.height
     this.invalidateScreenBindGroupCaches()
+    this.invalidatePassBindGroupCache()
   }
 
   createGlobalUniformBuffer (label: string): GPUBuffer {
@@ -290,8 +303,7 @@ export class WebGPURenderer {
     depthOrArrayLayers = 1,
     label = '',
     format = OUTPUT_TEXTURE_FORMAT,
-    includeRenderAttachment = true,
-    includeStorageBinding = true
+    includeRenderAttachment = true
   }: {
     width?: number
     height?: number
@@ -299,7 +311,6 @@ export class WebGPURenderer {
     label?: string
     format?: GPUTextureFormat
     includeRenderAttachment?: boolean
-    includeStorageBinding?: boolean
   } = {}): GPUTexture {
     if (!this.root) throw new Error('Renderer not initialized.')
     const size = depthOrArrayLayers > 1
@@ -307,7 +318,6 @@ export class WebGPURenderer {
       : [Math.max(1, Math.floor(width)), Math.max(1, Math.floor(height))] as const
     let owner = this.root.createTexture({ size, format }).$usage('sampled') as AnyTypeGPUTexture
     if (includeRenderAttachment) owner = owner.$usage('render') as AnyTypeGPUTexture
-    if (includeStorageBinding) owner = owner.$usage('storage' as never) as AnyTypeGPUTexture
     owner.$name(label || 'hydra-output-texture')
     return this.registerTexture(owner)
   }
@@ -360,8 +370,7 @@ export class WebGPURenderer {
       width,
       height,
       format: 'rgba8unorm',
-      label: 'hydra-capture-intermediate-rgba8',
-      includeStorageBinding: false
+      label: 'hydra-capture-intermediate-rgba8'
     })
   }
 
@@ -371,8 +380,15 @@ export class WebGPURenderer {
     intermediateTexture: GPUTexture
   ): void {
     if (!this.root) throw new Error('Renderer not initialized.')
-    if (!this.captureConversionLayout || !this.captureConversionPipeline) {
+    if (
+      !this.captureConversionLayout ||
+      !this.captureConversionPipeline ||
+      !this.globalUniformOwner ||
+      !this.nearestSamplerOwner
+    ) {
       this.captureConversionLayout = tgpu.bindGroupLayout({
+        globals: { uniform: GlobalUniformsSchema, visibility: ['fragment'] },
+        hydraSampler: { sampler: 'filtering', visibility: ['fragment'] },
         sourceTexture: { texture: d.texture2d(d.f32), visibility: ['fragment'] }
       }).$idx(0)
       const externals = this.getLayoutExternals(this.captureConversionLayout)
@@ -380,7 +396,8 @@ export class WebGPURenderer {
         in: { fragCoord: d.builtin.position },
         out: d.vec4f
       })(`{
-        let color = textureLoad(sourceTexture, vec2i(in.fragCoord.xy), 0);
+        let uv = vec2f(in.fragCoord.x / globals.width, in.fragCoord.y / globals.height);
+        let color = textureSampleLevel(sourceTexture, hydraSampler, uv, 0.0);
         return vec4f(color.rgb, 1.0);
       }`).$uses(externals).$name('hydraCaptureConversionFragment')
       this.captureConversionPipeline = this.root.createRenderPipeline({
@@ -393,6 +410,8 @@ export class WebGPURenderer {
     }
 
     const bindGroup = this.root.createBindGroup(this.captureConversionLayout as TgpuBindGroupLayout<any>, {
+      globals: this.globalUniformOwner,
+      hydraSampler: this.nearestSamplerOwner,
       sourceTexture: this.getTextureResource(sourceTexture)
     } as never)
     this.captureConversionPipeline
@@ -412,6 +431,7 @@ export class WebGPURenderer {
     const owner = this.textureOwners.get(texture)
     if (!owner) throw new Error('Texture is not owned by this TypeGPU renderer.')
     owner.destroy()
+    this.invalidatePassBindGroupCache()
   }
 
   destroyBuffer (buffer: GPUBuffer | null | undefined): void {
@@ -419,6 +439,7 @@ export class WebGPURenderer {
     const owner = this.bufferOwners.get(buffer)
     if (!owner) throw new Error('Buffer is not owned by this TypeGPU renderer.')
     owner.destroy()
+    this.invalidatePassBindGroupCache()
   }
 
   writeExternalImage (texture: GPUTexture, source: CanvasImageSource, flipY = false): void {
@@ -500,21 +521,134 @@ export class WebGPURenderer {
     })
   }
 
+  async readTexturePixels (texture: object, width: number, height: number): Promise<HydraTextureReadback> {
+    const normalizedWidth = Math.max(1, Math.floor(width))
+    const normalizedHeight = Math.max(1, Math.floor(height))
+    const bytesPerRow = normalizedWidth * 4
+    const paddedBytesPerRow = Math.ceil(bytesPerRow / 256) * 256
+    const buffer = this.createReadbackBuffer(
+      'hydra-capture-readback-rgba8unorm',
+      paddedBytesPerRow * normalizedHeight
+    )
+    const intermediate = this.createCaptureIntermediateTexture(normalizedWidth, normalizedHeight)
+
+    try {
+      const encoder = this.createCommandEncoder('hydra-capture-readback')
+      this.encodeCaptureConversion(encoder, texture as GPUTexture, intermediate)
+      this.copyTextureToBuffer(
+        encoder,
+        intermediate,
+        buffer,
+        { bytesPerRow: paddedBytesPerRow, rowsPerImage: normalizedHeight },
+        { width: normalizedWidth, height: normalizedHeight, depthOrArrayLayers: 1 }
+      )
+      this.submitCommandEncoder(encoder)
+      const mapped = await this.mapReadbackBuffer(buffer)
+      try {
+        return { data: mapped.data.slice(0), bytesPerRow: paddedBytesPerRow }
+      } finally {
+        mapped.unmap()
+      }
+    } finally {
+      this.destroyBuffer(buffer)
+      this.destroyTexture(intermediate)
+    }
+  }
+
   getFallbackTexture (): GPUTexture {
     if (!this.root || !this.fallbackTextureOwner) throw new Error('Renderer fallback texture is not initialized.')
     return this.root.unwrap(this.fallbackTextureOwner)
   }
 
-  getPipeline (pass: HydraFragmentPass): PipelineCacheEntry
-  getPipeline (pass: HydraComputePass): ComputePipelineCacheEntry
-  getPipeline (pass: HydraCompiledPass): PipelineCacheEntry | ComputePipelineCacheEntry
-  getPipeline (pass: HydraCompiledPass): PipelineCacheEntry | ComputePipelineCacheEntry {
-    if (pass.variant === 'compute') {
-      if (!this.outputComputePipelineCache) throw new Error('TypeGPU compute pipeline cache is unavailable.')
-      return this.outputComputePipelineCache.requestPipeline(pass)
-    }
+  getPipeline (pass: HydraCompiledPass): PipelineCacheEntry {
     if (!this.outputPipelineCache) throw new Error('TypeGPU fragment pipeline cache is unavailable.')
     return this.outputPipelineCache.requestPipeline(pass)
+  }
+
+  executePass ({
+    frame,
+    pipeline,
+    pass,
+    target,
+    textures,
+    globalUniformBuffer,
+    dynamicUniformBuffer
+  }: HydraRenderPassExecution): void {
+    if (!this.root) throw new Error('Renderer resources are unavailable.')
+    const entry = pipeline as PipelineCacheEntry
+    const encoder = frame as GPUCommandEncoder
+    const outputTexture = target as GPUTexture
+    const globals = globalUniformBuffer as GPUBuffer
+    const dynamicUniforms = dynamicUniformBuffer as GPUBuffer | null
+    const resolvedTextures = textures as GPUTexture[]
+    const sampler = pass.textures.length > 0 ? this.nearestSamplerOwner : null
+    const pipelineId = this.getObjectId(entry.typegpuPipeline)
+    const globalBufferId = this.getObjectId(globals)
+    const dynamicBufferId = dynamicUniforms ? this.getObjectId(dynamicUniforms) : 0
+    const samplerId = sampler ? this.getObjectId(sampler) : 0
+    const textureIds = resolvedTextures.map((texture) => this.getObjectId(texture))
+    this.passBindGroupUseOrdinal += 1
+
+    let bindGroup: TgpuBindGroup | null = null
+    for (const cached of this.passBindGroupCache) {
+      if (
+        cached.pipelineId !== pipelineId ||
+        cached.globalBufferId !== globalBufferId ||
+        cached.dynamicBufferId !== dynamicBufferId ||
+        cached.samplerId !== samplerId ||
+        cached.textureIds.length !== textureIds.length
+      ) continue
+      if (cached.textureIds.some((id, index) => id !== textureIds[index])) continue
+      cached.lastUsed = this.passBindGroupUseOrdinal
+      bindGroup = cached.bindGroup
+      break
+    }
+
+    if (!bindGroup) {
+      bindGroup = this.createPassBindGroup(entry.layout, pass, {
+        globals,
+        dynamicUniforms,
+        sampler,
+        textures: resolvedTextures
+      })
+      this.passBindGroupCache.push({
+        pipelineId,
+        globalBufferId,
+        dynamicBufferId,
+        samplerId,
+        textureIds,
+        bindGroup,
+        lastUsed: this.passBindGroupUseOrdinal
+      })
+      this.prunePassBindGroupCache()
+    }
+
+    entry.typegpuPipeline
+      .with(bindGroup)
+      .withColorAttachment({
+        view: this.getTextureResource(outputTexture) as never,
+        clearValue: { r: 0, g: 0, b: 0, a: 0 },
+        loadOp: 'clear',
+        storeOp: 'store'
+      })
+      .with(encoder)
+      .draw(3, 1, 0, 0)
+  }
+
+  private invalidatePassBindGroupCache (): void {
+    this.passBindGroupCache.length = 0
+  }
+
+  private prunePassBindGroupCache (): void {
+    while (this.passBindGroupCache.length > MAX_PASS_BIND_GROUP_CACHE_ENTRIES) {
+      let oldestIndex = 0
+      for (let index = 1; index < this.passBindGroupCache.length; index += 1) {
+        if ((this.passBindGroupCache[index]?.lastUsed ?? 0) < (this.passBindGroupCache[oldestIndex]?.lastUsed ?? 0)) {
+          oldestIndex = index
+        }
+      }
+      this.passBindGroupCache.splice(oldestIndex, 1)
+    }
   }
 
   createPassBindGroup (
@@ -525,7 +659,6 @@ export class WebGPURenderer {
       dynamicUniforms: GPUBuffer | null
       sampler: TgpuFixedSampler | null
       textures: GPUTexture[]
-      output: GPUTexture | null
     }
   ): TgpuBindGroup {
     if (!this.root) throw new Error('Renderer not initialized.')
@@ -544,9 +677,6 @@ export class WebGPURenderer {
       const resolved = resources.textures[index] ?? this.getFallbackTexture()
       entries[texture.variableName] = this.getTextureResource(resolved)
     })
-    if (pass.variant === 'compute' && pass.output && resources.output) {
-      entries[pass.output.variableName] = this.getTextureResource(resources.output)
-    }
     return this.root.createBindGroup(layout as TgpuBindGroupLayout<any>, entries as never)
   }
 
@@ -648,9 +778,7 @@ export class WebGPURenderer {
 
   private clearDeviceCaches (): void {
     this.outputPipelineCache?.clear()
-    this.outputComputePipelineCache?.clear()
     this.outputPipelineCache = null
-    this.outputComputePipelineCache = null
     this.invalidateScreenBindGroupCaches()
     this.screenPipeline = null
     this.screenAllPipeline = null
@@ -660,6 +788,7 @@ export class WebGPURenderer {
     this.captureConversionLayout = null
     this.objectIds = new WeakMap()
     this.nextObjectId = 1
+    this.invalidatePassBindGroupCache()
   }
 
   private resetDeviceState (): void {

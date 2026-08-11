@@ -1,5 +1,5 @@
 import type { HydraFrameState, HydraTextureProvider } from '../core/types.js'
-import type { WebGPURenderer } from '../webgpu/renderer.js'
+import type { HydraRenderer, HydraTexture } from './renderer.js'
 
 interface StreamInitParams {
   flipY?: boolean
@@ -53,10 +53,10 @@ const warnIfLocalDiskPath = (source: string, mediaType: 'image' | 'video'): void
 export class HydraSourceNode implements HydraTextureProvider {
   readonly label: string
 
-  private renderer: WebGPURenderer | null
+  private renderer: HydraRenderer | null
   private src: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null = null
   private dynamic = true
-  private texture: GPUTexture | null = null
+  private texture: HydraTexture | null = null
   private textureWidth = 0
   private textureHeight = 0
   private flipY = false
@@ -66,12 +66,12 @@ export class HydraSourceNode implements HydraTextureProvider {
   private initializationGeneration = 0
   private readonly cleanups: Cleanup[] = []
 
-  constructor({ renderer, label = '' }: { renderer: WebGPURenderer | null, label?: string }) {
+  constructor({ renderer, label = '' }: { renderer: HydraRenderer | null, label?: string }) {
     this.renderer = renderer
     this.label = label
   }
 
-  attachRenderer(renderer: WebGPURenderer): void {
+  attachRenderer(renderer: HydraRenderer): void {
     this.renderer = renderer
     this.ensureTexture(1, 1)
     this.needsUpload = true
@@ -408,7 +408,7 @@ export class HydraSourceNode implements HydraTextureProvider {
   }
 
   private uploadSource(): void {
-    if (!this.renderer || !this.renderer.ready || !this.renderer.root || !this.src) return
+    if (!this.renderer || !this.renderer.ready || !this.src) return
 
     const { width, height } = this.getSourceSize()
     if (width <= 0 || height <= 0) return
@@ -440,7 +440,7 @@ export class HydraSourceNode implements HydraTextureProvider {
     }
   }
 
-  getTexture(): GPUTexture | null {
+  getTexture(): HydraTexture | null {
     if (this.texture) return this.texture
     if (this.renderer && this.renderer.ready) return this.renderer.getFallbackTexture()
     return null

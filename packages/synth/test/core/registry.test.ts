@@ -54,18 +54,17 @@ describe('built-in Hydra transform registry', () => {
     expect((registry as unknown as { registerTransform?: unknown }).registerTransform).toBeUndefined()
   })
 
-  it('splits renderpass transforms into strict compute passes', () => {
+  it('splits renderpass transforms into strict fragment passes', () => {
     const { registry, output } = createRegistry()
     registry.generators.osc(8, 0.1, 0).blurX(1).blurY(1).out()
 
     expect(output.passes).toHaveLength(3)
     expect(output.passes[0]?.variant).toBe('fragment')
-    expect(output.passes[1]?.variant).toBe('compute')
-    expect(output.passes[2]?.variant).toBe('compute')
+    expect(output.passes[1]?.variant).toBe('fragment')
+    expect(output.passes[2]?.variant).toBe('fragment')
     const blurX = output.passes[1]
-    if (blurX?.variant !== 'compute') throw new Error('Expected compute blur pass.')
+    if (blurX?.variant !== 'fragment') throw new Error('Expected fragment blur pass.')
     expect(source(blurX)).toContain('fn blurX')
-    expect(blurX.compute.workgroupSize).toEqual([8, 8])
   })
 
   it('stages nested renderpasses and tracks their internal texture references', () => {
@@ -122,7 +121,7 @@ describe('built-in Hydra transform registry', () => {
     for (const name of sourceNames) expect(typeof registry.generators[name]).toBe('function')
   })
 
-  it('compiles every built-in transform through its intended pass variant', () => {
+  it('compiles every built-in transform as a fragment pass', () => {
     for (const definition of getDefaultTransforms()) {
       const { registry, output } = createRegistry()
       const args = (definition.inputs ?? []).map((input) => (
@@ -141,9 +140,7 @@ describe('built-in Hydra transform registry', () => {
       }
       expect(output.passes.length).toBeGreaterThan(0)
       const finalPass = output.passes.at(-1)
-      if (definition.preferredPassVariant === 'compute') {
-        expect(finalPass?.variant).toBe('compute')
-      }
+      expect(finalPass?.variant).toBe('fragment')
     }
   })
 

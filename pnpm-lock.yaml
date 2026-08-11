@@ -80,6 +80,9 @@ importers:
       typegpu:
         specifier: 0.11.9
         version: 0.11.9
+      web-naga:
+        specifier: 1.0.1
+        version: 1.0.1
     devDependencies:
       '@webgpu/types':
         specifier: 0.1.64
@@ -897,6 +900,9 @@ packages:
   w3c-keyname@2.2.8:
     resolution: {integrity: sha512-dpojBhNsCNN7T82Tm7k26A6G9ML3NkhDsnw9n/eoxSRlVBB4CEtIQ/KTCLI2Fwf3ataSXRhYFkQi3SlnFwPvPQ==}
 
+  web-naga@1.0.1:
+    resolution: {integrity: sha512-1LyQpM+TaseiPhudn0zrpsZBiDZd5AsEsc6kWqp9zA65yl+Yp+F5kACV1y3oenClRTOWqjr48UqAU6c+0d0WnQ==}
+
   why-is-node-running@2.3.0:
     resolution: {integrity: sha512-hUrmaWBdVDcxvYqnyh09zunKzROWjbZTiNy8dBEjkS7ehEDQibXJ7XvlmtbwuTclUiIyN+CyXQD4Vmko8fNm8w==}
     engines: {node: '>=8'}
@@ -1540,6 +1546,8 @@ snapshots:
       - yaml
 
   w3c-keyname@2.2.8: {}
+
+  web-naga@1.0.1: {}
 
   why-is-node-running@2.3.0:
     dependencies:

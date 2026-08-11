@@ -27,15 +27,6 @@ const resolvePass = (pass: HydraCompiledPass): string => {
     resourceExternalsForPass(pass)
   )
 
-  if (pass.variant === 'compute') {
-    const [width, height] = pass.compute.workgroupSize
-    const entry = tgpu.computeFn({
-      in: { globalId: d.builtin.globalInvocationId },
-      workgroupSize: [width, height, 1]
-    })(pass.program.entryBody).$uses(externals)
-    return tgpu.resolve([entry])
-  }
-
   const entry = tgpu.fragmentFn({
     in: { position: d.builtin.position },
     out: d.vec4f
@@ -80,7 +71,7 @@ describe('TypeGPU shader-function linking', () => {
         } catch (cause) {
           throw new Error(`TypeGPU failed to link built-in "${definition.name}".`, { cause })
         }
-        expect(linkedSource).toContain(pass.variant === 'compute' ? '@compute' : '@fragment')
+        expect(linkedSource).toContain('@fragment')
       }
     }
   })

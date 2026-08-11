@@ -1,6 +1,5 @@
 import type { HydraFrameState, HydraOutputAdapter } from '../core/types.js'
 import { HydraTransformRegistry } from '../core/transforms/registry.js'
-import type { WebGPURenderer } from '../webgpu/renderer.js'
 import { HydraAudioAnalyzer, type HydraAudioAnalyzerOptions } from './audio-input.js'
 import { normalizeEvenCanvasDimension, type BrowserHost } from './browser-host.js'
 import {
@@ -9,7 +8,8 @@ import {
   type HydraMouseInputOptions,
   type HydraMouseState
 } from './mouse-input.js'
-import { WebGPUOutputNode } from './output-node.js'
+import { HydraOutputNode } from './output-node.js'
+import type { HydraRenderer } from './renderer.js'
 import { HydraSourceNode } from './source-node.js'
 
 const OUTPUT_COUNT = 4
@@ -31,7 +31,7 @@ const optionalPositive = (value: unknown, fallback: number | undefined): number 
 
 export interface HydraBrowserRuntimeOptions {
   host: BrowserHost
-  renderer: WebGPURenderer
+  renderer: HydraRenderer
   autoLoop?: boolean
   audio?: boolean | HydraAudioAnalyzerOptions
   fps?: number
@@ -42,7 +42,7 @@ export interface HydraBrowserRuntimeOptions {
 
 export interface HydraPresentationState {
   mode: 'single' | 'all'
-  output: WebGPUOutputNode
+  output: HydraOutputNode
 }
 
 /**
@@ -52,8 +52,8 @@ export interface HydraPresentationState {
  */
 export class HydraBrowserRuntime {
   readonly host: BrowserHost
-  readonly renderer: WebGPURenderer
-  readonly outputs: readonly WebGPUOutputNode[]
+  readonly renderer: HydraRenderer
+  readonly outputs: readonly HydraOutputNode[]
   readonly sources: readonly HydraSourceNode[]
   readonly synth: Record<string, unknown>
   readonly mouse: HydraMouseState
@@ -61,7 +61,7 @@ export class HydraBrowserRuntime {
 
   private readonly registry: HydraTransformRegistry
   private readonly mouseInput: HydraMouseController
-  private activeOutput: WebGPUOutputNode
+  private activeOutput: HydraOutputNode
   private renderAll = false
   private initPromise: Promise<void> | null = null
   private initialized = false
@@ -93,7 +93,7 @@ export class HydraBrowserRuntime {
     if (host.canvas.width !== width || host.canvas.height !== height) host.setResolution(width, height)
 
     const outputs = Array.from({ length: OUTPUT_COUNT }, (_, index) => {
-      const output = new WebGPUOutputNode({ renderer: null, width, height, label: `o${index}` })
+      const output = new HydraOutputNode({ renderer: null, width, height, label: `o${index}` })
       output.id = index
       return output
     })
@@ -236,7 +236,7 @@ export class HydraBrowserRuntime {
     this.callFrameHook('afterUpdate', elapsed)
   }
 
-  render (output?: WebGPUOutputNode): void {
+  render (output?: HydraOutputNode): void {
     if (output) {
       if (!this.outputs.includes(output)) throw new Error('render() accepts one of o0, o1, o2, or o3.')
       this.activeOutput = output
@@ -246,7 +246,7 @@ export class HydraBrowserRuntime {
     this.renderAll = true
   }
 
-  getActiveOutput (): WebGPUOutputNode {
+  getActiveOutput (): HydraOutputNode {
     return this.activeOutput
   }
 
@@ -313,10 +313,10 @@ export class HydraBrowserRuntime {
     }
   }
 
-  private scheduleOutputs (): WebGPUOutputNode[] {
+  private scheduleOutputs (): HydraOutputNode[] {
     const byId = new Map(this.outputs.map((output) => [output.id, output]))
     const indegree = new Map(this.outputs.map((output) => [output, 0]))
-    const dependents = new Map(this.outputs.map((output) => [output, [] as WebGPUOutputNode[]]))
+    const dependents = new Map(this.outputs.map((output) => [output, [] as HydraOutputNode[]]))
 
     for (const output of this.outputs) {
       for (const dependencyId of new Set(output.getDependencyOutputIds())) {
@@ -328,7 +328,7 @@ export class HydraBrowserRuntime {
     }
 
     const queue = this.outputs.filter((output) => indegree.get(output) === 0)
-    const scheduled: WebGPUOutputNode[] = []
+    const scheduled: HydraOutputNode[] = []
     while (queue.length > 0) {
       const output = queue.shift()!
       scheduled.push(output)

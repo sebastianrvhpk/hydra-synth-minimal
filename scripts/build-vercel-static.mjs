@@ -36,9 +36,10 @@ const copyVendorPackage = (packagePath) => {
 rmSync(outDir, { recursive: true, force: true })
 mkdirSync(hydraOutDir, { recursive: true })
 
-for (const fileName of ['index.js', 'livecoding.js']) {
+const synthDistDir = path.join(repoRoot, 'packages', 'synth', 'dist')
+for (const fileName of readdirSync(synthDistDir).filter((name) => name.endsWith('.js'))) {
   copyRecursive(
-    path.join(repoRoot, 'packages', 'synth', 'dist', fileName),
+    path.join(synthDistDir, fileName),
     path.join(hydraOutDir, 'synth', fileName)
   )
 }

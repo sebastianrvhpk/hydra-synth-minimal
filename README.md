@@ -1,13 +1,15 @@
-# Hydra TypeGPU Workspace
+# Hydra GPU Workspace
 
-A Hydra-style live video synthesizer with one GPU architecture:
+A Hydra-style live video synthesizer with one fragment architecture and two GPU backends:
 
 ```text
-Hydra built-ins → synchronous shader-function graph → TypeGPU linker/pipelines → WebGPU
+Hydra built-ins → synchronous TypeGPU shader graph → fragment passes
+                                                    ↙              ↘
+                                              WebGPU              WebGL2
 ```
 
-`packages/synth` contains the language, runtime, TypeGPU backend, media inputs,
-and capture implementation. `packages/hydra` is the browser instrument and
+`packages/synth` contains the language, runtime, WebGPU/WebGL2 backends, media
+inputs, and capture implementation. `packages/hydra` is the browser instrument and
 editor. `packages/workshop` is the guided presentation **La imagen como señal**,
 which uses the same runtime to turn the conceptual sequence into executable
 experiments.
@@ -29,9 +31,11 @@ The topology is intentionally fixed at `s0`–`s3` and `o0`–`o3`. Transforms a
 the built-in language; there is no dynamic transform, source, output, extension,
 plugin, profiler, or capability-metadata layer.
 
-Graph construction and pipeline selection are synchronous. The unavoidable
-browser boundaries remain asynchronous: WebGPU device creation, camera/screen/
-audio permission, GPU readback, and WebCodecs finalization.
+Graph construction and pipeline selection are synchronous after runtime
+initialization. WebGPU is selected first; WebGL2 is used automatically when it
+is unavailable. The unavoidable browser boundaries remain asynchronous: GPU
+initialization, camera/screen/audio permission, GPU readback, and WebCodecs
+finalization.
 
 ## App
 

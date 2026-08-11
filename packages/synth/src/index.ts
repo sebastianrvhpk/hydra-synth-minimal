@@ -6,8 +6,9 @@ import {
   type CaptureHydraVideoOptions
 } from './capture/frame-sequence.js'
 import { BrowserHost, type BrowserHostOptions } from './runtime/browser-host.js'
+import { AutoRenderer } from './runtime/auto-renderer.js'
+import type { HydraRendererBackend, HydraRendererPreference } from './runtime/renderer.js'
 import { HydraBrowserRuntime, type HydraBrowserRuntimeOptions } from './runtime/runtime.js'
-import { WebGPURenderer } from './webgpu/renderer.js'
 
 export { captureHydraFrameSequence, captureHydraVideo }
 
@@ -23,10 +24,13 @@ export interface CreateHydraBrowserRuntimeOptions extends Omit<HydraBrowserRunti
   height?: number
   parent?: HTMLElement
   autoAppend?: boolean
+  backend?: HydraRendererPreference
 }
 
+export type { HydraRendererBackend, HydraRendererPreference }
+
 export const createHydraBrowserRuntime = (options: CreateHydraBrowserRuntimeOptions = {}): HydraBrowserRuntime => {
-  const { canvas, width, height, parent, autoAppend, ...runtimeOptions } = options
+  const { canvas, width, height, parent, autoAppend, backend, ...runtimeOptions } = options
   const hostOptions: BrowserHostOptions = {
     ...(canvas ? { canvas } : {}),
     ...(width != null ? { width } : {}),
@@ -35,6 +39,11 @@ export const createHydraBrowserRuntime = (options: CreateHydraBrowserRuntimeOpti
     ...(autoAppend != null ? { autoAppend } : {})
   }
   const host = new BrowserHost(hostOptions)
-  const renderer = new WebGPURenderer({ canvas: host.canvas })
+  const renderer = new AutoRenderer({
+    canvas: host.canvas,
+    ...(width != null ? { width } : {}),
+    ...(height != null ? { height } : {}),
+    ...(backend ? { backend } : {})
+  })
   return new HydraBrowserRuntime({ ...runtimeOptions, host, renderer })
 }

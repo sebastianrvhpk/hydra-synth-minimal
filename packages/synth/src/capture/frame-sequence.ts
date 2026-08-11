@@ -1,14 +1,7 @@
 import type { HydraBrowserRuntime } from '../runtime/runtime.js'
-import type { WebGPUOutputNode } from '../runtime/output-node.js'
+import type { HydraOutputNode } from '../runtime/output-node.js'
 import { normalizeEvenCanvasDimension } from '../runtime/browser-host.js'
-import {
-  createReadbackBuffer,
-  encodeCaptureReadback,
-  createIntermediateConversionTexture,
-  mapReadbackBuffer,
-  stripRowPadding,
-  type ReadbackBufferInfo
-} from './gpu-readback.js'
+import { stripRowPadding } from './gpu-readback.js'
 import { VideoRecorder, type VideoRecorderOptions } from './video-recorder.js'
 
 export type CaptureFrameSequenceExtension = 'png' | 'jpg' | 'jpeg' | 'webp'
@@ -92,7 +85,7 @@ interface CaptureFrameSequenceBufferInfo {
 
 export interface CaptureHydraFrameSequenceOptions extends Omit<CaptureFrameSequenceOptions, 'canvas' | 'step'> {
   runtime: HydraBrowserRuntime
-  output?: WebGPUOutputNode
+  output?: HydraOutputNode
   step?: (info: CaptureHydraFrameSequenceFrameInfo) => void | Promise<void>
 }
 
@@ -420,11 +413,11 @@ const captureHydraFrames = async (options: CaptureHydraFramesOptions): Promise<C
 
   // Resolve GPU readback availability
   const renderer = runtime.renderer
-  const canUseGpuReadback = Boolean(renderer.ready && renderer.root)
+  const canUseGpuReadback = renderer.ready
   const useGpuReadback = gpuReadback
 
   if (gpuReadback === true && !canUseGpuReadback) {
-    throw new Error('captureHydraFrameSequence: gpuReadback is enabled but no WebGPU device is available.')
+    throw new Error('captureHydraFrameSequence: GPU readback is enabled but no renderer is available.')
   }
 
   if (!runtimeCaptureReserved) activeRuntimeCaptures.add(runtime)
@@ -440,25 +433,10 @@ const captureHydraFrames = async (options: CaptureHydraFramesOptions): Promise<C
   let captureFailed = false
   let restoreError: unknown = null
 
-  let readbackBuffer: ReadbackBufferInfo | null = null
-
-  const resolveActiveOutput = (): WebGPUOutputNode | null => {
+  const resolveActiveOutput = (): HydraOutputNode | null => {
     if (output) return output
 
     return runtime.getActiveOutput()
-  }
-
-  let intermediateTexture: GPUTexture | null = null
-
-  const cleanupReadbackBuffers = (): void => {
-    if (readbackBuffer) {
-      try { renderer.destroyBuffer(readbackBuffer.buffer) } catch { /* ignore */ }
-      readbackBuffer = null
-    }
-    if (intermediateTexture) {
-      try { renderer.destroyTexture(intermediateTexture) } catch { /* ignore */ }
-      intermediateTexture = null
-    }
   }
 
   try {
@@ -477,8 +455,6 @@ const captureHydraFrames = async (options: CaptureHydraFramesOptions): Promise<C
       const captureHeight = runtime.host.canvas.height
       const prefix = String(captureOptions.prefix ?? 'frame')
       if (!onFrameBuffer) throw new Error('GPU frame readback requires a frame consumer.')
-      readbackBuffer = createReadbackBuffer(renderer, captureWidth, captureHeight)
-      intermediateTexture = createIntermediateConversionTexture(renderer, captureWidth, captureHeight)
 
       for (let frame = 0; frame < totalFrames; frame += 1) {
         if (captureOptions.signal?.aborted) {
@@ -511,27 +487,16 @@ const captureHydraFrames = async (options: CaptureHydraFramesOptions): Promise<C
         const activeOutput = resolveActiveOutput()
         const outputTexture = activeOutput?.getCurrent?.() ?? null
         if (outputTexture) {
-          const encoder = renderer.createCommandEncoder(`hydra-capture-readback-${frame}`)
-
-          if (!intermediateTexture) throw new Error('GPU capture conversion texture is unavailable.')
-          encodeCaptureReadback(renderer, encoder, outputTexture, readbackBuffer, intermediateTexture)
-
-          renderer.submitCommandEncoder(encoder)
-
-          const { data, unmap } = await mapReadbackBuffer(renderer, readbackBuffer.buffer)
-          try {
-            await onFrameBuffer({
-              frame,
-              totalFrames,
-              data,
-              width: captureWidth,
-              height: captureHeight,
-              format: 'rgba8unorm',
-              bytesPerRow: readbackBuffer.paddedBytesPerRow
-            })
-          } finally {
-            unmap()
-          }
+          const { data, bytesPerRow } = await renderer.readTexturePixels(outputTexture, captureWidth, captureHeight)
+          await onFrameBuffer({
+            frame,
+            totalFrames,
+            data,
+            width: captureWidth,
+            height: captureHeight,
+            format: 'rgba8unorm',
+            bytesPerRow
+          })
         }
 
         if (typeof captureOptions.onProgress === 'function') {
@@ -544,8 +509,6 @@ const captureHydraFrames = async (options: CaptureHydraFramesOptions): Promise<C
           })
         }
       }
-
-      cleanupReadbackBuffers()
 
       const digits = frameDigits(totalFrames)
       return {
@@ -580,7 +543,6 @@ const captureHydraFrames = async (options: CaptureHydraFramesOptions): Promise<C
     })
   } catch (error) {
     captureFailed = true
-    cleanupReadbackBuffers()
     throw error
   } finally {
     try {
@@ -619,7 +581,7 @@ export interface CaptureHydraVideoOptions extends Omit<VideoRecorderOptions, 'wi
   runtime: HydraBrowserRuntime
   duration: number
   fps?: number
-  output?: WebGPUOutputNode
+  output?: HydraOutputNode
   step?: (info: CaptureHydraFrameSequenceFrameInfo) => void | Promise<void>
   width?: number
   height?: number
@@ -650,8 +612,8 @@ const captureReservedHydraVideo = async (options: CaptureHydraVideoOptions): Pro
   const safeDuration = resolvePositiveNumber(duration, 1, 'duration', 'captureHydraVideo')
 
   await runtime.init()
-  if (!runtime.renderer.ready || !runtime.renderer.root) {
-    throw new Error('captureHydraVideo: the WebGPU renderer is unavailable.')
+  if (!runtime.renderer.ready) {
+    throw new Error('captureHydraVideo: the GPU renderer is unavailable.')
   }
 
   const recorder = new VideoRecorder({

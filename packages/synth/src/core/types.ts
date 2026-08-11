@@ -45,15 +45,11 @@ export type HydraTransformDefinition = HydraTransformDefinitionBase & (
       type: 'passBoundary'
       inputs?: never
       shader?: never
-      preferredPassVariant?: never
-      computeWorkgroupSize?: never
     }
   | {
       type: Exclude<HydraTransformType, 'passBoundary'>
       inputs?: HydraTransformInput[]
       shader: string
-      preferredPassVariant?: 'fragment' | 'compute'
-      computeWorkgroupSize?: [number, number]
     }
 )
 
@@ -69,8 +65,6 @@ export interface ProcessedHydraTransform {
   type: HydraTransformType
   inputs: HydraTransformInput[]
   shader: HydraShaderFunction | null
-  preferredPassVariant?: 'fragment' | 'compute'
-  computeWorkgroupSize?: [number, number]
   resolutionScale: number
 }
 
@@ -104,11 +98,6 @@ export interface HydraTextureBinding {
   sourceRef?: unknown
 }
 
-export interface HydraComputeOutputBinding {
-  variableName: string
-  format: 'rgba16float'
-}
-
 export interface HydraTypeGPUProgram {
   entryBody: string
   functions: HydraShaderFunction[]
@@ -126,15 +115,7 @@ export interface HydraFragmentPass extends HydraCompiledPassBase {
   variant: 'fragment'
 }
 
-export interface HydraComputePass extends HydraCompiledPassBase {
-  variant: 'compute'
-  compute: {
-    workgroupSize: [number, number]
-  }
-  output: HydraComputeOutputBinding
-}
-
-export type HydraCompiledPass = HydraFragmentPass | HydraComputePass
+export type HydraCompiledPass = HydraFragmentPass
 
 export interface HydraOutputAdapter {
   render(passes: HydraCompiledPass[]): void

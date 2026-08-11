@@ -23,18 +23,18 @@ export const createPassBindGroupLayout = (pass: HydraCompiledPass): HydraTypeGPU
   const entries: Record<string, TgpuLayoutEntry | null> = {
     globals: {
       uniform: GlobalUniformsSchema,
-      visibility: [pass.variant === 'compute' ? 'compute' : 'fragment']
+      visibility: ['fragment']
     },
     dynamicUniforms: pass.uniforms.length > 0
       ? {
           uniform: DynamicUniformsSchema,
-          visibility: [pass.variant === 'compute' ? 'compute' : 'fragment']
+          visibility: ['fragment']
         }
       : null,
     hydraSampler: pass.textures.length > 0
       ? {
           sampler: 'filtering',
-          visibility: [pass.variant === 'compute' ? 'compute' : 'fragment']
+          visibility: ['fragment']
         }
       : null
   }
@@ -42,14 +42,7 @@ export const createPassBindGroupLayout = (pass: HydraCompiledPass): HydraTypeGPU
   for (const texture of pass.textures) {
     entries[texture.variableName] = {
       texture: d.texture2d(d.f32),
-      visibility: [pass.variant === 'compute' ? 'compute' : 'fragment']
-    }
-  }
-
-  if (pass.variant === 'compute' && pass.output) {
-    entries[pass.output.variableName] = {
-      storageTexture: d.textureStorage2d(pass.output.format),
-      visibility: ['compute']
+      visibility: ['fragment']
     }
   }
 

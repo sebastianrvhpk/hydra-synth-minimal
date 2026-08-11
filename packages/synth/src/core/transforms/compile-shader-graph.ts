@@ -2,7 +2,6 @@ import { formatArguments } from './format-arguments.js'
 import { collectUtilityFunctions } from './shader-library.js'
 import type {
   HydraCompiledPass,
-  HydraComputePass,
   HydraFragmentPass,
   HydraFrameState,
   HydraShaderFunction,
@@ -15,13 +14,11 @@ import type {
 /**
  * Lowers Hydra transform chains into TypeGPU-linked shader-function graphs.
  *
- * Each chain is lowered into either:
- * - a full-screen fragment render pipeline
- * - a compute pipeline that writes the same expression to a storage texture
+ * Each chain is lowered into a full-screen fragment render pipeline.
  *
  * Dynamic uniforms, nested graph arguments, and texture bindings are lowered
- * once. The execution variant changes only when a built-in explicitly opts
- * into compute.
+ * once. A single fragment execution model keeps the graph portable to
+ * fragment-only backends such as WebGL2.
  */
 interface ShaderParams {
   uniforms: HydraUniformBinding[]
@@ -35,8 +32,6 @@ interface ShaderParams {
   structureSignature: string
   resolutionScale: number
 }
-
-const DEFAULT_COMPUTE_WORKGROUP_SIZE: [number, number] = [8, 8]
 
 interface PreparedShaderResources {
   shaderInfo: ShaderParams
@@ -426,42 +421,6 @@ const buildShaderGraph = (transforms: HydraTransformCall[]): ShaderParams => {
   return shaderParams
 }
 
-const isGraphNodeLike = (value: unknown): value is { transforms: HydraTransformCall[] } => (
-  Boolean(value) &&
-  typeof value === 'object' &&
-  Array.isArray((value as { transforms?: unknown }).transforms)
-)
-
-const containsRenderpassDeep = (transforms: HydraTransformCall[]): boolean =>
-  transforms.some((transform) =>
-    transform.transform.type === 'renderpass' ||
-    transform.userArgs.some((input) => isGraphNodeLike(input) && containsRenderpassDeep(input.transforms))
-  )
-
-const isSafeComputeTailTransform = (transform: HydraTransformCall): boolean => (
-  transform.transform.type === 'color' &&
-  !transform.userArgs.some((input) => isGraphNodeLike(input) && containsRenderpassDeep(input.transforms))
-)
-
-const selectPassVariant = (transforms: HydraTransformCall[]): 'fragment' | 'compute' => {
-  if (
-    transforms.length >= 1 &&
-    transforms[0]?.transform.preferredPassVariant === 'compute' &&
-    transforms.slice(1).every(isSafeComputeTailTransform)
-  ) {
-    return 'compute'
-  }
-  return 'fragment'
-}
-
-const computeWorkgroupSizeForPass = (transforms: HydraTransformCall[]): [number, number] => {
-  const configured = transforms[0]?.transform.computeWorkgroupSize
-  if (!configured) return DEFAULT_COMPUTE_WORKGROUP_SIZE
-  const x = Math.max(1, Math.floor(Number(configured[0]) || DEFAULT_COMPUTE_WORKGROUP_SIZE[0]))
-  const y = Math.max(1, Math.floor(Number(configured[1]) || DEFAULT_COMPUTE_WORKGROUP_SIZE[1]))
-  return [x, y]
-}
-
 const dynamicUniformFunctions = (): HydraShaderFunction[] => [
   {
     name: 'hydraDynamicUniform',
@@ -618,60 +577,7 @@ const compileFragmentPass = (
   }
 }
 
-const compileComputePass = (
-  transforms: HydraTransformCall[],
-  maxDynamicUniforms = 256
-): HydraComputePass => {
-  const {
-    shaderInfo,
-    textureBindings,
-    shaderFunctions,
-    signatureBase
-  } = prepareShaderResources(transforms, maxDynamicUniforms)
-  const [workgroupWidth, workgroupHeight] = computeWorkgroupSizeForPass(transforms)
-
-  const output = {
-    variableName: 'outImage',
-    format: 'rgba16float' as const
-  }
-
-  const entryBody = `{
-  let safeWidth = max(globals.width, 1.0);
-  let safeHeight = max(globals.height, 1.0);
-  let pixel = vec2u(in.globalId.xy);
-  if (pixel.x >= u32(safeWidth) || pixel.y >= u32(safeHeight)) {
-    return;
-  }
-
-  var st = (vec2f(pixel) + vec2f(0.5)) / vec2f(safeWidth, safeHeight);
-  var c = vec4f(0.0);
-  ${shaderInfo.fragColor}
-  textureStore(outImage, vec2i(pixel), c);
-}`
-
-  const programSource = serializeProgram(entryBody, shaderFunctions)
-
-  return {
-    signature: `${signatureBase}|cs${workgroupWidth}x${workgroupHeight}|h${hashString(programSource)}`,
-    program: { entryBody, functions: shaderFunctions },
-    variant: 'compute',
-    compute: {
-      workgroupSize: [workgroupWidth, workgroupHeight]
-    },
-    uniforms: shaderInfo.uniforms,
-    textures: textureBindings,
-    output,
-    resolutionScale: shaderInfo.resolutionScale
-  }
-}
-
 export const compileTypeGPUPass = (
   transforms: HydraTransformCall[],
   maxDynamicUniforms = 256
-): HydraCompiledPass => {
-  if (selectPassVariant(transforms) === 'compute') {
-    return compileComputePass(transforms, maxDynamicUniforms)
-  }
-
-  return compileFragmentPass(transforms, maxDynamicUniforms)
-}
+): HydraCompiledPass => compileFragmentPass(transforms, maxDynamicUniforms)
