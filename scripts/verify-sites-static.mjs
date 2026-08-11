@@ -13,6 +13,11 @@ const requiredFiles = [
   'dist/client/hydra/og.png',
   'dist/client/hydra/synth/index.js',
   'dist/client/hydra/synth/livecoding.js',
+  'dist/client/workshop/index.html',
+  'dist/client/workshop/app.js',
+  'dist/client/workshop/content.js',
+  'dist/client/workshop/styles.css',
+  'dist/client/workshop/og.png',
   'dist/.openai/hosting.json'
 ]
 
@@ -51,6 +56,25 @@ if (existsSync(imagePath)) {
   }
 }
 
+const workshopEntry = path.join(repoRoot, 'dist', 'client', 'workshop', 'index.html')
+if (existsSync(workshopEntry)) {
+  const html = readFileSync(workshopEntry, 'utf8')
+  if (!html.includes('__WORKSHOP_ORIGIN__/workshop/og.png')) {
+    failures.push('workshop entry is missing the dynamic absolute social image URL')
+  }
+}
+
+const workshopImagePath = path.join(repoRoot, 'dist', 'client', 'workshop', 'og.png')
+if (existsSync(workshopImagePath)) {
+  const image = readFileSync(workshopImagePath)
+  const signature = image.subarray(0, 8).toString('hex')
+  if (signature !== '89504e470d0a1a0a') {
+    failures.push('workshop social preview must be a valid PNG')
+  } else if (image.readUInt32BE(16) !== 1536 || image.readUInt32BE(20) !== 1024) {
+    failures.push('workshop social preview must be 1536x1024')
+  }
+}
+
 const workerPath = path.join(repoRoot, 'dist', 'server', 'index.js')
 if (existsSync(workerPath)) {
   const worker = (await import(`${pathToFileURL(workerPath).href}?verify=${Date.now()}`)).default
@@ -62,6 +86,11 @@ if (existsSync(workerPath)) {
         assetRequests.push(url.pathname)
         if (url.pathname === '/hydra/index.html') {
           return new Response('<meta property="og:image" content="__HYDRA_ORIGIN__/hydra/og.png">', {
+            headers: { 'content-type': 'text/html; charset=utf-8' }
+          })
+        }
+        if (url.pathname === '/workshop/index.html') {
+          return new Response('<meta property="og:image" content="__WORKSHOP_ORIGIN__/workshop/og.png">', {
             headers: { 'content-type': 'text/html; charset=utf-8' }
           })
         }
@@ -87,6 +116,20 @@ if (existsSync(workerPath)) {
   }
   if (!assetRequests.includes('/hydra/index.html')) {
     failures.push('Sites worker must resolve /hydra/ to the built app entry')
+  }
+
+  const workshopRedirect = await worker.fetch(new Request('https://hydra.test/workshop?scene=one'), env)
+  if (workshopRedirect.status !== 308 || workshopRedirect.headers.get('location') !== 'https://hydra.test/workshop/?scene=one') {
+    failures.push('Sites worker must redirect /workshop to /workshop/ and preserve its query')
+  }
+
+  const workshop = await worker.fetch(new Request('https://hydra.test/workshop/'), env)
+  const workshopHtml = await workshop.text()
+  if (!workshopHtml.includes('content="https://hydra.test/workshop/og.png"')) {
+    failures.push('Sites worker must render an absolute workshop social image URL')
+  }
+  if (!assetRequests.includes('/workshop/index.html')) {
+    failures.push('Sites worker must resolve /workshop/ to the workshop entry')
   }
 }
 

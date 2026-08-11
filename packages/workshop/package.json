@@ -1,0 +1,13 @@
+{
+  "name": "hydra-workshop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node ../../scripts/verify-workshop.mjs",
+    "typecheck": "node ../../scripts/verify-workshop.mjs"
+  },
+  "dependencies": {
+    "hydra-synth": "workspace:*"
+  }
+}

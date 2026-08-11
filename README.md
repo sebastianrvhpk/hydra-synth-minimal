@@ -8,7 +8,9 @@ Hydra built-ins → synchronous shader-function graph → TypeGPU linker/pipelin
 
 `packages/synth` contains the language, runtime, TypeGPU backend, media inputs,
 and capture implementation. `packages/hydra` is the browser instrument and
-editor.
+editor. `packages/workshop` is the guided presentation **La imagen como señal**,
+which uses the same runtime to turn the conceptual sequence into executable
+experiments.
 
 ## Runtime
 
@@ -40,6 +42,10 @@ pnpm dev
 
 The app includes CodeMirror livecoding, URL sketches, random patch generation,
 image/video/camera/screen sources, audio analysis, frame capture, and MP4 capture.
+
+The guided presentation is available at `/workshop/`. It keeps the instrument at
+`/hydra/` intact, exposes runnable code for every scene, and can open the current
+example directly in the full editor.
 
 Images and videos can be dragged anywhere onto the app. Hydra gives each file a
 tab-local object URL and lists it under **Options → media**, so no separate media

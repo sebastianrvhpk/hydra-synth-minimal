@@ -7,7 +7,7 @@ const failures = []
 
 const fail = (message) => failures.push(message)
 
-const packageDirs = ['packages/synth', 'packages/hydra']
+const packageDirs = ['packages/synth', 'packages/hydra', 'packages/workshop']
 for (const dir of packageDirs) {
   if (!existsSync(path.join(rootDir, dir))) {
     fail(`Missing required package directory: ${dir}`)

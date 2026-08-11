@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#050505" />
+  <title>La imagen como señal — Hydra WebGPU</title>
+  <meta name="description" content="Una presentación-laboratorio interactiva sobre señales, intermodulación, memoria y live coding con Hydra WebGPU." />
+  <meta property="og:title" content="La imagen como señal" />
+  <meta property="og:description" content="Hydra como sistema computacional e instrumento visual." />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="/workshop/og.png" />
+  <meta property="og:image:width" content="1536" />
+  <meta property="og:image:height" content="1024" />
+  <meta property="og:image:alt" content="La imagen como señal, una presentación interactiva de Hydra WebGPU" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="/workshop/og.png" />
+  <script type="importmap">
+    {
+      "imports": {
+        "hydra-synth": "../synth/dist/index.js"
+      }
+    }
+  </script>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <a class="skip-link" href="#scene-title">Ir al contenido</a>
+
+  <div id="visual-stage" aria-hidden="true">
+    <canvas id="hydra-canvas"></canvas>
+    <div class="visual-vignette"></div>
+    <div class="visual-noise"></div>
+  </div>
+
+  <div id="runtime-status" class="runtime-status" role="status" aria-live="polite">
+    preparando el campo visual…
+  </div>
+
+  <header class="topbar">
+    <a class="wordmark" href="#la-imagen-como-senal" aria-label="Volver al inicio">
+      <span>HYDRA</span>
+      <span class="wordmark-secondary">WEBGPU</span>
+    </a>
+    <div class="chapter-position" aria-live="polite">
+      <span id="chapter-index">00</span>
+      <span class="chapter-divider"></span>
+      <span id="chapter-label">entrar</span>
+    </div>
+    <div class="top-actions">
+      <button id="pause-button" class="text-button" type="button" aria-pressed="false">pausar</button>
+      <button id="code-button" class="text-button" type="button" aria-expanded="false" aria-controls="code-panel">código</button>
+      <button id="map-button" class="text-button" type="button" aria-expanded="false" aria-controls="map-panel">mapa</button>
+    </div>
+  </header>
+
+  <main id="presentation" class="presentation" tabindex="-1">
+    <article id="scene" class="scene" aria-labelledby="scene-title">
+      <div class="scene-copy">
+        <p id="scene-kicker" class="scene-kicker"></p>
+        <h1 id="scene-title"></h1>
+        <div id="scene-body" class="scene-body"></div>
+        <p id="scene-prompt" class="scene-prompt" hidden></p>
+      </div>
+
+      <div id="graph-strip" class="graph-strip" aria-label="Estructura del sistema"></div>
+
+      <section id="experiment" class="experiment" aria-labelledby="experiment-title" hidden>
+        <div class="experiment-heading">
+          <span id="experiment-title">intervenir</span>
+          <button id="reset-controls" class="quiet-button" type="button">reiniciar</button>
+        </div>
+        <div id="experiment-controls" class="experiment-controls"></div>
+      </section>
+    </article>
+  </main>
+
+  <footer class="bottombar">
+    <div class="scene-count" aria-live="polite">
+      <span id="scene-current">01</span>
+      <span aria-hidden="true">/</span>
+      <span id="scene-total">35</span>
+    </div>
+    <div class="progress-track" aria-hidden="true">
+      <span id="progress-fill"></span>
+    </div>
+    <nav class="scene-navigation" aria-label="Navegación de la presentación">
+      <button id="previous-button" class="nav-button" type="button" aria-label="Escena anterior">←</button>
+      <button id="next-button" class="nav-button" type="button" aria-label="Escena siguiente">→</button>
+    </nav>
+  </footer>
+
+  <aside id="code-panel" class="side-panel code-panel" aria-labelledby="code-panel-title" hidden>
+    <div class="panel-heading">
+      <div>
+        <p class="panel-kicker">la estructura ejecutable</p>
+        <h2 id="code-panel-title">código</h2>
+      </div>
+      <button class="panel-close" type="button" data-close-panel="code-panel" aria-label="Cerrar código">×</button>
+    </div>
+    <pre id="scene-code" tabindex="0"><code></code></pre>
+    <div class="code-actions">
+      <button id="copy-code-button" class="panel-action" type="button">copiar</button>
+      <a id="open-hydra-link" class="panel-action" href="/hydra/" target="_blank" rel="noreferrer">abrir en Hydra ↗</a>
+    </div>
+    <p id="code-status" class="panel-status" aria-live="polite"></p>
+  </aside>
+
+  <aside id="map-panel" class="side-panel map-panel" aria-labelledby="map-panel-title" hidden>
+    <div class="panel-heading">
+      <div>
+        <p class="panel-kicker">recorrido cognitivo</p>
+        <h2 id="map-panel-title">mapa</h2>
+      </div>
+      <button class="panel-close" type="button" data-close-panel="map-panel" aria-label="Cerrar mapa">×</button>
+    </div>
+    <nav id="chapter-map" class="chapter-map" aria-label="Capítulos"></nav>
+    <div class="map-arc" aria-label="Progresión conceptual">
+      <span>percibir</span><span>intervenir</span><span>leer</span><span>componer</span><span>recordar</span><span>interpretar</span>
+    </div>
+  </aside>
+
+  <input id="media-input" type="file" accept="image/*,video/*" hidden />
+  <div id="drop-message" class="drop-message" hidden>soltar para incorporar el archivo como señal local</div>
+
+  <noscript>
+    <div class="noscript">Esta presentación necesita JavaScript para ejecutar Hydra y sus experimentos.</div>
+  </noscript>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

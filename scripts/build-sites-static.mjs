@@ -22,24 +22,31 @@ const hydraHtml = readFileSync(hydraEntry, 'utf8').replaceAll(
 )
 writeFileSync(hydraEntry, hydraHtml, 'utf8')
 
+const workshopEntry = path.join(clientDir, 'workshop', 'index.html')
+const workshopHtml = readFileSync(workshopEntry, 'utf8').replaceAll(
+  'content="/workshop/og.png"',
+  'content="__WORKSHOP_ORIGIN__/workshop/og.png"'
+)
+writeFileSync(workshopEntry, workshopHtml, 'utf8')
+
 mkdirSync(serverDir, { recursive: true })
-writeFileSync(path.join(serverDir, 'index.js'), `const redirectToApp = (request) => {
+writeFileSync(path.join(serverDir, 'index.js'), `const redirectToPath = (request, pathname) => {
   const url = new URL(request.url)
-  url.pathname = '/hydra/'
+  url.pathname = pathname
   return Response.redirect(url.toString(), 308)
 }
 
-const renderHydraEntry = async (request, env) => {
+const renderEntry = async (request, env, entryPath, originToken) => {
   const requestUrl = new URL(request.url)
   const assetUrl = new URL(request.url)
-  assetUrl.pathname = '/hydra/index.html'
+  assetUrl.pathname = entryPath
   const response = await env.ASSETS.fetch(new Request(assetUrl, request))
   if (request.method === 'HEAD' || !response.ok) return response
 
   const headers = new Headers(response.headers)
   headers.delete('content-length')
   headers.delete('etag')
-  const html = (await response.text()).replaceAll('__HYDRA_ORIGIN__', requestUrl.origin)
+  const html = (await response.text()).replaceAll(originToken, requestUrl.origin)
   return new Response(html, { status: response.status, statusText: response.statusText, headers })
 }
 
@@ -47,10 +54,16 @@ export default {
   async fetch(request, env) {
     const { pathname } = new URL(request.url)
     if (pathname === '/' || pathname === '/index.html' || pathname === '/hydra') {
-      return redirectToApp(request)
+      return redirectToPath(request, '/hydra/')
     }
     if (pathname === '/hydra/' || pathname === '/hydra/index.html') {
-      return renderHydraEntry(request, env)
+      return renderEntry(request, env, '/hydra/index.html', '__HYDRA_ORIGIN__')
+    }
+    if (pathname === '/workshop') {
+      return redirectToPath(request, '/workshop/')
+    }
+    if (pathname === '/workshop/' || pathname === '/workshop/index.html') {
+      return renderEntry(request, env, '/workshop/index.html', '__WORKSHOP_ORIGIN__')
     }
     return env.ASSETS.fetch(request)
   }

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const outDir = path.join(repoRoot, 'dist')
 const hydraOutDir = path.join(outDir, 'hydra')
+const workshopOutDir = path.join(outDir, 'workshop')
 
 const copyRecursive = (source, target) => {
   if (!existsSync(source)) throw new Error(`Missing build input: ${source}`)
@@ -88,6 +89,12 @@ const importMap = `{
         }
       }`
 
+const workshopImportMap = JSON.stringify({
+  imports: {
+    'hydra-synth': '../hydra/synth/index.js'
+  }
+}, null, 2)
+
 let html = readFileSync(path.join(repoRoot, 'packages', 'hydra', 'index.html'), 'utf8')
 html = html.replace(/<script type="importmap">[\s\S]*?<\/script>/u, `<script type="importmap">\n      ${importMap}\n    </script>`)
 copyFileSync(path.join(repoRoot, 'LICENSE'), path.join(outDir, 'LICENSE'))
@@ -101,6 +108,19 @@ copyFileSync(
   path.join(hydraOutDir, 'og.png')
 )
 writeFileSync(path.join(hydraOutDir, 'index.html'), html, 'utf8')
+mkdirSync(workshopOutDir, { recursive: true })
+let workshopHtml = readFileSync(path.join(repoRoot, 'packages', 'workshop', 'index.html'), 'utf8')
+workshopHtml = workshopHtml.replace(
+  /<script type="importmap">[\s\S]*?<\/script>/u,
+  '<script type="importmap">\n      ' + workshopImportMap + '\n    </script>'
+)
+writeFileSync(path.join(workshopOutDir, 'index.html'), workshopHtml, 'utf8')
+for (const fileName of ['app.js', 'content.js', 'styles.css', 'og.png']) {
+  copyFileSync(
+    path.join(repoRoot, 'packages', 'workshop', fileName),
+    path.join(workshopOutDir, fileName)
+  )
+}
 writeFileSync(path.join(outDir, 'index.html'), `<!doctype html>
 <html lang="en">
 <head>
