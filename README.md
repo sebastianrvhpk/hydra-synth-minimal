@@ -83,14 +83,16 @@ they produce:
 
 | Regime | Utilities | Meaning |
 | --- | --- | --- |
-| Constant | `rn(max = 1)`, `btw(min = 0, max = 1)` | Uniform random values chosen once when the code runs |
-| Signal | `A`, `B` | Live aspect callbacks for `.scale(1, A, B)` |
+| Constant | `A`, `B`, `rn(max = 1)`, `btw(min = 0, max = 1)` | Aspect and uniform-random numbers captured when the code runs |
 | Texture | `ns(scale = 10, speed = .1)`, `nsloop(scale = 10, speed = .1, radius = 1)` | Aspect-correct noise fields with a fresh spatial seed per call |
 
-`A` is `() => Math.min(1, height / width)` and `B` is
-`() => Math.min(1, width / height)`, so both continue to respond after a
-resolution change. `ns` and `nsloop` also accept explicit `seedX` and `seedY`
-arguments after their native source parameters when a field must be reproduced.
+`A` is `Math.min(1, height / width)` and `B` is
+`Math.min(1, width / height)`. Both are ordinary numbers, so expressions such
+as `A / 2` work directly. A render-size change refreshes them and reruns the
+complete editor buffer with the new values. Signals need no extra utility: use
+a function such as `() => Math.sin(time)`. `ns` and `nsloop` also accept
+explicit `seedX` and `seedY` arguments after their native source parameters
+when a field must be reproduced.
 
 ## Verification
 

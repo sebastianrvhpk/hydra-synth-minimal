@@ -6,8 +6,10 @@ const finiteOr = (value, fallback) => {
 const positiveDimension = (value) => Math.max(1, finiteOr(value, 1))
 
 export const createGrammarUtilities = ({ synth, readWidth, readHeight, random = Math.random }) => {
-  const A = () => Math.min(1, positiveDimension(readHeight()) / positiveDimension(readWidth()))
-  const B = () => Math.min(1, positiveDimension(readWidth()) / positiveDimension(readHeight()))
+  const width = positiveDimension(readWidth())
+  const height = positiveDimension(readHeight())
+  const A = Math.min(1, height / width)
+  const B = Math.min(1, width / height)
 
   const rn = (max = 1) => random() * finiteOr(max, 1)
   const btw = (min = 0, max = 1) => {

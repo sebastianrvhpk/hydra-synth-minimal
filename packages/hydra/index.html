@@ -1319,6 +1319,14 @@
     const runtimeSetResolution = runtime.setResolution.bind(runtime)
     let canvasDisplayMode = 'auto'
     let recordCanvasDisplayChange = () => {}
+    let refreshGrammarUtilities = () => null
+    let scheduleResolutionRerun = () => {}
+    let resolutionRerunTimer = 0
+
+    const readCanvasResolution = () => ({
+      width: Number(runtime.host?.canvas?.width ?? synth.width ?? 0) || 0,
+      height: Number(runtime.host?.canvas?.height ?? synth.height ?? 0) || 0
+    })
 
     const readWindowCanvasDimensions = () => ({
       width: Math.max(2, Math.floor(window.innerWidth || runtime.host?.canvas?.width || 1280)),
@@ -1356,8 +1364,16 @@
     }
 
     const applyCanvasDisplay = (mode, width, height, options = {}) => {
+      const previousResolution = readCanvasResolution()
       canvasDisplayMode = mode
       runtimeSetResolution(width, height)
+      const nextResolution = readCanvasResolution()
+      const resolutionChanged = previousResolution.width !== nextResolution.width ||
+        previousResolution.height !== nextResolution.height
+      if (resolutionChanged) {
+        refreshGrammarUtilities()
+        scheduleResolutionRerun()
+      }
       if (mode === 'manual-resolution') return getCanvasDisplay()
 
       const canvas = runtime.host.canvas
@@ -1433,11 +1449,7 @@
 
     const readHydraWidth = () => Number(synth.width ?? runtime.host?.canvas?.width ?? window.innerWidth ?? 1) || 1
     const readHydraHeight = () => Number(synth.height ?? runtime.host?.canvas?.height ?? window.innerHeight ?? 1) || 1
-    const grammarUtilities = createGrammarUtilities({
-      synth,
-      readWidth: readHydraWidth,
-      readHeight: readHydraHeight
-    })
+    let grammarUtilities = null
 
     const installGrammarUtilityBinding = (name, descriptor) => {
       Object.defineProperty(synth, name, {
@@ -1452,14 +1464,26 @@
       })
     }
 
-    for (const [name, value] of Object.entries(grammarUtilities)) {
-      installGrammarUtilityBinding(name, { writable: true, value })
+    refreshGrammarUtilities = () => {
+      grammarUtilities = createGrammarUtilities({
+        synth,
+        readWidth: readHydraWidth,
+        readHeight: readHydraHeight
+      })
+      for (const [name, value] of Object.entries(grammarUtilities)) {
+        installGrammarUtilityBinding(name, {
+          writable: name !== 'A' && name !== 'B',
+          value
+        })
+      }
+      window.hydraUtilities = grammarUtilities
+      return grammarUtilities
     }
 
     window.hydra = runtime
     window.synth = synth
-    window.hydraUtilities = grammarUtilities
     setCanvasFullscreen()
+    if (!grammarUtilities) refreshGrammarUtilities()
     const captureFrames = async (options = {}) => captureHydraFrameSequence({
       runtime,
       ...options
@@ -1573,15 +1597,10 @@ speed = 0.75`
       {
         title: 'constant',
         items: [
+          ['A', 'A'],
+          ['B', 'B'],
           ['rn', 'rn()'],
           ['btw', 'btw(0, 1)']
-        ]
-      },
-      {
-        title: 'signal',
-        items: [
-          ['A', 'A'],
-          ['B', 'B']
         ]
       },
       {
@@ -1601,12 +1620,12 @@ Evaluated once when the code runs.`],
       ['btw', `btw(min = 0, max = 1) => min + Math.random() * (max - min)
 
 Evaluated once when the code runs.`],
-      ['A', `A = () => Math.min(1, height / width)
+      ['A', `A = Math.min(1, height / width)
 
-Pass the callback directly: .scale(1, A, B)`],
-      ['B', `B = () => Math.min(1, width / height)
+A is a number captured for the current render size. Size changes rerun the full buffer.`],
+      ['B', `B = Math.min(1, width / height)
 
-Pass the callback directly: .scale(1, A, B)`],
+B is a number captured for the current render size. Size changes rerun the full buffer.`],
       ['ns', `ns(scale = 10, speed = .1, seedX = rn(), seedY = rn()) =>
   noise(scale, speed)
     .scale(1, A, B)
@@ -1729,7 +1748,7 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
 
     const hydraCompletions = hydraCompletionNames.map((label) => ({
       label,
-      type: /^[os][0-3]$/.test(label) ? 'variable' : 'function'
+      type: /^[os][0-3]$/.test(label) || label === 'A' || label === 'B' ? 'variable' : 'function'
     }))
 
     const hydraCompletionSource = (context) => {
@@ -5502,7 +5521,7 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
       return blocks
     }
 
-    const runEditorSnippet = async (scope = 'smart') => {
+    const runEditorSnippet = async (scope = 'smart', options = {}) => {
       if (!liveEditorView) return
       if (!livecodingSession || typeof livecodingSession.run !== 'function') {
         setLiveStatus('Livecoding session is not active.', 'error')
@@ -5524,12 +5543,15 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
         action: 'run-editor',
         scope,
         scopeLabel: snippet.scopeLabel,
-        range: snippet.range
+        range: snippet.range,
+        reason: options.reason ?? null
       })
 
       if (scope === 'all') {
         const blocks = splitLiveExecutionBlocks(code)
-        const previousBlocks = Array.isArray(lastFullBufferBlocks) ? lastFullBufferBlocks : []
+        const previousBlocks = options.force === true
+          ? []
+          : Array.isArray(lastFullBufferBlocks) ? lastFullBufferBlocks : []
         let executedBlocks = 0
         let skippedBlocks = 0
         let executeRemaining = false
@@ -5546,7 +5568,7 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
             executeRemaining = true
             try {
               await Promise.resolve(runLivecodingCode(block, {
-                source: 'editor-buffer-block',
+                source: options.source ?? 'editor-buffer-block',
                 scope,
                 scopeLabel: 'buffer',
                 range: snippet.range,
@@ -5616,6 +5638,19 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
           message
         })
       }
+    }
+
+    scheduleResolutionRerun = () => {
+      window.clearTimeout(resolutionRerunTimer)
+      resolutionRerunTimer = window.setTimeout(() => {
+        resolutionRerunTimer = 0
+        if (!runtimeReady || !liveEditorView || !livecodingSession) return
+        void runEditorSnippet('all', {
+          force: true,
+          reason: 'resolution-change',
+          source: 'resolution-change'
+        })
+      }, 180)
     }
 
     let agentLivecodeRunId = 0
@@ -6211,7 +6246,9 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
       insert: insertEditorText,
       run: runEditorSnippet,
       agent: hydraAgentLivecoder,
-      utilities: grammarUtilities,
+      get utilities() {
+        return grammarUtilities
+      },
       saveSketchToUrl,
       copySketchUrl,
       loadSketchFromUrl,
@@ -6317,8 +6354,7 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
           pickVideoFiles,
           loadVideoFile,
           loadVideoFiles,
-          restartVideos,
-          ...grammarUtilities
+          restartVideos
         }
       })
       installInterfaceRunRecorder(livecodingSession)
@@ -6353,6 +6389,8 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
     }
 
     const disposeAppRuntime = () => {
+      window.clearTimeout(resolutionRerunTimer)
+      resolutionRerunTimer = 0
       if (activeCaptureAbortController) {
         activeCaptureAbortController.abort()
       }

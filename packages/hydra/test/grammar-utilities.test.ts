@@ -44,23 +44,34 @@ describe('Hydra grammar utilities', () => {
     expect(Object.isFrozen(utilities)).toBe(true)
   })
 
-  it('keeps A and B live when the render dimensions change', () => {
+  it('captures A and B as numeric constants for the current render dimensions', () => {
     const { synth } = createSynth()
     const dimensions = { width: 1920, height: 1080 }
-    const utilities = createGrammarUtilities({
+    const landscape = createGrammarUtilities({
       synth,
       readWidth: () => dimensions.width,
       readHeight: () => dimensions.height
     })
 
-    expect(utilities.A()).toBeCloseTo(1080 / 1920)
-    expect(utilities.B()).toBe(1)
+    expect(landscape.A).toBeCloseTo(1080 / 1920)
+    expect(landscape.B).toBe(1)
+    expect(typeof landscape.A).toBe('number')
+    expect(typeof landscape.B).toBe('number')
 
     dimensions.width = 720
     dimensions.height = 1280
 
-    expect(utilities.A()).toBe(1)
-    expect(utilities.B()).toBeCloseTo(720 / 1280)
+    expect(landscape.A).toBeCloseTo(1080 / 1920)
+    expect(landscape.B).toBe(1)
+
+    const portrait = createGrammarUtilities({
+      synth,
+      readWidth: () => dimensions.width,
+      readHeight: () => dimensions.height
+    })
+
+    expect(portrait.A).toBe(1)
+    expect(portrait.B).toBeCloseTo(720 / 1280)
   })
 
   it('evaluates rn and btw once with an unbiased uniform random value', () => {
@@ -77,7 +88,7 @@ describe('Hydra grammar utilities', () => {
     expect(utilities.btw(-2, 2)).toBe(1)
   })
 
-  it('gives each ns call a new seed and passes live aspect callbacks to scale', () => {
+  it('gives each ns call a new seed and passes numeric aspect constants to scale', () => {
     const { synth, textures } = createSynth()
     const randomValues = [0.1, 0.2, 0.3, 0.4]
     const utilities = createGrammarUtilities({
@@ -94,8 +105,8 @@ describe('Hydra grammar utilities', () => {
     expect(synth.noise).toHaveBeenNthCalledWith(2, 10, 0.1)
     expect(synth.solid).toHaveBeenNthCalledWith(1, 0.1, 0.2)
     expect(synth.solid).toHaveBeenNthCalledWith(2, 0.3, 0.4)
-    expect(textures[0]?.scale).toHaveBeenCalledWith(1, utilities.A, utilities.B)
-    expect(textures[1]?.scale).toHaveBeenCalledWith(1, utilities.A, utilities.B)
+    expect(textures[0]?.scale).toHaveBeenCalledWith(1, 720 / 1280, 1)
+    expect(textures[1]?.scale).toHaveBeenCalledWith(1, 720 / 1280, 1)
   })
 
   it('makes explicit nsloop seeds reproducible without consuming randomness', () => {
