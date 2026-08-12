@@ -46,6 +46,9 @@ pnpm dev
 
 The app includes CodeMirror livecoding, URL sketches, random patch generation,
 image/video/camera/screen sources, audio analysis, frame capture, and MP4 capture.
+Press `Ctrl/Cmd+Enter` with the cursor anywhere inside a contiguous code block
+to run that complete block. Blank lines separate blocks, and an explicit text
+selection takes priority. Use `Shift+Ctrl/Cmd+Enter` to run the full buffer.
 
 The guided presentation is available at `/workshop/`. Its two-hour route contains
 33 cumulative states organized as **entrar → seguir → relacionar → temporalizar →

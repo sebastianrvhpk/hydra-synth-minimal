@@ -109,6 +109,10 @@ copyFileSync(
   path.join(hydraOutDir, 'grammar-utilities.js')
 )
 copyFileSync(
+  path.join(repoRoot, 'packages', 'hydra', 'livecode-blocks.js'),
+  path.join(hydraOutDir, 'livecode-blocks.js')
+)
+copyFileSync(
   path.join(repoRoot, 'packages', 'hydra', 'datastream-system.js'),
   path.join(hydraOutDir, 'datastream-system.js')
 )

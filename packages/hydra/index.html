@@ -1148,7 +1148,7 @@
   <div id="live-panel" data-layout="fullscreen" hidden>
     <div id="live-panel-header">
       <div id="live-tools">
-        <button id="live-run" class="live-tool" type="button" title="Run selection or current line" aria-label="Run selection or current line">▶</button>
+        <button id="live-run" class="live-tool" type="button" title="Run selection or current block" aria-label="Run selection or current block">▶</button>
         <button id="live-run-all" class="live-tool" type="button" title="Run full buffer" aria-label="Run full buffer">▶▶</button>
         <button id="live-share" class="live-tool" type="button" title="Save sketch to URL and copy it" aria-label="Save sketch to URL">🔗</button>
         <button id="live-random" class="live-tool" type="button" title="Load a random sketch" aria-label="Load a random sketch">⚄</button>
@@ -1355,7 +1355,7 @@
       <h1>livecode the canvas</h1>
       <p>Code stays on the visual field. Utilities live in the small dock. URL sketches are loaded into the editor, but never run automatically.</p>
       <div class="shortcut-grid">
-        <code>ctrl enter</code><span>run line or selection</span>
+        <code>ctrl enter</code><span>run block or selection</span>
         <code>shift ctrl enter</code><span>run full buffer</span>
         <code>shift ctrl h</code><span>hide or show code</span>
         <code>shift ctrl s</code><span>save frame</span>
@@ -1379,6 +1379,7 @@
 
   <script type="module">
     import { createGrammarUtilities } from './grammar-utilities.js'
+    import { findLiveCodeBlock, splitLiveExecutionBlocks } from './livecode-blocks.js'
     import { createMediaBufferManager, createMediaLibrary, isSupportedMediaFile } from './media-library.js'
     import {
       createDatastreamVideoPlaylist,
@@ -5690,14 +5691,10 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
       }
     }
 
-    const getLiveLineSnippet = () => {
+    const getLiveBlockSnippet = () => {
       if (!liveEditorView) return { code: '', range: null }
       const cursor = liveEditorView.state.selection.main.head
-      const line = liveEditorView.state.doc.lineAt(cursor)
-      return {
-        code: line.text,
-        range: { from: line.from, to: line.to }
-      }
+      return findLiveCodeBlock(readEditorCode(), cursor) ?? { code: '', range: null }
     }
 
     const resolveLiveSnippet = (scope = 'smart') => {
@@ -5713,34 +5710,10 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
       const selection = getLiveSelectionSnippet()
       if (selection.code.trim()) return { ...selection, scopeLabel: 'selection' }
 
-      const line = getLiveLineSnippet()
-      if (line.code.trim()) return { ...line, scopeLabel: 'line' }
+      const block = getLiveBlockSnippet()
+      if (block.code.trim()) return { ...block, scopeLabel: 'block' }
 
-      return { code: '', scopeLabel: 'line', range: line.range }
-    }
-
-    const splitLiveExecutionBlocks = (code) => {
-      const normalized = String(code ?? '').replace(/\r\n?/g, '\n')
-      const lines = normalized.split('\n')
-      const blocks = []
-      let blockLines = []
-
-      const flushBlock = () => {
-        if (blockLines.length === 0) return
-        const block = blockLines.join('\n').trim()
-        if (block) blocks.push(block)
-        blockLines = []
-      }
-
-      for (const line of lines) {
-        if (!line.trim()) {
-          flushBlock()
-          continue
-        }
-        blockLines.push(line)
-      }
-      flushBlock()
-      return blocks
+      return { code: '', scopeLabel: 'block', range: null }
     }
 
     const runEditorSnippet = async (scope = 'smart', options = {}) => {
@@ -5756,7 +5729,7 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
         if (scope === 'all') {
           setLiveStatus('Editor is empty.', 'error')
         } else {
-          setLiveStatus('Nothing selected.', 'error')
+          setLiveStatus('No runnable block under the cursor.', 'error')
         }
         return
       }
