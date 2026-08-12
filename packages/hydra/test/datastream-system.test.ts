@@ -27,8 +27,8 @@ describe('DATASTREAM controls', () => {
   })
 
   it('keeps dynamic control callbacks in the adapted patch', () => {
-    expect(datastreamPatch).toContain("performanceControls.range('cc26', 0, 10)")
-    expect(datastreamPatch).toContain("performanceControls.range('cc48', 1.5, .475)")
+    expect(datastreamPatch).toContain("datastreamControls.range('cc26', 0, 10)")
+    expect(datastreamPatch).toContain("datastreamControls.range('cc48', 1.5, .475)")
     expect(datastreamPatch).toContain('render(o1)')
     expect(datastreamPatch).not.toContain('hydra-midi')
   })

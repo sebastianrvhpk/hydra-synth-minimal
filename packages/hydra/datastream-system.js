@@ -327,8 +327,6 @@ export const datastreamPatch = `// Hypereikon — DATASTREAM
 // The three source videos are hosted with this page.
 // Only the active video is attached to s0; the previous one is released.
 
-const performanceControls = datastreamControls
-
 fps = 60
 speed = .25
 
@@ -336,15 +334,15 @@ src(o2)
   .scrollX(-1 / width)
   .modulate(
     osc(Math.PI / 2, 2).brightness(-.5).color(0, 1 / height),
-    () => performanceControls.range('cc26', 0, 10)
+    () => datastreamControls.range('cc26', 0, 10)
   )
   .modulate(
     src(s0)
       .scale(1, 4 / 3)
       .brightness(-.5)
       .color(
-        () => performanceControls.range('cc31', 0, 4),
-        () => performanceControls.range('cc49', 0, 4)
+        () => datastreamControls.range('cc31', 0, 4),
+        () => datastreamControls.range('cc49', 0, 4)
       )
       .color(1 / width, 1 / height),
     1
@@ -362,7 +360,7 @@ src(o2)
               .pixelate(width, 1)
               .mask(
                 shape(4, 1, 0)
-                  .scale(() => performanceControls.range('cc19', 1, .25), 1, 1, 1, 1)
+                  .scale(() => datastreamControls.range('cc19', 1, .25), 1, 1, 1, 1)
                   .repeat(width / 4, height / 4, 0, .5)
               )
           )
@@ -372,11 +370,11 @@ src(o2)
               .thresh(0, 0)
               .mask(
                 shape(4, 1, 0)
-                  .scale(() => performanceControls.range('cc19', 1, .25), 1, 1, 0, 0)
+                  .scale(() => datastreamControls.range('cc19', 1, .25), 1, 1, 0, 0)
                   .repeat(width / 4, height / 4, 0, .5)
               )
           )
-          .add(shape(4, 1, 0).scale(1, 50 / width, 1, () => performanceControls.get('cc61')))
+          .add(shape(4, 1, 0).scale(1, 50 / width, 1, () => datastreamControls.get('cc61')))
           .thresh(.5, 0)
       )
   )
@@ -385,11 +383,11 @@ src(o2)
       .scale(1, 4 / 3)
       .mask(
         noise(1, .25)
-          .thresh(() => performanceControls.range('cc31', 1.5, .5), 0)
+          .thresh(() => datastreamControls.range('cc31', 1.5, .5), 0)
           .modulate(
             solid(
-              () => performanceControls.range('cc49', 0, 1),
-              () => performanceControls.range('cc53', 0, 1)
+              () => datastreamControls.range('cc49', 0, 1),
+              () => datastreamControls.range('cc53', 0, 1)
             ),
             1
           )
@@ -397,7 +395,7 @@ src(o2)
   )
   .layer(
     src(s0)
-      .mask(src(s0).thresh(() => performanceControls.range('cc27', 1.5, .75), 0))
+      .mask(src(s0).thresh(() => datastreamControls.range('cc27', 1.5, .75), 0))
       .scale(1, 4 / 3)
   )
   .out(o2)
@@ -406,7 +404,7 @@ src(o0)
   .scrollX(-1 / width)
   .modulate(
     osc(Math.PI / 2, 2).brightness(-.5).color(0, 1 / height),
-    () => performanceControls.range('cc26', 0, 10)
+    () => datastreamControls.range('cc26', 0, 10)
   )
   .layer(
     src(s0)
@@ -417,13 +415,13 @@ src(o0)
           .mask(
             osc(Math.PI * 2, -1)
               .thresh(.25, 0)
-              .mask(noise(1, 1).thresh(() => performanceControls.range('cc23', 2, 0), 0))
+              .mask(noise(1, 1).thresh(() => datastreamControls.range('cc23', 2, 0), 0))
           )
           .thresh(.5, 0)
       )
       .mask(
         shape(4, 1, 0)
-          .scale(() => performanceControls.range('cc19', 1, .5), 1, 1, 0, 0)
+          .scale(() => datastreamControls.range('cc19', 1, .5), 1, 1, 0, 0)
           .repeat(width / 2, height / 2, .5, 1)
       )
   )
@@ -438,13 +436,13 @@ src(o0)
       .scale(1, 4 / 3)
       .mask(
         noise(1, 1)
-          .thresh(() => performanceControls.range('cc48', 1.5, .525), 0)
-          .diff(noise(1, 1).thresh(() => performanceControls.range('cc48', 1.5, .475), 0))
+          .thresh(() => datastreamControls.range('cc48', 1.5, .525), 0)
+          .diff(noise(1, 1).thresh(() => datastreamControls.range('cc48', 1.5, .475), 0))
           .scale(1, A)
           .modulate(
             solid(
-              () => performanceControls.range('cc49', 0, 1),
-              () => performanceControls.range('cc53', 0, 1)
+              () => datastreamControls.range('cc49', 0, 1),
+              () => datastreamControls.range('cc53', 0, 1)
             ),
             1
           )
@@ -453,11 +451,11 @@ src(o0)
   .layer(
     src(s0)
       .scale(1, 4 / 3)
-      .mask(noise(1, .25).thresh(() => performanceControls.range('cc31', 1.5, .5), 0))
+      .mask(noise(1, .25).thresh(() => datastreamControls.range('cc31', 1.5, .5), 0))
   )
   .layer(
     src(s0)
-      .mask(src(s0).thresh(() => performanceControls.range('cc27', 1.5, .75), 0))
+      .mask(src(s0).thresh(() => datastreamControls.range('cc27', 1.5, .75), 0))
       .scale(1, 4 / 3)
   )
   .out(o0)
@@ -467,11 +465,11 @@ src(o1)
   .layer(
     src(s0)
       .scale(1, 4 / 3)
-      .mask(shape(4, 1, 0).scale(1, 50 / width, 1, () => performanceControls.get('cc61')))
+      .mask(shape(4, 1, 0).scale(1, 50 / width, 1, () => datastreamControls.get('cc61')))
   )
   .modulate(
     src(s0).color(1 / width, 0),
-    () => performanceControls.range('cc57', 0, 10)
+    () => datastreamControls.range('cc57', 0, 10)
   )
   .out(o1)
 
