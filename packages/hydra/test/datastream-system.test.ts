@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-  createExclusiveVideoPlaylist,
-  createPerformanceControlBank,
-  touredControlDefinitions,
-  touredPatch
-} from '../performance-system.js'
+  createDatastreamControlBank,
+  createDatastreamVideoPlaylist,
+  datastreamControlDefinitions,
+  datastreamPatch
+} from '../datastream-system.js'
 
 const video = (name: string, lastModified = 1) => ({
   name,
@@ -13,28 +13,28 @@ const video = (name: string, lastModified = 1) => ({
   lastModified
 })
 
-describe('Hydra toured performance controls', () => {
+describe('DATASTREAM controls', () => {
   it('preserves the MIDI mappings as normalized browser controls', () => {
-    const controls = createPerformanceControlBank()
+    const controls = createDatastreamControlBank()
 
     controls.set('cc26', 0.25)
     controls.set('cc19', 1)
 
     expect(controls.range('cc26', 0, 10)).toBe(2.5)
     expect(controls.range('cc19', 1, 0.25)).toBe(0.25)
-    expect(controls.snapshot()).toHaveLength(touredControlDefinitions.length)
+    expect(controls.snapshot()).toHaveLength(datastreamControlDefinitions.length)
     expect(controls.format('cc48')).toContain('/')
   })
 
   it('keeps dynamic control callbacks in the adapted patch', () => {
-    expect(touredPatch).toContain("performanceControls.range('cc26', 0, 10)")
-    expect(touredPatch).toContain("performanceControls.range('cc48', 1.5, .475)")
-    expect(touredPatch).toContain('render(o1)')
-    expect(touredPatch).not.toContain('hydra-midi')
+    expect(datastreamPatch).toContain("performanceControls.range('cc26', 0, 10)")
+    expect(datastreamPatch).toContain("performanceControls.range('cc48', 1.5, .475)")
+    expect(datastreamPatch).toContain('render(o1)')
+    expect(datastreamPatch).not.toContain('hydra-midi')
   })
 })
 
-describe('Hydra exclusive performance playlist', () => {
+describe('DATASTREAM exclusive video playlist', () => {
   const setup = () => {
     let nextId = 0
     const entries = new Map<string, any>()
@@ -74,7 +74,7 @@ describe('Hydra exclusive performance playlist', () => {
 
   it('keeps only three references and materializes one video at a time', () => {
     const { buffers, entries, library, removed } = setup()
-    const playlist = createExclusiveVideoPlaylist({ library, buffers, maxFiles: 3 })
+    const playlist = createDatastreamVideoPlaylist({ library, buffers, maxFiles: 3 })
 
     const selected = playlist.setFiles([
       video('331815120922316809_3.mp4'),
@@ -108,7 +108,7 @@ describe('Hydra exclusive performance playlist', () => {
       { name: 'video-2.mp4', url: './media/video-2.mp4' },
       { name: 'video-3.mp4', url: './media/video-3.mp4' }
     ]
-    const playlist = createExclusiveVideoPlaylist({ source, sources })
+    const playlist = createDatastreamVideoPlaylist({ source, sources })
 
     playlist.activate(0)
     playlist.next()

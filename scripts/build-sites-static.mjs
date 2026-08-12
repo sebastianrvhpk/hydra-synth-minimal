@@ -56,6 +56,12 @@ export default {
     if (pathname === '/' || pathname === '/index.html' || pathname === '/hydra') {
       return redirectToPath(request, '/hydra/')
     }
+    if (pathname === '/hydra/DATASTREAM/') {
+      return redirectToPath(request, '/hydra/DATASTREAM')
+    }
+    if (pathname === '/hydra/DATASTREAM') {
+      return renderEntry(request, env, '/hydra/index.html', '__HYDRA_ORIGIN__')
+    }
     if (pathname === '/hydra/' || pathname === '/hydra/index.html') {
       return renderEntry(request, env, '/hydra/index.html', '__HYDRA_ORIGIN__')
     }

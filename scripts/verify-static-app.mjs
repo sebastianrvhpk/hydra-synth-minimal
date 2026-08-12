@@ -15,9 +15,6 @@ const requiredAppMarkers = [
   'welcome-modal',
   'record-popover',
   'options-panel',
-  'performance-panel',
-  'createExclusiveVideoPlaylist',
-  'touredPatch',
   'code-material-canvas',
   'attachCodeMaterial'
 ]

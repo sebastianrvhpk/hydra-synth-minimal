@@ -109,8 +109,8 @@ copyFileSync(
   path.join(hydraOutDir, 'grammar-utilities.js')
 )
 copyFileSync(
-  path.join(repoRoot, 'packages', 'hydra', 'performance-system.js'),
-  path.join(hydraOutDir, 'performance-system.js')
+  path.join(repoRoot, 'packages', 'hydra', 'datastream-system.js'),
+  path.join(hydraOutDir, 'datastream-system.js')
 )
 copyFileSync(
   path.join(repoRoot, 'packages', 'hydra', 'og.png'),

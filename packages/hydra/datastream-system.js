@@ -11,7 +11,7 @@ const formatNumber = (value) => {
   return value.toFixed(3).replace(/0+$/u, '').replace(/\.$/u, '')
 }
 
-export const touredControlDefinitions = Object.freeze([
+export const datastreamControlDefinitions = Object.freeze([
   {
     id: 'cc19',
     cc: 19,
@@ -84,9 +84,9 @@ export const touredControlDefinitions = Object.freeze([
   }
 ])
 
-const definitionMap = new Map(touredControlDefinitions.map((definition) => [definition.id, definition]))
+const definitionMap = new Map(datastreamControlDefinitions.map((definition) => [definition.id, definition]))
 
-export const createPerformanceControlBank = (definitions = touredControlDefinitions) => {
+export const createDatastreamControlBank = (definitions = datastreamControlDefinitions) => {
   const normalizedDefinitions = definitions.map((definition) => ({ ...definition }))
   const values = new Map(normalizedDefinitions.map((definition) => [
     definition.id,
@@ -96,7 +96,7 @@ export const createPerformanceControlBank = (definitions = touredControlDefiniti
 
   const definitionFor = (id) => {
     const definition = normalizedDefinitions.find((candidate) => candidate.id === id)
-    if (!definition) throw new RangeError(`Hydra performance: unknown control ${JSON.stringify(id)}.`)
+    if (!definition) throw new RangeError(`DATASTREAM: unknown control ${JSON.stringify(id)}.`)
     return definition
   }
 
@@ -144,7 +144,7 @@ export const createPerformanceControlBank = (definitions = touredControlDefiniti
 
   const subscribe = (listener) => {
     if (typeof listener !== 'function') {
-      throw new TypeError('Hydra performance control listener must be a function.')
+      throw new TypeError('DATASTREAM control listener must be a function.')
     }
     listeners.add(listener)
     return () => listeners.delete(listener)
@@ -179,7 +179,7 @@ const naturalVideoOrder = (left, right) => String(left?.name ?? '').localeCompar
   { numeric: true, sensitivity: 'base' }
 )
 
-export const createExclusiveVideoPlaylist = ({
+export const createDatastreamVideoPlaylist = ({
   source,
   sources = [],
   library,
@@ -200,7 +200,7 @@ export const createExclusiveVideoPlaylist = ({
   )
   if (!directSourceMode && !managedLibraryMode) {
     throw new TypeError(
-      'Hydra performance videos require either a Hydra source or managed media buffers.'
+      'DATASTREAM videos require either a Hydra source or managed media buffers.'
     )
   }
 
@@ -235,7 +235,7 @@ export const createExclusiveVideoPlaylist = ({
   const setFiles = (nextFiles) => {
     const supported = Array.from(nextFiles ?? []).filter(isVideoSource).sort(naturalVideoOrder)
     if (supported.length === 0) {
-      throw new TypeError('Hydra performance: provide at least one video source.')
+      throw new TypeError('DATASTREAM: provide at least one video source.')
     }
     const released = releaseActive()
     files = supported.slice(0, Math.max(1, Number(maxFiles) || 3))
@@ -249,7 +249,7 @@ export const createExclusiveVideoPlaylist = ({
   }
 
   const activate = (index) => {
-    if (files.length === 0) throw new Error('Hydra performance: choose the video files first.')
+    if (files.length === 0) throw new Error('DATASTREAM: choose the video files first.')
     const normalizedIndex = ((Math.trunc(Number(index)) % files.length) + files.length) % files.length
     const file = files[normalizedIndex]
 
@@ -301,7 +301,7 @@ export const createExclusiveVideoPlaylist = ({
 
   const subscribe = (listener) => {
     if (typeof listener !== 'function') {
-      throw new TypeError('Hydra performance video listener must be a function.')
+      throw new TypeError('DATASTREAM video listener must be a function.')
     }
     listeners.add(listener)
     return () => listeners.delete(listener)
@@ -321,11 +321,13 @@ export const createExclusiveVideoPlaylist = ({
   })
 }
 
-// Adapted from the toured Hydra patch supplied by Hypereikon. MIDI input is
-// deliberately replaced by the performance controls installed by this app.
-export const touredPatch = `// Hypereikon — toured video system
+// DATASTREAM is a toured work by Hypereikon. MIDI input is deliberately
+// replaced by the browser controls installed on its dedicated route.
+export const datastreamPatch = `// Hypereikon — DATASTREAM
 // The three source videos are hosted with this page.
 // Only the active video is attached to s0; the previous one is released.
+
+const performanceControls = datastreamControls
 
 fps = 60
 speed = .25
@@ -475,4 +477,4 @@ src(o1)
 
 render(o1)`
 
-export const controlDefinitionFor = (id) => definitionMap.get(id) ?? null
+export const datastreamControlDefinitionFor = (id) => definitionMap.get(id) ?? null

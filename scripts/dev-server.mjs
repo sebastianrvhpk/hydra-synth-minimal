@@ -34,7 +34,13 @@ const mimeTypes = {
 
 const resolveRequestPath = (requestUrl = '/') => {
   const parsed = new URL(requestUrl, 'http://localhost')
-  const pathname = decodeURIComponent(parsed.pathname === '/' ? appEntry : parsed.pathname)
+  const pathname = decodeURIComponent(
+    parsed.pathname === '/hydra/DATASTREAM' || parsed.pathname === '/hydra/DATASTREAM/'
+      ? appEntry
+      : parsed.pathname === '/'
+        ? appEntry
+        : parsed.pathname
+  )
   const candidate = path.resolve(rootDir, `.${pathname}`)
   if (candidate !== rootDir && !candidate.startsWith(`${rootDir}${path.sep}`)) return null
   if (!existsSync(candidate)) return null

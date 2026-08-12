@@ -10,10 +10,10 @@ const requiredFiles = [
   'dist/client/LICENSE',
   'dist/client/hydra/index.html',
   'dist/client/hydra/media-library.js',
-  'dist/client/hydra/performance-system.js',
-  'dist/client/hydra/media/toured/331053620855083009_1.mp4',
-  'dist/client/hydra/media/toured/331815120922316809_2.mp4',
-  'dist/client/hydra/media/toured/331815120922316809_3.mp4',
+  'dist/client/hydra/datastream-system.js',
+  'dist/client/hydra/media/datastream/331053620855083009_1.mp4',
+  'dist/client/hydra/media/datastream/331815120922316809_2.mp4',
+  'dist/client/hydra/media/datastream/331815120922316809_3.mp4',
   'dist/client/hydra/og.png',
   'dist/client/hydra/synth/index.js',
   'dist/client/hydra/synth/livecoding.js',
@@ -65,11 +65,11 @@ for (const fileName of [
   '331815120922316809_2.mp4',
   '331815120922316809_3.mp4'
 ]) {
-  const videoPath = path.join(repoRoot, 'dist', 'client', 'hydra', 'media', 'toured', fileName)
+  const videoPath = path.join(repoRoot, 'dist', 'client', 'hydra', 'media', 'datastream', fileName)
   if (!existsSync(videoPath)) continue
   const video = readFileSync(videoPath)
   if (!video.subarray(4, 12).toString('ascii').includes('ftyp')) {
-    failures.push(`toured media must be a valid MP4: ${fileName}`)
+    failures.push(`DATASTREAM media must be a valid MP4: ${fileName}`)
   }
 }
 
@@ -133,6 +133,16 @@ if (existsSync(workerPath)) {
   }
   if (!assetRequests.includes('/hydra/index.html')) {
     failures.push('Sites worker must resolve /hydra/ to the built app entry')
+  }
+
+  const datastreamRedirect = await worker.fetch(new Request('https://hydra.test/hydra/DATASTREAM/?source=one'), env)
+  if (datastreamRedirect.status !== 308 || datastreamRedirect.headers.get('location') !== 'https://hydra.test/hydra/DATASTREAM?source=one') {
+    failures.push('Sites worker must canonicalize /hydra/DATASTREAM/ without losing its query')
+  }
+
+  const datastream = await worker.fetch(new Request('https://hydra.test/hydra/DATASTREAM'), env)
+  if (datastream.status !== 200 || !assetRequests.includes('/hydra/index.html')) {
+    failures.push('Sites worker must resolve /hydra/DATASTREAM to the Hydra app entry')
   }
 
   const workshopRedirect = await worker.fetch(new Request('https://hydra.test/workshop?scene=one'), env)
