@@ -929,6 +929,35 @@
       padding: 0 2px;
     }
 
+    #live-editor .cm-cursor-primary {
+      border-left: 3px solid var(--magenta);
+      margin-left: -1.5px;
+      filter: drop-shadow(0 0 3px rgba(255, 107, 214, 0.95));
+    }
+
+    #live-editor .cm-cursorLayer {
+      animation: none !important;
+    }
+
+    #live-editor .cm-cursor-primary::before,
+    #live-editor .cm-cursor-primary::after {
+      position: absolute;
+      left: -3px;
+      width: 5px;
+      height: 2px;
+      border-radius: 1px;
+      background: var(--magenta);
+      content: '';
+    }
+
+    #live-editor .cm-cursor-primary::before {
+      top: 0;
+    }
+
+    #live-editor .cm-cursor-primary::after {
+      bottom: 0;
+    }
+
     #live-editor .cm-gutters {
       background: rgba(0, 0, 0, 0.18);
       border-right: 1px solid rgba(238, 244, 239, 0.09);
@@ -941,12 +970,16 @@
 
     #live-editor .cm-activeLine,
     #live-editor .cm-activeLineGutter {
-      background: rgba(0, 0, 0, 0.26);
+      background: linear-gradient(90deg, rgba(255, 107, 214, 0.13), rgba(117, 247, 255, 0.06) 72%, transparent);
+    }
+
+    #live-editor .cm-activeLine {
+      box-shadow: inset 3px 0 0 rgba(255, 107, 214, 0.72);
     }
 
     #live-panel[data-layout="floating"] #live-editor .cm-activeLine,
     #live-panel[data-layout="floating"] #live-editor .cm-activeLineGutter {
-      background: rgba(117, 247, 255, 0.08);
+      background: linear-gradient(90deg, rgba(255, 107, 214, 0.13), rgba(117, 247, 255, 0.08) 72%, transparent);
     }
 
     #live-editor .cm-selectionBackground,
@@ -975,6 +1008,13 @@
     #live-editor .cm-run-flash {
       background: rgba(117, 247, 255, 0.16);
       outline: 1px solid rgba(117, 247, 255, 0.22);
+    }
+
+    #live-editor .cm-typed-flash {
+      border-radius: 2px;
+      background: rgba(117, 247, 255, 0.48);
+      box-shadow: 0 0 0 1px rgba(117, 247, 255, 0.72), 0 0 10px rgba(117, 247, 255, 0.62);
+      color: #ffffff;
     }
 
     #live-status {
@@ -1979,6 +2019,48 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
         return decorations
       },
       provide: (field) => EditorView.decorations.from(field)
+    })
+
+    const clearTypedFlashEffect = StateEffect.define()
+    const typedFlashMark = Decoration.mark({ class: 'cm-typed-flash' })
+    const typedFlashPlugin = ViewPlugin.fromClass(class {
+      constructor(view) {
+        this.decorations = Decoration.none
+        this.clearTimer = 0
+        this.view = view
+      }
+
+      update(update) {
+        const shouldClear = update.transactions.some((transaction) =>
+          transaction.effects.some((effect) => effect.is(clearTypedFlashEffect)))
+        if (shouldClear) {
+          this.decorations = Decoration.none
+          return
+        }
+        if (!update.docChanged || !update.view.hasFocus) {
+          this.decorations = this.decorations.map(update.changes)
+          return
+        }
+
+        const ranges = []
+        update.changes.iterChanges((_fromA, _toA, fromB, toB) => {
+          if (toB > fromB) ranges.push(typedFlashMark.range(Math.max(fromB, toB - 1), toB))
+        })
+        if (ranges.length === 0) return
+
+        this.decorations = Decoration.set(ranges, true)
+        window.clearTimeout(this.clearTimer)
+        this.clearTimer = window.setTimeout(() => {
+          this.clearTimer = 0
+          this.view.dispatch({ effects: clearTypedFlashEffect.of(true) })
+        }, 220)
+      }
+
+      destroy() {
+        window.clearTimeout(this.clearTimer)
+      }
+    }, {
+      decorations: (plugin) => plugin.decorations
     })
 
     const readEditorCode = () => liveEditorView?.state.doc.toString() ?? ''
@@ -6238,6 +6320,7 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
             tooltips({ parent: document.body }),
             autocompletion({ override: [hydraCompletionSource] }),
             flashField,
+            typedFlashPlugin,
             codeMaterialViewPlugin,
             EditorView.lineWrapping,
             EditorView.updateListener.of((update) => {
