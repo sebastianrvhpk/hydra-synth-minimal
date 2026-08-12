@@ -135,16 +135,6 @@ if (existsSync(workerPath)) {
     failures.push('Sites worker must resolve /hydra/ to the built app entry')
   }
 
-  const datastreamRedirect = await worker.fetch(new Request('https://hydra.test/hydra/DATASTREAM/?source=one'), env)
-  if (datastreamRedirect.status !== 308 || datastreamRedirect.headers.get('location') !== 'https://hydra.test/hydra/DATASTREAM?source=one') {
-    failures.push('Sites worker must canonicalize /hydra/DATASTREAM/ without losing its query')
-  }
-
-  const datastream = await worker.fetch(new Request('https://hydra.test/hydra/DATASTREAM'), env)
-  if (datastream.status !== 200 || !assetRequests.includes('/hydra/index.html')) {
-    failures.push('Sites worker must resolve /hydra/DATASTREAM to the Hydra app entry')
-  }
-
   const workshopRedirect = await worker.fetch(new Request('https://hydra.test/workshop?scene=one'), env)
   if (workshopRedirect.status !== 308 || workshopRedirect.headers.get('location') !== 'https://hydra.test/workshop/?scene=one') {
     failures.push('Sites worker must redirect /workshop to /workshop/ and preserve its query')

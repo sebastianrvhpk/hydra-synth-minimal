@@ -1402,7 +1402,7 @@
     }
 
     const normalizeRoutePath = (pathname = window.location.pathname) => pathname.replace(/\/+$/u, '') || '/'
-    const datastreamMode = /\/hydra\/DATASTREAM$/iu.test(normalizeRoutePath())
+    const datastreamMode = /\/hydra\/DATASTREAM$/iu.test(normalizeRoutePath()) || new URLSearchParams(location.search).has('DATASTREAM')
     const backendQuery = new URLSearchParams(location.search).get('backend')
     const requestedBackend = backendQuery === 'webgpu' || backendQuery === 'webgl2' ? backendQuery : 'auto'
     const runtime = createHydraBrowserRuntime({ autoLoop: true, backend: requestedBackend })
