@@ -280,6 +280,8 @@ export const createMediaBufferManager = ({
     }
 
     const previous = entryFor(normalizedBuffer)
+    // Reinitialize the source before revoking the previous library URL. The
+    // source node pauses and detaches the old media element synchronously.
     source[method](library.url(entry))
     assignments.set(normalizedBuffer, entry.id)
     notify({ type: 'assign', buffer: normalizedBuffer, entry, previous })

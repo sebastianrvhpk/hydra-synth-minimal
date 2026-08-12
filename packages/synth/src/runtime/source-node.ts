@@ -124,6 +124,7 @@ export class HydraSourceNode implements HydraTextureProvider {
     this.listen(video, 'loadeddata', loaded)
     this.registerCleanup(() => {
       video.pause()
+      video.removeAttribute('src')
       video.src = ''
       video.load()
       if (objectUrl) revokeObjectUrl(objectUrl)

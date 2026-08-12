@@ -98,6 +98,82 @@
       overflow: auto;
     }
 
+    #performance-panel {
+      top: 54px;
+      left: 10px;
+      width: min(390px, calc(100vw - 20px));
+      max-height: calc(100vh - 64px);
+      overflow: auto;
+    }
+
+    .performance-status {
+      color: var(--muted);
+      min-height: 1.35em;
+    }
+
+    .performance-status[data-state="ok"] {
+      color: var(--ok);
+    }
+
+    .performance-status[data-state="error"] {
+      color: var(--bad);
+    }
+
+    .performance-video-actions {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+    }
+
+    .performance-video-button {
+      min-width: 0;
+      padding: 8px 6px;
+      border: 1px solid rgba(238, 244, 239, 0.18);
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--ink);
+      cursor: pointer;
+      font: inherit;
+      font-size: 11px;
+    }
+
+    .performance-video-button:hover,
+    .performance-video-button[data-active="true"] {
+      border-color: rgba(117, 247, 255, 0.62);
+      background: rgba(117, 247, 255, 0.16);
+    }
+
+    .performance-control-list {
+      display: grid;
+      gap: 9px;
+    }
+
+    .performance-control {
+      display: grid;
+      grid-template-columns: minmax(118px, 1fr) minmax(110px, 1.25fr) 72px;
+      gap: 8px;
+      align-items: center;
+      color: var(--muted);
+    }
+
+    .performance-control label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .performance-control input {
+      min-width: 0;
+      accent-color: var(--cyan);
+    }
+
+    .performance-control output {
+      color: var(--ink);
+      font-size: 10px;
+      text-align: right;
+    }
+
     .panel-header {
       display: flex;
       align-items: center;
@@ -781,6 +857,12 @@
       background: rgba(255, 107, 214, 0.16);
     }
 
+    #live-performance-toggle[data-state="active"] {
+      border-color: rgba(117, 247, 255, 0.72);
+      color: var(--cyan);
+      background: rgba(117, 247, 255, 0.18);
+    }
+
     #live-editor {
       width: 100%;
       height: 100%;
@@ -1025,6 +1107,19 @@
         max-height: calc(100vh - 96px);
       }
 
+      #performance-panel {
+        top: 88px;
+        right: 8px;
+        bottom: auto;
+        left: 8px;
+        width: auto;
+        max-height: calc(100vh - 96px);
+      }
+
+      .performance-control {
+        grid-template-columns: minmax(100px, 1fr) minmax(92px, 1fr) 64px;
+      }
+
       #live-status {
         top: auto;
         right: auto;
@@ -1059,6 +1154,7 @@
         <button id="live-random" class="live-tool" type="button" title="Load a random sketch" aria-label="Load a random sketch">⚄</button>
         <button id="live-dice" class="live-tool" type="button" title="Mutate one number in the editor" aria-label="Mutate one number">±</button>
         <button id="live-clear" class="live-tool" type="button" title="Clear the editor" aria-label="Clear the editor">⌫</button>
+        <button id="live-performance-toggle" class="live-tool" type="button" title="Toured patch controls" aria-label="Toured patch controls" aria-expanded="false">≋</button>
         <button id="live-record-toggle" class="live-tool" type="button" title="Record MP4" aria-label="Record MP4" aria-expanded="false">●</button>
         <button id="live-options-toggle" class="live-tool" type="button" title="Options" aria-label="Options" aria-expanded="false">⚙</button>
         <button id="live-info-toggle" class="live-tool" type="button" title="Info" aria-label="Info">ⓘ</button>
@@ -1080,6 +1176,44 @@
       <div class="live-resize-handle" data-edge="se" aria-hidden="true"></div>
       <div class="live-resize-handle" data-edge="sw" aria-hidden="true"></div>
       <div class="live-resize-handle" data-edge="nw" aria-hidden="true"></div>
+    </div>
+  </div>
+
+  <div id="performance-panel" class="control-panel" hidden>
+    <div class="panel-header">
+      <div class="panel-title">toured video system</div>
+      <button id="performance-close" class="panel-close" type="button" aria-label="Close toured patch controls">×</button>
+    </div>
+    <div class="panel-section">
+      <div class="panel-header">
+        <div class="panel-title">videos</div>
+        <span id="performance-video-count" class="panel-note">3 hosted files</span>
+      </div>
+      <div id="performance-video-actions" class="performance-video-actions"></div>
+      <label class="panel-row" for="performance-video-select">
+        <span>active source</span>
+        <select id="performance-video-select" aria-label="Active toured video"></select>
+      </label>
+      <div class="panel-actions">
+        <button id="performance-previous-video" class="panel-action" type="button">previous</button>
+        <button id="performance-next-video" class="panel-action" type="button">next video</button>
+        <button id="performance-release-video" class="panel-action" type="button">release video</button>
+      </div>
+      <p class="panel-note">Only the active file is attached to <code>s0</code>. Changing video stops and releases the previous source.</p>
+      <div id="performance-video-status" class="performance-status"></div>
+    </div>
+    <div class="panel-section">
+      <div class="panel-header">
+        <div class="panel-title">controls</div>
+        <button id="performance-reset-controls" class="media-item-action" type="button">reset</button>
+      </div>
+      <div id="performance-control-list" class="performance-control-list"></div>
+      <p class="panel-note">The sliders preserve the normalized MIDI CC ranges used by the original patch.</p>
+    </div>
+    <div class="panel-actions">
+      <button id="performance-load-patch" class="panel-action" type="button">load patch</button>
+      <button id="performance-run-patch" class="panel-action" type="button">load + run</button>
+      <button id="performance-render-output" class="panel-action" type="button">cycle output</button>
     </div>
   </div>
 
@@ -1246,6 +1380,11 @@
   <script type="module">
     import { createGrammarUtilities } from './grammar-utilities.js'
     import { createMediaBufferManager, createMediaLibrary, isSupportedMediaFile } from './media-library.js'
+    import {
+      createExclusiveVideoPlaylist,
+      createPerformanceControlBank,
+      touredPatch
+    } from './performance-system.js'
     import { basicSetup, EditorView } from 'codemirror'
     import { EditorSelection, EditorState, Prec, StateEffect, StateField } from '@codemirror/state'
     import { autocompletion, startCompletion } from '@codemirror/autocomplete'
@@ -1316,6 +1455,38 @@
     }
 
     const synth = runtime.synth
+    const touredVideoSources = [
+      {
+        name: 'video 1',
+        fileName: '331053620855083009_1.mp4',
+        url: new URL('./media/toured/331053620855083009_1.mp4', import.meta.url).href,
+        type: 'video/mp4'
+      },
+      {
+        name: 'video 2',
+        fileName: '331815120922316809_2.mp4',
+        url: new URL('./media/toured/331815120922316809_2.mp4', import.meta.url).href,
+        type: 'video/mp4'
+      },
+      {
+        name: 'video 3',
+        fileName: '331815120922316809_3.mp4',
+        url: new URL('./media/toured/331815120922316809_3.mp4', import.meta.url).href,
+        type: 'video/mp4'
+      }
+    ]
+    const performanceControls = createPerformanceControlBank()
+    const performanceVideos = createExclusiveVideoPlaylist({
+      source: synth.s0,
+      sources: touredVideoSources,
+      bufferName: 's0'
+    })
+    let performanceOutputIndex = 0
+    let performanceVideoRequestId = 0
+    const performanceOutputs = [synth.o1, synth.o2, synth.o0]
+    synth.performanceControls = performanceControls
+    synth.performanceVideos = performanceVideos
+    synth.touredPatch = touredPatch
     const runtimeSetResolution = runtime.setResolution.bind(runtime)
     let canvasDisplayMode = 'auto'
     let recordCanvasDisplayChange = () => {}
@@ -1497,6 +1668,7 @@
     }
 
     const params = new URLSearchParams(window.location.search)
+    const performanceMode = (params.get('performance') ?? '').trim().toLowerCase()
     const livecodingMode = (params.get('livecoding') ?? '').trim().toLowerCase()
     const enableLivecoding = livecodingMode !== '0' && livecodingMode !== 'false' && livecodingMode !== 'off'
     const livePanel = document.getElementById('live-panel')
@@ -1512,11 +1684,26 @@
     const liveRandomButton = document.getElementById('live-random')
     const liveDiceButton = document.getElementById('live-dice')
     const liveClearButton = document.getElementById('live-clear')
+    const livePerformanceToggle = document.getElementById('live-performance-toggle')
     const liveRecordToggle = document.getElementById('live-record-toggle')
     const liveOptionsToggle = document.getElementById('live-options-toggle')
     const liveInfoToggle = document.getElementById('live-info-toggle')
     const liveFitButton = document.getElementById('live-fit')
     const liveStatus = document.getElementById('live-status')
+    const performancePanel = document.getElementById('performance-panel')
+    const performanceCloseButton = document.getElementById('performance-close')
+    const performanceVideoActions = document.getElementById('performance-video-actions')
+    const performanceVideoCount = document.getElementById('performance-video-count')
+    const performanceVideoStatus = document.getElementById('performance-video-status')
+    const performanceVideoSelect = document.getElementById('performance-video-select')
+    const performancePreviousVideoButton = document.getElementById('performance-previous-video')
+    const performanceNextVideoButton = document.getElementById('performance-next-video')
+    const performanceReleaseVideoButton = document.getElementById('performance-release-video')
+    const performanceControlList = document.getElementById('performance-control-list')
+    const performanceResetControlsButton = document.getElementById('performance-reset-controls')
+    const performanceLoadPatchButton = document.getElementById('performance-load-patch')
+    const performanceRunPatchButton = document.getElementById('performance-run-patch')
+    const performanceRenderOutputButton = document.getElementById('performance-render-output')
     const recordPopover = document.getElementById('record-popover')
     const recordCloseButton = document.getElementById('record-close')
     const optionsPanel = document.getElementById('options-panel')
@@ -1721,6 +1908,10 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
       'toggleCode',
       'toggleRecordPanel',
       'toggleOptionsPanel',
+      'togglePerformancePanel',
+      'performanceControls',
+      'performanceVideos',
+      'touredPatch',
       'media',
       'mediaBuffers',
       'pickMediaFiles',
@@ -3091,12 +3282,18 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
       else delete button.dataset.state
     }
 
+    const closePerformancePanel = () => {
+      if (performancePanel) performancePanel.hidden = true
+      setDisclosure(livePerformanceToggle, false)
+    }
+
     const toggleRecordPopover = (forceVisible) => {
       if (!recordPopover) return false
       const shouldShow = typeof forceVisible === 'boolean' ? forceVisible : recordPopover.hidden
       recordPopover.hidden = !shouldShow
       setDisclosure(liveRecordToggle, shouldShow)
       if (shouldShow) {
+        closePerformancePanel()
         if (optionsPanel) optionsPanel.hidden = true
         setDisclosure(liveOptionsToggle, false)
       }
@@ -3112,11 +3309,29 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
       optionsPanel.hidden = !shouldShow
       setDisclosure(liveOptionsToggle, shouldShow)
       if (shouldShow) {
+        closePerformancePanel()
         if (recordPopover) recordPopover.hidden = true
         setDisclosure(liveRecordToggle, false)
       }
       recordInterfaceEvent('action', {
         action: shouldShow ? 'open-options-panel' : 'close-options-panel'
+      })
+      return shouldShow
+    }
+
+    const togglePerformancePanel = (forceVisible) => {
+      if (!performancePanel) return false
+      const shouldShow = typeof forceVisible === 'boolean' ? forceVisible : performancePanel.hidden
+      performancePanel.hidden = !shouldShow
+      setDisclosure(livePerformanceToggle, shouldShow)
+      if (shouldShow) {
+        if (recordPopover) recordPopover.hidden = true
+        if (optionsPanel) optionsPanel.hidden = true
+        setDisclosure(liveRecordToggle, false)
+        setDisclosure(liveOptionsToggle, false)
+      }
+      recordInterfaceEvent('action', {
+        action: shouldShow ? 'open-performance-panel' : 'close-performance-panel'
       })
       return shouldShow
     }
@@ -5406,6 +5621,7 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
     window.toggleCode = toggleCode
     window.toggleRecordPanel = toggleRecordPopover
     window.toggleOptionsPanel = toggleOptionsPanel
+    window.togglePerformancePanel = togglePerformancePanel
     window.startInterfaceRecording = startInterfaceRecording
     window.stopInterfaceRecording = stopInterfaceRecording
     window.toggleInterfaceRecording = toggleInterfaceRecording
@@ -5639,6 +5855,141 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
         })
       }
     }
+
+    const setPerformanceVideoStatus = (message, state = '') => {
+      if (!performanceVideoStatus) return
+      performanceVideoStatus.textContent = message
+      if (state) performanceVideoStatus.dataset.state = state
+      else delete performanceVideoStatus.dataset.state
+    }
+
+    const activatePerformanceVideo = async (index) => {
+      const requestId = performanceVideoRequestId += 1
+      try {
+        const state = performanceVideos.activate(index)
+        const file = state.activeFile
+        setPerformanceVideoStatus(`Loading ${file?.name ?? 'video'} into s0…`)
+        await waitForHydraSourceVideo(synth.s0, 30000)
+        if (requestId !== performanceVideoRequestId) return performanceVideos.snapshot()
+        setPerformanceVideoStatus(`${file?.name ?? 'video'} is active in s0.`, 'ok')
+        return state
+      } catch (error) {
+        if (requestId !== performanceVideoRequestId) return performanceVideos.snapshot()
+        const message = error instanceof Error ? error.message : String(error)
+        setPerformanceVideoStatus(`Video failed: ${message}`, 'error')
+        console.error('[hydra] toured video failed', error)
+        throw error
+      }
+    }
+
+    const renderPerformanceVideos = (state = performanceVideos.snapshot()) => {
+      if (performanceVideoCount) {
+        performanceVideoCount.textContent = `${state.files.length} hosted ${state.files.length === 1 ? 'file' : 'files'}`
+      }
+      if (performanceVideoActions) {
+        performanceVideoActions.replaceChildren()
+        state.files.forEach((file, index) => {
+          const button = document.createElement('button')
+          button.type = 'button'
+          button.className = 'performance-video-button'
+          button.dataset.active = String(index === state.activeIndex)
+          button.textContent = file.name ?? `video ${index + 1}`
+          button.title = file.fileName ?? file.url ?? button.textContent
+          button.addEventListener('click', () => void activatePerformanceVideo(index))
+          performanceVideoActions.appendChild(button)
+        })
+      }
+      if (performanceVideoSelect) {
+        performanceVideoSelect.replaceChildren()
+        state.files.forEach((file, index) => {
+          const option = document.createElement('option')
+          option.value = String(index)
+          option.textContent = file.name ?? `video ${index + 1}`
+          performanceVideoSelect.appendChild(option)
+        })
+        performanceVideoSelect.value = state.activeIndex >= 0
+          ? String(state.activeIndex)
+          : '0'
+      }
+    }
+
+    const renderPerformanceControls = (state = performanceControls.snapshot()) => {
+      if (!performanceControlList) return
+      if (performanceControlList.childElementCount === 0) {
+        for (const control of state) {
+          const row = document.createElement('div')
+          row.className = 'performance-control'
+          row.dataset.controlId = control.id
+
+          const label = document.createElement('label')
+          label.htmlFor = `performance-control-${control.id}`
+          label.textContent = control.label
+          label.title = `${control.label} · MIDI CC ${control.cc}`
+
+          const input = document.createElement('input')
+          input.id = `performance-control-${control.id}`
+          input.type = 'range'
+          input.min = '0'
+          input.max = '1'
+          input.step = '0.001'
+          input.value = String(control.normalized)
+          input.dataset.controlId = control.id
+          input.addEventListener('input', () => performanceControls.set(control.id, input.value))
+
+          const output = document.createElement('output')
+          output.htmlFor = input.id
+          output.dataset.controlId = control.id
+          output.value = performanceControls.format(control.id)
+          output.textContent = output.value
+
+          row.append(label, input, output)
+          performanceControlList.appendChild(row)
+        }
+      }
+
+      for (const control of state) {
+        const input = performanceControlList.querySelector(`input[data-control-id="${control.id}"]`)
+        const output = performanceControlList.querySelector(`output[data-control-id="${control.id}"]`)
+        if (input) input.value = String(control.normalized)
+        if (output) {
+          output.value = performanceControls.format(control.id)
+          output.textContent = output.value
+        }
+      }
+    }
+
+    const loadTouredPatch = ({ focus = true } = {}) => {
+      setEditorCode(touredPatch, { focus })
+      lastFullBufferBlocks = null
+      setLiveStatus('Loaded the toured video patch.', 'ok')
+      return touredPatch
+    }
+
+    const runTouredPatch = async () => {
+      loadTouredPatch({ focus: false })
+      if (performanceVideos.snapshot().activeIndex < 0) await activatePerformanceVideo(0)
+      await runEditorSnippet('all', {
+        force: true,
+        reason: 'toured-performance',
+        source: 'toured-performance'
+      })
+      return performanceVideos.snapshot()
+    }
+
+    const cyclePerformanceOutput = () => {
+      performanceOutputIndex = (performanceOutputIndex + 1) % performanceOutputs.length
+      synth.render(performanceOutputs[performanceOutputIndex])
+      const outputName = ['o1', 'o2', 'o0'][performanceOutputIndex]
+      setPerformanceVideoStatus(`Rendering ${outputName}.`, 'ok')
+      return outputName
+    }
+
+    const unsubscribePerformanceVideos = performanceVideos.subscribe((state) => renderPerformanceVideos(state))
+    const unsubscribePerformanceControls = performanceControls.subscribe((state) => renderPerformanceControls(state))
+    renderPerformanceVideos()
+    renderPerformanceControls()
+    window.loadTouredPatch = loadTouredPatch
+    window.runTouredPatch = runTouredPatch
 
     scheduleResolutionRerun = () => {
       window.clearTimeout(resolutionRerunTimer)
@@ -5987,6 +6338,10 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
       liveClearButton.addEventListener('click', () => clearEditor())
     }
 
+    if (livePerformanceToggle) {
+      livePerformanceToggle.addEventListener('click', () => togglePerformancePanel())
+    }
+
     if (liveRecordToggle) {
       liveRecordToggle.addEventListener('click', () => {
         if (activeCaptureAbortController) toggleVideoCapture()
@@ -6015,6 +6370,64 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
 
     if (optionsCloseButton) {
       optionsCloseButton.addEventListener('click', () => toggleOptionsPanel(false))
+    }
+
+    if (performanceCloseButton) {
+      performanceCloseButton.addEventListener('click', () => togglePerformancePanel(false))
+    }
+
+    if (performanceVideoSelect) {
+      performanceVideoSelect.addEventListener('change', () => {
+        void activatePerformanceVideo(Number(performanceVideoSelect.value))
+      })
+    }
+
+    if (performancePreviousVideoButton) {
+      performancePreviousVideoButton.addEventListener('click', () => {
+        const state = performanceVideos.snapshot()
+        const index = state.activeIndex < 0 ? state.files.length - 1 : state.activeIndex - 1
+        void activatePerformanceVideo(index)
+      })
+    }
+
+    if (performanceNextVideoButton) {
+      performanceNextVideoButton.addEventListener('click', () => {
+        const state = performanceVideos.snapshot()
+        const index = state.activeIndex < 0 ? 0 : state.activeIndex + 1
+        void activatePerformanceVideo(index)
+      })
+    }
+
+    if (performanceReleaseVideoButton) {
+      performanceReleaseVideoButton.addEventListener('click', () => {
+        performanceVideoRequestId += 1
+        const released = performanceVideos.release()
+        setPerformanceVideoStatus(
+          released ? `${released.name ?? 'Video'} released from s0.` : 's0 is already released.',
+          'ok'
+        )
+      })
+    }
+
+    if (performanceResetControlsButton) {
+      performanceResetControlsButton.addEventListener('click', () => {
+        performanceControls.reset()
+        setPerformanceVideoStatus('Controls reset to their initial values.', 'ok')
+      })
+    }
+
+    if (performanceLoadPatchButton) {
+      performanceLoadPatchButton.addEventListener('click', () => loadTouredPatch())
+    }
+
+    if (performanceRunPatchButton) {
+      performanceRunPatchButton.addEventListener('click', () => {
+        void runTouredPatch().catch(() => { })
+      })
+    }
+
+    if (performanceRenderOutputButton) {
+      performanceRenderOutputButton.addEventListener('click', cyclePerformanceOutput)
     }
 
     if (optionsOpenRecordButton) {
@@ -6278,6 +6691,12 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
       toggle: toggleCode,
       openRecord: () => toggleRecordPopover(true),
       openOptions: () => toggleOptionsPanel(true),
+      openPerformance: () => togglePerformancePanel(true),
+      performanceControls,
+      performanceVideos,
+      touredPatch,
+      loadTouredPatch,
+      runTouredPatch,
       interfaceRecorder: window.hydraInterfaceRecorder,
       startInterfaceRecording,
       stopInterfaceRecording,
@@ -6344,6 +6763,12 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
           toggleCode,
           toggleRecordPanel: toggleRecordPopover,
           toggleOptionsPanel,
+          togglePerformancePanel,
+          performanceControls,
+          performanceVideos,
+          touredPatch,
+          loadTouredPatch,
+          runTouredPatch,
           toggleVideoCapture,
           media,
           mediaBuffers,
@@ -6377,7 +6802,13 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
         setLiveStatus('')
       }
       showWelcome()
-      if (hasRunnableSketchUrl()) {
+      if (performanceMode === 'toured') {
+        dismissWelcome({ persist: false })
+        togglePerformancePanel(true)
+        window.setTimeout(() => {
+          void runTouredPatch().catch(() => { })
+        }, 0)
+      } else if (hasRunnableSketchUrl()) {
         window.setTimeout(() => {
           void runEditorSnippet('all')
         }, 0)
@@ -6401,6 +6832,10 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
       livecodingSession?.dispose()
       livecodingSession = null
       lastFullBufferBlocks = null
+      performanceVideoRequestId += 1
+      performanceVideos.release()
+      unsubscribePerformanceVideos()
+      unsubscribePerformanceControls()
       runtime.dispose()
       unsubscribeMediaLibrary()
       unsubscribeMediaBuffers()

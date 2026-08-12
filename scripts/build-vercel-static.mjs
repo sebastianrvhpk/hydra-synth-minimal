@@ -109,8 +109,16 @@ copyFileSync(
   path.join(hydraOutDir, 'grammar-utilities.js')
 )
 copyFileSync(
+  path.join(repoRoot, 'packages', 'hydra', 'performance-system.js'),
+  path.join(hydraOutDir, 'performance-system.js')
+)
+copyFileSync(
   path.join(repoRoot, 'packages', 'hydra', 'og.png'),
   path.join(hydraOutDir, 'og.png')
+)
+copyRecursive(
+  path.join(repoRoot, 'packages', 'hydra', 'media'),
+  path.join(hydraOutDir, 'media')
 )
 writeFileSync(path.join(hydraOutDir, 'index.html'), html, 'utf8')
 mkdirSync(workshopOutDir, { recursive: true })

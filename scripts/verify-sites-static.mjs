@@ -10,6 +10,10 @@ const requiredFiles = [
   'dist/client/LICENSE',
   'dist/client/hydra/index.html',
   'dist/client/hydra/media-library.js',
+  'dist/client/hydra/performance-system.js',
+  'dist/client/hydra/media/toured/331053620855083009_1.mp4',
+  'dist/client/hydra/media/toured/331815120922316809_2.mp4',
+  'dist/client/hydra/media/toured/331815120922316809_3.mp4',
   'dist/client/hydra/og.png',
   'dist/client/hydra/synth/index.js',
   'dist/client/hydra/synth/livecoding.js',
@@ -53,6 +57,19 @@ if (existsSync(imagePath)) {
     failures.push('social preview must be a valid PNG')
   } else if (image.readUInt32BE(16) !== 1536 || image.readUInt32BE(20) !== 1024) {
     failures.push('social preview must be 1536x1024')
+  }
+}
+
+for (const fileName of [
+  '331053620855083009_1.mp4',
+  '331815120922316809_2.mp4',
+  '331815120922316809_3.mp4'
+]) {
+  const videoPath = path.join(repoRoot, 'dist', 'client', 'hydra', 'media', 'toured', fileName)
+  if (!existsSync(videoPath)) continue
+  const video = readFileSync(videoPath)
+  if (!video.subarray(4, 12).toString('ascii').includes('ftyp')) {
+    failures.push(`toured media must be a valid MP4: ${fileName}`)
   }
 }
 

@@ -1,6 +1,6 @@
 import http from 'node:http'
 import path from 'node:path'
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { createReadStream, existsSync, statSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
@@ -26,8 +26,10 @@ const mimeTypes = {
   '.js': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',
+  '.mp4': 'video/mp4',
   '.png': 'image/png',
-  '.svg': 'image/svg+xml'
+  '.svg': 'image/svg+xml',
+  '.webm': 'video/webm'
 }
 
 const resolveRequestPath = (requestUrl = '/') => {
@@ -71,13 +73,37 @@ const server = http.createServer((request, response) => {
     return
   }
 
-  const body = readFileSync(target)
-  response.writeHead(200, {
+  const stats = statSync(target)
+  const baseHeaders = {
+    'accept-ranges': 'bytes',
     'cache-control': 'no-store',
-    'content-length': body.byteLength,
     'content-type': mimeTypes[path.extname(target).toLowerCase()] ?? 'application/octet-stream'
-  })
-  response.end(request.method === 'HEAD' ? undefined : body)
+  }
+  const requestedRange = String(request.headers.range ?? '')
+  const rangeMatch = /^bytes=(\d*)-(\d*)$/u.exec(requestedRange)
+  if (rangeMatch) {
+    const start = rangeMatch[1] ? Number.parseInt(rangeMatch[1], 10) : 0
+    const end = rangeMatch[2]
+      ? Math.min(stats.size - 1, Number.parseInt(rangeMatch[2], 10))
+      : stats.size - 1
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || start > end || start >= stats.size) {
+      response.writeHead(416, { ...baseHeaders, 'content-range': `bytes */${stats.size}` })
+      response.end()
+      return
+    }
+    response.writeHead(206, {
+      ...baseHeaders,
+      'content-length': end - start + 1,
+      'content-range': `bytes ${start}-${end}/${stats.size}`
+    })
+    if (request.method === 'HEAD') response.end()
+    else createReadStream(target, { start, end }).pipe(response)
+    return
+  }
+
+  response.writeHead(200, { ...baseHeaders, 'content-length': stats.size })
+  if (request.method === 'HEAD') response.end()
+  else createReadStream(target).pipe(response)
 })
 
 server.listen(port, host, () => {

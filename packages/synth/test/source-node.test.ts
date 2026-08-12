@@ -12,6 +12,9 @@ class FakeVideoElement extends EventTarget {
   pause = vi.fn()
   play = vi.fn(() => Promise.resolve())
   load = vi.fn()
+  removeAttribute = vi.fn((name: string) => {
+    if (name === 'src') this.src = ''
+  })
 }
 
 class FakeImageElement extends EventTarget {
@@ -54,8 +57,34 @@ describe('HydraSourceNode media sources', () => {
     source.clear()
 
     expect(videos[0]?.pause).toHaveBeenCalled()
+    expect(videos[0]?.removeAttribute).toHaveBeenCalledWith('src')
     expect(videos[0]?.load).toHaveBeenCalled()
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:hydra-video')
+  })
+
+  it('detaches the previous hosted video before initializing its replacement', () => {
+    const videos: FakeVideoElement[] = []
+    vi.stubGlobal('document', {
+      createElement: (tagName: string) => {
+        if (tagName === 'video') {
+          const video = new FakeVideoElement()
+          videos.push(video)
+          return video
+        }
+        if (tagName === 'img') return new FakeImageElement()
+        throw new Error(`Unexpected element: ${tagName}`)
+      }
+    })
+
+    const source = new HydraSourceNode({ renderer: null, label: 's-hosted' })
+    source.initVideo('/media/video-1.mp4')
+    source.initVideo('/media/video-2.mp4')
+
+    expect(videos).toHaveLength(2)
+    expect(videos[0]?.pause).toHaveBeenCalledOnce()
+    expect(videos[0]?.removeAttribute).toHaveBeenCalledWith('src')
+    expect(videos[0]?.load).toHaveBeenCalledOnce()
+    expect(videos[1]?.src).toBe('/media/video-2.mp4')
   })
 
   it('initializes screen capture sources through getDisplayMedia and stops tracks on clear', async () => {
