@@ -17,6 +17,15 @@ const findCallNameNode = (callNode) => {
   return callNode.getChild?.('VariableName') ?? callNode.getChild?.('PropertyName') ?? null
 }
 
+const findCallSegmentStart = (callNode, nameNode) => {
+  const member = callNode.getChild?.('MemberExpression')
+  if (!member || !nameNode) return callNode.from
+  const accessOperator = nameNode.prevSibling
+  return accessOperator && ['.', '?.'].includes(accessOperator.name)
+    ? accessOperator.from
+    : nameNode.from
+}
+
 export const findCallScope = (tree, position = 0) => {
   if (!tree || typeof tree.resolveInner !== 'function') return null
 
@@ -45,7 +54,7 @@ export const findCallScope = (tree, position = 0) => {
 
   const nameNode = findCallNameNode(callNode)
   return {
-    from: callNode.from,
+    from: findCallSegmentStart(callNode, nameNode),
     to: callNode.to,
     kind: 'call',
     nodeName: callNode.name,

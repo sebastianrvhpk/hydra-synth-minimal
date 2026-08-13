@@ -67,6 +67,11 @@
       --code-punctuation: #e8f0eb;
       --code-invalid: #ff9b9b;
       --code-keyline: rgba(0, 0, 0, 0.98);
+      --selection-surface: #e8fdff;
+      --selection-ink: #061013;
+      --scope-surface: rgba(3, 10, 12, 0.86);
+      --scope-parent-surface: rgba(22, 8, 19, 0.78);
+      --call-surface: rgba(12, 9, 20, 0.86);
       --editor-font-size: 14px;
       --editor-opacity: 1;
     }
@@ -1079,8 +1084,8 @@
 
     #live-editor .cm-selectionBackground,
     #live-editor .cm-focused .cm-selectionBackground {
-      background: rgba(255, 107, 214, 0.28);
-      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.96), inset 0 -3px 0 rgba(255, 107, 214, 0.98), 0 0 0 1px rgba(3, 6, 8, 0.98), 0 0 8px rgba(255, 107, 214, 0.44);
+      background: rgba(117, 247, 255, 0.18);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.96), inset 0 -3px 0 rgba(117, 247, 255, 1), 0 0 0 1px rgba(3, 6, 8, 0.98), 0 0 0 2px rgba(117, 247, 255, 0.5);
     }
 
     #live-editor .cm-tooltip,
@@ -1130,25 +1135,24 @@
     }
 
     #live-editor .cm-parameter-chain-focus {
-      background: rgba(3, 28, 32, 0.9);
-      box-shadow: inset 0 0 0 2px rgba(117, 247, 255, 0.98), 0 0 12px rgba(117, 247, 255, 0.66);
-      color: #ffffff;
+      background: var(--scope-surface);
+      box-shadow: inset 3px 0 0 rgba(117, 247, 255, 0.98), inset 0 -2px 0 rgba(117, 247, 255, 0.98), 0 0 0 1px rgba(3, 6, 8, 0.92);
     }
 
     #live-editor .cm-parameter-chain-parent {
-      background: rgba(47, 9, 40, 0.8);
-      box-shadow: inset 0 0 0 1px rgba(255, 107, 214, 0.92), inset 0 -3px 0 rgba(255, 107, 214, 0.98), 0 0 9px rgba(255, 107, 214, 0.42);
+      background: var(--scope-parent-surface);
+      box-shadow: inset 2px 0 0 rgba(255, 107, 214, 0.9), inset 0 -2px 0 rgba(255, 107, 214, 0.9), 0 0 0 1px rgba(3, 6, 8, 0.9);
     }
 
     #live-editor .cm-parameter-value,
     #live-editor .cm-parameter-value-focus {
-      background: rgba(63, 42, 4, 0.86);
-      box-shadow: inset 0 0 0 1px rgba(255, 204, 102, 0.86), inset 0 -3px 0 rgba(255, 204, 102, 1);
+      background: rgba(18, 13, 3, 0.88);
+      box-shadow: inset 2px 0 0 rgba(255, 204, 102, 0.92), inset 0 -2px 0 rgba(255, 204, 102, 1), 0 0 0 1px rgba(3, 6, 8, 0.9);
     }
 
     #live-editor .cm-parameter-value-focus {
-      background: rgba(255, 204, 102, 0.96);
-      box-shadow: 0 0 0 2px rgba(3, 6, 8, 0.94), 0 0 0 3px rgba(255, 255, 255, 0.96), 0 0 14px rgba(255, 204, 102, 0.82);
+      background: rgba(255, 220, 130, 0.98);
+      box-shadow: 0 0 0 1px rgba(3, 6, 8, 0.98), 0 0 0 2px rgba(255, 255, 255, 0.92), inset 0 -3px 0 rgba(220, 139, 0, 0.96);
       color: #050505;
       font-weight: 800;
       -webkit-text-stroke: 0;
@@ -1158,16 +1162,44 @@
 
     #live-editor .cm-call-scope {
       border-radius: 3px;
-      background: rgba(213, 196, 255, 0.08);
-      box-shadow: inset 0 2px 0 rgba(213, 196, 255, 0.96), inset 0 -2px 0 rgba(213, 196, 255, 0.96), inset 3px 0 0 rgba(213, 196, 255, 0.98), inset -3px 0 0 rgba(213, 196, 255, 0.98), 0 0 0 1px rgba(3, 6, 8, 0.96), 0 0 7px rgba(213, 196, 255, 0.34);
+      background: var(--call-surface);
+      box-shadow: inset 3px 0 0 rgba(213, 196, 255, 0.98), inset 0 -2px 0 rgba(213, 196, 255, 0.98), 0 0 0 1px rgba(3, 6, 8, 0.94);
       -webkit-box-decoration-break: clone;
       box-decoration-break: clone;
     }
 
     #live-editor .cm-call-scope-name {
       border-radius: 2px;
-      box-shadow: inset 0 -3px 0 rgba(213, 196, 255, 0.98);
-      font-weight: 750;
+      background: rgba(226, 216, 255, 0.98);
+      box-shadow: 0 0 0 1px rgba(3, 6, 8, 0.98), inset 0 -3px 0 rgba(142, 112, 218, 0.92);
+      color: #0b0713;
+      font-weight: 800;
+      -webkit-text-stroke: 0;
+      paint-order: normal;
+      text-shadow: none;
+    }
+
+    #live-editor .cm-readable-selection {
+      border-radius: 2px;
+      background: var(--selection-surface) !important;
+      box-shadow: 0 0 0 1px rgba(3, 6, 8, 0.98), inset 0 -3px 0 rgba(24, 199, 214, 1) !important;
+      color: var(--selection-ink) !important;
+      font-weight: 650;
+      -webkit-box-decoration-break: clone;
+      box-decoration-break: clone;
+      -webkit-text-stroke: 0 !important;
+      paint-order: normal;
+      text-shadow: none !important;
+    }
+
+    #live-editor .cm-readable-selection *,
+    #live-editor .cm-readable-selection .cm-parameter-scope,
+    #live-editor .cm-readable-selection .cm-call-scope {
+      background: transparent !important;
+      box-shadow: none !important;
+      color: var(--selection-ink) !important;
+      -webkit-text-stroke: 0 !important;
+      text-shadow: none !important;
     }
 
     #live-status {
@@ -2222,6 +2254,29 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
       decorations: (plugin) => plugin.decorations
     })
 
+    const readableSelectionMark = Decoration.mark({ class: 'cm-readable-selection' })
+
+    const buildReadableSelectionDecorations = (state) => Decoration.set(
+      state.selection.ranges
+        .filter((range) => !range.empty)
+        .map((range) => readableSelectionMark.range(range.from, range.to)),
+      true
+    )
+
+    const readableSelectionPlugin = ViewPlugin.fromClass(class {
+      constructor(view) {
+        this.decorations = buildReadableSelectionDecorations(view.state)
+      }
+
+      update(update) {
+        if (update.docChanged || update.selectionSet) {
+          this.decorations = buildReadableSelectionDecorations(update.state)
+        }
+      }
+    }, {
+      decorations: (plugin) => plugin.decorations
+    })
+
     const parameterScopeMarks = {
       chainFocus: Decoration.mark({ class: 'cm-parameter-scope cm-parameter-chain-focus' }),
       chainParent: Decoration.mark({ class: 'cm-parameter-scope cm-parameter-chain-parent' }),
@@ -2231,9 +2286,8 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
 
     const buildParameterScopeDecorations = (state) => {
       const selection = state.selection.main
-      const position = selection.empty
-        ? selection.head
-        : Math.floor((selection.from + selection.to - 1) / 2)
+      if (!selection.empty) return Decoration.none
+      const position = selection.head
       const scopes = findParameterScopes(syntaxTree(state), position)
       const ranges = scopes.map((scope) => {
         const mark = scope.kind === 'chain'
@@ -2868,6 +2922,7 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
       '.cm-selectionBackground',
       '.cm-run-flash',
       '.cm-typed-flash',
+      '.cm-readable-selection',
       '.cm-parameter-scope',
       '.cm-call-scope'
     ].join(',')
@@ -2890,6 +2945,7 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
       if (element.classList.contains('cm-selectionBackground')) return 'selection'
       if (element.classList.contains('cm-run-flash')) return 'flash'
       if (element.classList.contains('cm-typed-flash')) return 'typed'
+      if (element.classList.contains('cm-readable-selection')) return 'selection-text'
       if (element.classList.contains('cm-parameter-chain-focus')) return 'parameter-chain-focus'
       if (element.classList.contains('cm-parameter-chain-parent')) return 'parameter-chain-parent'
       if (element.classList.contains('cm-parameter-value-focus')) return 'parameter-value-focus'
@@ -2923,7 +2979,7 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
     const readCodeMaterialChromeElement = (snapshot, element, mapping, rootOpacity = 1) => {
       const style = window.getComputedStyle(element)
       if (style.display === 'none' || style.visibility === 'hidden') return
-      const rects = element.matches?.('.cm-typed-flash, .cm-parameter-scope, .cm-call-scope')
+      const rects = element.matches?.('.cm-typed-flash, .cm-readable-selection, .cm-parameter-scope, .cm-call-scope')
         ? Array.from(element.getClientRects())
         : [element.getBoundingClientRect()]
       for (const rect of rects) {
@@ -3021,7 +3077,7 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
               snapshot,
               createRectFromEdges(left, top, right, bottom),
               mapping,
-              'rgba(255, 107, 214, 0.28)',
+              'rgba(117, 247, 255, 0.18)',
               rootOpacity,
               'selection'
             )
@@ -3119,18 +3175,41 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
         context.strokeStyle = 'rgba(255, 255, 255, 0.96)'
         context.lineWidth = 1
         context.strokeRect(x, y, width, height)
-      } else if (rect.kind === 'call-scope') {
-        const x = rect.left + 0.5
-        const y = rect.top + 0.5
-        const width = Math.max(0, rect.width - 1)
-        const height = Math.max(0, rect.height - 1)
+        context.beginPath()
+        context.moveTo(x, y + height - 1)
+        context.lineTo(x + width, y + height - 1)
+        context.strokeStyle = 'rgba(117, 247, 255, 1)'
+        context.lineWidth = 2
+        context.stroke()
+      } else if ([
+        'call-scope',
+        'parameter-chain-focus',
+        'parameter-chain-parent',
+        'parameter-value',
+        'parameter-value-focus'
+      ].includes(rect.kind)) {
+        const edgeColors = {
+          'call-scope': 'rgba(213, 196, 255, 0.98)',
+          'parameter-chain-focus': 'rgba(117, 247, 255, 0.98)',
+          'parameter-chain-parent': 'rgba(255, 107, 214, 0.9)',
+          'parameter-value': 'rgba(255, 204, 102, 0.94)',
+          'parameter-value-focus': 'rgba(220, 139, 0, 0.96)'
+        }
+        const left = rect.left + 1
+        const top = rect.top + 1
+        const right = rect.left + Math.max(1, rect.width - 1)
+        const bottom = rect.top + Math.max(1, rect.height - 1)
         context.lineJoin = 'round'
+        context.beginPath()
+        context.moveTo(left, top)
+        context.lineTo(left, bottom)
+        context.lineTo(right, bottom)
         context.strokeStyle = 'rgba(3, 6, 8, 0.96)'
-        context.lineWidth = 3
-        context.strokeRect(x, y, width, height)
-        context.strokeStyle = 'rgba(213, 196, 255, 0.96)'
-        context.lineWidth = 1
-        context.strokeRect(x, y, width, height)
+        context.lineWidth = 4
+        context.stroke()
+        context.strokeStyle = edgeColors[rect.kind]
+        context.lineWidth = 2
+        context.stroke()
       }
       context.restore()
     }
@@ -6583,6 +6662,7 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
             typedFlashPlugin,
             parameterScopePlugin,
             callScopePlugin,
+            readableSelectionPlugin,
             codeMaterialViewPlugin,
             EditorView.lineWrapping,
             EditorView.updateListener.of((update) => {
