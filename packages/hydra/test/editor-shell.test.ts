@@ -35,6 +35,14 @@ describe('live editor shell', () => {
     expect(indexHtml).toMatch(/\.live-tool\[hidden\]\s*\{\s*display:\s*none;/u)
   })
 
+  it('loads the canonical Hydra example collection instead of generated recipes', () => {
+    expect(indexHtml).toContain("import { createHydraExamplePicker } from './hydra-examples.js'")
+    expect(indexHtml).toContain('const pickHydraExample = createHydraExamplePicker()')
+    expect(indexHtml).toContain('runtime.hush()')
+    expect(indexHtml).not.toContain('randomSketchFactories')
+    expect(indexHtml).not.toContain("name: 'gpu bloom'")
+  })
+
   it('uses a syntax palette with WCAG contrast against its local black keyline', () => {
     for (const name of codePaletteNames) {
       const color = indexHtml.match(new RegExp(`--code-${name}:\\s*(#[a-f\\d]{6});`, 'iu'))?.[1]
