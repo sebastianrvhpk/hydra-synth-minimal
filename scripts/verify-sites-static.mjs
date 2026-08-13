@@ -10,6 +10,7 @@ const requiredFiles = [
   'dist/client/LICENSE',
   'dist/client/hydra/index.html',
   'dist/client/hydra/media-library.js',
+  'dist/client/hydra/call-scopes.js',
   'dist/client/hydra/datastream-system.js',
   'dist/client/hydra/media/datastream/331053620855083009_1.mp4',
   'dist/client/hydra/media/datastream/331815120922316809_2.mp4',

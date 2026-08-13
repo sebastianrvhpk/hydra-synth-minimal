@@ -117,6 +117,10 @@ copyFileSync(
   path.join(hydraOutDir, 'parameter-scopes.js')
 )
 copyFileSync(
+  path.join(repoRoot, 'packages', 'hydra', 'call-scopes.js'),
+  path.join(hydraOutDir, 'call-scopes.js')
+)
+copyFileSync(
   path.join(repoRoot, 'packages', 'hydra', 'datastream-system.js'),
   path.join(hydraOutDir, 'datastream-system.js')
 )
