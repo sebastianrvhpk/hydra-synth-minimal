@@ -26,6 +26,35 @@ const resolveFile = (fromDirectory, specifier) => {
   return existsSync(resolved) && statSync(resolved).isFile() ? resolved : null
 }
 
+const collectModuleSpecifiers = (code, sourceName) => {
+  const source = ts.createSourceFile(sourceName, code, ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS)
+  const specifiers = []
+  const visit = (node) => {
+    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
+      specifiers.push(node.moduleSpecifier.text)
+    }
+    if (
+      ts.isCallExpression(node) &&
+      node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+      node.arguments.length === 1 &&
+      node.arguments[0] &&
+      ts.isStringLiteral(node.arguments[0])
+    ) {
+      specifiers.push(node.arguments[0].text)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return specifiers
+}
+
+const resolveModuleSpecifier = (specifier, fromDirectory, imports, htmlDirectory) => {
+  if (specifier.startsWith('.')) return resolveFile(fromDirectory, specifier)
+  if (specifier.startsWith('/')) return resolveFile(htmlDirectory, `.${specifier}`)
+  const mapped = imports[specifier]
+  return typeof mapped === 'string' ? resolveFile(htmlDirectory, mapped) : null
+}
+
 const verifyModuleGraph = (entryFiles, imports, htmlDirectory) => {
   const visited = new Set()
   const queue = entryFiles.slice()
@@ -36,37 +65,11 @@ const verifyModuleGraph = (entryFiles, imports, htmlDirectory) => {
     visited.add(modulePath)
 
     const code = readFileSync(modulePath, 'utf8')
-    const source = ts.createSourceFile(modulePath, code, ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS)
-    const specifiers = []
-    const visit = (node) => {
-      if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
-        specifiers.push(node.moduleSpecifier.text)
-      }
-      if (
-        ts.isCallExpression(node) &&
-        node.expression.kind === ts.SyntaxKind.ImportKeyword &&
-        node.arguments.length === 1 &&
-        node.arguments[0] &&
-        ts.isStringLiteral(node.arguments[0])
-      ) {
-        specifiers.push(node.arguments[0].text)
-      }
-      ts.forEachChild(node, visit)
-    }
-    visit(source)
+    const specifiers = collectModuleSpecifiers(code, modulePath)
 
     for (const specifier of specifiers) {
       if (!specifier || /^(?:data:|https?:|node:)/u.test(specifier)) continue
-
-      let resolved = null
-      if (specifier.startsWith('.')) {
-        resolved = resolveFile(path.dirname(modulePath), specifier)
-      } else if (specifier.startsWith('/')) {
-        resolved = resolveFile(htmlDirectory, `.${specifier}`)
-      } else {
-        const mapped = imports[specifier]
-        if (typeof mapped === 'string') resolved = resolveFile(htmlDirectory, mapped)
-      }
+      const resolved = resolveModuleSpecifier(specifier, path.dirname(modulePath), imports, htmlDirectory)
 
       if (!resolved) {
         failures.push(`unresolved module "${specifier}" imported by ${path.relative(process.cwd(), modulePath)}`)
@@ -150,7 +153,22 @@ if (!existsSync(target)) {
         }
         if (/\.(?:js|mjs)$/u.test(resolved)) entryFiles.push(resolved)
       }
-      if (verifyImports) verifyModuleGraph(entryFiles, imports, htmlDirectory)
+      if (verifyImports) {
+        const inlineModulePattern = /<script\s+type="module">([\s\S]*?)<\/script>/gu
+        for (const match of html.matchAll(inlineModulePattern)) {
+          const sourceName = `${target}.inline-${match.index ?? 0}.mjs`
+          for (const specifier of collectModuleSpecifiers(match[1] ?? '', sourceName)) {
+            if (!specifier || /^(?:data:|https?:|node:)/u.test(specifier)) continue
+            const resolved = resolveModuleSpecifier(specifier, htmlDirectory, imports, htmlDirectory)
+            if (!resolved) {
+              failures.push(`unresolved module "${specifier}" imported by ${path.relative(process.cwd(), sourceName)}`)
+              continue
+            }
+            if (/\.(?:js|mjs)$/u.test(resolved)) entryFiles.push(resolved)
+          }
+        }
+        verifyModuleGraph(entryFiles, imports, htmlDirectory)
+      }
     } catch (error) {
       failures.push(`invalid import map: ${error instanceof Error ? error.message : String(error)}`)
     }

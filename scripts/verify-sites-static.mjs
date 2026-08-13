@@ -10,6 +10,7 @@ const requiredFiles = [
   'dist/client/LICENSE',
   'dist/client/hydra/index.html',
   'dist/client/hydra/media-library.js',
+  'dist/client/hydra/png-patch-metadata.js',
   'dist/client/hydra/call-scopes.js',
   'dist/client/hydra/hydra-examples.js',
   'dist/client/hydra/datastream-system.js',
@@ -103,6 +104,10 @@ if (existsSync(workerPath)) {
   const asset = await worker.fetch(new Request('https://hydra.test/hydra/media-library.js'), env)
   if ((await asset.text()) !== '/hydra/media-library.js') {
     failures.push('Sites worker must pass static asset requests through')
+  }
+  const pngPatchModule = await worker.fetch(new Request('https://hydra.test/hydra/png-patch-metadata.js'), env)
+  if ((await pngPatchModule.text()) !== '/hydra/png-patch-metadata.js') {
+    failures.push('Sites worker must pass PNG patch metadata module requests through')
   }
   if (!assetRequests.includes('/hydra/index.html')) {
     failures.push('Sites worker must resolve /hydra/ to the built app entry')
