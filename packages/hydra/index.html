@@ -1567,7 +1567,7 @@
     </div>
     <div class="panel-actions">
       <button id="capture-video-toggle" class="panel-action" data-tone="record" type="button" title="Capture MP4">record mp4</button>
-      <button id="capture-frame-button" class="panel-action" type="button" title="Save one PNG frame">save frame</button>
+      <button id="capture-frame-button" class="panel-action" type="button" title="Save PNG with its Hydra patch embedded">save png + patch</button>
     </div>
     <div class="panel-section">
       <p class="panel-note">Record the interface as a timed performance score.</p>
@@ -1621,6 +1621,7 @@
       <button id="media-picker-button" class="media-drop-zone" type="button">
         drop images or videos anywhere<br />or click to choose files
       </button>
+      <p class="panel-note">Hydra PNG captures restore their embedded patch without running it.</p>
       <label class="panel-row" for="media-source-select">
         <span>media buffer</span>
         <select id="media-source-select">
@@ -1684,7 +1685,7 @@
   <div id="media-drop-overlay" hidden aria-hidden="true">
     <div class="media-drop-overlay-card">
       <strong>drop to load the selected media buffer</strong>
-      <span>the previous file in that buffer will be released</span>
+      <span>Hydra PNGs also restore their patch · the previous buffer file will be released</span>
     </div>
   </div>
 
@@ -1697,6 +1698,7 @@
     import { createHydraExamplePicker } from './hydra-examples.js'
     import { findParameterScopes } from './parameter-scopes.js'
     import { createMediaBufferManager, createMediaLibrary, isSupportedMediaFile } from './media-library.js'
+    import { embedHydraPatchInPng, readHydraPatchFromPng } from './png-patch-metadata.js'
     import {
       createDatastreamVideoPlaylist,
       createDatastreamControlBank,
@@ -5326,15 +5328,24 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
 
       const baseName = sanitizeOutputBaseName(options.fileName ?? options.outputBaseName ?? defaultOutputBaseName()) || defaultOutputBaseName()
       const fileName = baseName.toLowerCase().endsWith('.png') ? baseName : `${baseName}.png`
-      const blob = await new Promise((resolve, reject) => {
+      const canvasBlob = await new Promise((resolve, reject) => {
         canvas.toBlob((result) => {
           if (result) resolve(result)
           else reject(new Error('Canvas screenshot failed.'))
         }, 'image/png')
       })
+      const shouldEmbedPatch = options.embedPatch !== false
+      const blob = shouldEmbedPatch
+        ? await embedHydraPatchInPng(canvasBlob, options.code ?? readEditorCode())
+        : canvasBlob
       downloadBlob({ blob, fileName })
-      setCaptureStatus(`Saved ${fileName} to your downloads folder.`, 'ok')
-      return { fileName, mimeType: 'image/png' }
+      setCaptureStatus(
+        shouldEmbedPatch
+          ? `Saved ${fileName} with its Hydra patch embedded.`
+          : `Saved ${fileName} to your downloads folder.`,
+        'ok'
+      )
+      return { fileName, mimeType: 'image/png', embeddedPatch: shouldEmbedPatch }
     }
 
     const mediaFilePicker = {
@@ -5600,6 +5611,35 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
       return looksLikeSingleFile ? [files] : Array.from(files ?? [])
     }
 
+    const isPngMediaFile = (file) => {
+      const type = String(file?.type ?? '').trim().toLowerCase().split(';', 1)[0]
+      const name = String(file?.name ?? '').trim().toLowerCase()
+      return type === 'image/png' || name.endsWith('.png')
+    }
+
+    let pngPatchRestoreRequestId = 0
+
+    const restoreEmbeddedHydraPatch = async (file, options = {}) => {
+      const requestId = options.requestId ?? (pngPatchRestoreRequestId += 1)
+      if (!isPngMediaFile(file)) return null
+      const patch = await readHydraPatchFromPng(file)
+      if (requestId !== pngPatchRestoreRequestId) return null
+      if (!patch) return null
+
+      setEditorCode(patch.code, { focus: true })
+      lastFullBufferBlocks = null
+      const fileName = String(file?.name ?? '').trim() || 'PNG capture'
+      setMediaLibraryStatus(`Restored the embedded Hydra patch from ${fileName}. It has not been run.`, 'ok')
+      setLiveStatus(`PNG patch loaded from ${fileName}. Press Ctrl/⌘ Enter to run it.`, 'ok')
+      recordInterfaceEvent('action', {
+        action: 'load-png-patch',
+        fileName,
+        version: patch.version,
+        codeLength: patch.code.length
+      })
+      return patch
+    }
+
     const hostMediaFiles = (files) => {
       const candidates = normalizeMediaFileInput(files)
       const supported = candidates.filter(isSupportedMediaFile)
@@ -5625,6 +5665,12 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
       const sourceName = readMediaSourceName()
       try {
         const assignment = loadMediaEntryIntoSource(entry, sourceName)
+        const patchRequestId = pngPatchRestoreRequestId += 1
+        const patchPromise = restoreEmbeddedHydraPatch(selectedFile, { requestId: patchRequestId }).catch((error) => {
+          const message = error instanceof Error ? error.message : String(error)
+          setMediaLibraryStatus(`Could not read embedded patch metadata: ${message}`, 'error')
+          return null
+        })
         const skippedNote = skipped.length > 0
           ? ` Kept the last of ${supported.length} selected files.`
           : ''
@@ -5639,7 +5685,7 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
           'ok'
         )
         setLiveStatus(`Media buffer ${sourceName}: ${entry.name}.`, 'ok')
-        return { ...result, skipped, assignment }
+        return { ...result, skipped, assignment, patchPromise }
       } catch (error) {
         media.remove(entry)
         throw error
@@ -5652,7 +5698,9 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
         setMediaLibraryStatus('Media selection cancelled.')
         return { accepted: [], rejected: [] }
       }
-      return hostMediaFiles(files)
+      const result = hostMediaFiles(files)
+      await result.patchPromise
+      return result
     }
 
     const unsubscribeMediaLibrary = media.subscribe(() => renderMediaLibrary())
@@ -6230,6 +6278,10 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
     window.pickMediaFiles = pickMediaFiles
     window.loadMediaFiles = loadMediaFiles
     window.hostMediaFiles = hostMediaFiles
+    window.hydraPngPatch = Object.freeze({
+      read: readHydraPatchFromPng,
+      load: restoreEmbeddedHydraPatch
+    })
     setCaptureDurationSeconds(loadCaptureDurationSeconds())
     setCaptureFps(loadCaptureFps())
     loadCaptureCustomSize()
@@ -7257,6 +7309,7 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
       pickMediaFiles,
       loadMediaFiles,
       hostMediaFiles,
+      loadPngPatch: restoreEmbeddedHydraPatch,
       getUiSettings: () => applyUiSettings(readUiSettingsFromControls()),
       setUiSettings: (settings) => {
         const normalized = applyUiSettings(settings)
