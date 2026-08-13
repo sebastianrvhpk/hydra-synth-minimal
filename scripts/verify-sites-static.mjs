@@ -11,6 +11,7 @@ const requiredFiles = [
   'dist/client/hydra/index.html',
   'dist/client/hydra/media-library.js',
   'dist/client/hydra/png-patch-metadata.js',
+  'dist/client/hydra/hydra-autocomplete.js',
   'dist/client/hydra/call-scopes.js',
   'dist/client/hydra/hydra-examples.js',
   'dist/client/hydra/datastream-system.js',

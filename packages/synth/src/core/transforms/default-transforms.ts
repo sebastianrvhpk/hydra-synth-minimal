@@ -1,4 +1,4 @@
-import type { HydraTransformDefinition } from '../types.js'
+import type { HydraTransformDefinition, HydraTransformDescriptor } from '../types.js'
 
 export const getDefaultTransforms = (): HydraTransformDefinition[] => [
   {
@@ -1643,3 +1643,15 @@ export const getDefaultTransforms = (): HydraTransformDefinition[] => [
 `
   }
 ]
+
+export const getHydraTransformDescriptors = (): HydraTransformDescriptor[] => (
+  getDefaultTransforms().map(({ name, type, inputs = [] }) => ({
+    name,
+    type,
+    inputs: inputs.map(({ name: inputName, type: inputType, default: defaultValue }) => ({
+      name: inputName,
+      type: inputType,
+      default: defaultValue
+    }))
+  }))
+)

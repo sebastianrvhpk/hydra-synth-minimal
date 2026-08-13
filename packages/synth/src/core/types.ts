@@ -35,6 +35,12 @@ export interface HydraTransformInput {
   default: unknown
 }
 
+export interface HydraTransformDescriptor {
+  name: string
+  type: HydraTransformType
+  inputs: HydraTransformInput[]
+}
+
 interface HydraTransformDefinitionBase {
   name: string
   resolutionScale?: number

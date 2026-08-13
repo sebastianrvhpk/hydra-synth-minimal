@@ -106,6 +106,10 @@ copyFileSync(
   path.join(hydraOutDir, 'grammar-utilities.js')
 )
 copyFileSync(
+  path.join(repoRoot, 'packages', 'hydra', 'hydra-autocomplete.js'),
+  path.join(hydraOutDir, 'hydra-autocomplete.js')
+)
+copyFileSync(
   path.join(repoRoot, 'packages', 'hydra', 'livecode-blocks.js'),
   path.join(hydraOutDir, 'livecode-blocks.js')
 )

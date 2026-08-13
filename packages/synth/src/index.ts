@@ -9,13 +9,16 @@ import { BrowserHost, type BrowserHostOptions } from './runtime/browser-host.js'
 import { AutoRenderer } from './runtime/auto-renderer.js'
 import type { HydraRendererBackend, HydraRendererPreference } from './runtime/renderer.js'
 import { HydraBrowserRuntime, type HydraBrowserRuntimeOptions } from './runtime/runtime.js'
+import { getHydraTransformDescriptors } from './core/transforms/default-transforms.js'
+import type { HydraTransformDescriptor } from './core/types.js'
 
-export { captureHydraFrameSequence, captureHydraVideo }
+export { captureHydraFrameSequence, captureHydraVideo, getHydraTransformDescriptors }
 
 export type {
   CaptureFrameSequenceResult,
   CaptureHydraFrameSequenceOptions,
-  CaptureHydraVideoOptions
+  CaptureHydraVideoOptions,
+  HydraTransformDescriptor
 }
 
 export interface CreateHydraBrowserRuntimeOptions extends Omit<HydraBrowserRuntimeOptions, 'host' | 'renderer'> {

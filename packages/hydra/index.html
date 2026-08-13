@@ -1695,6 +1695,7 @@
     import { createGrammarUtilities } from './grammar-utilities.js'
     import { findLiveCodeBlock, splitLiveExecutionBlocks } from './livecode-blocks.js'
     import { findCallScope } from './call-scopes.js'
+    import { createHydraCompletionCatalog, createHydraCompletionSource } from './hydra-autocomplete.js'
     import { createHydraExamplePicker } from './hydra-examples.js'
     import { findParameterScopes } from './parameter-scopes.js'
     import { createMediaBufferManager, createMediaLibrary, isSupportedMediaFile } from './media-library.js'
@@ -1712,7 +1713,12 @@
     import { syntaxHighlighting, syntaxTree } from '@codemirror/language'
     import { Decoration, keymap, repositionTooltips, tooltips, ViewPlugin } from '@codemirror/view'
     import { classHighlighter } from '@lezer/highlight'
-    import { captureHydraFrameSequence, captureHydraVideo, createHydraBrowserRuntime } from 'hydra-synth'
+    import {
+      captureHydraFrameSequence,
+      captureHydraVideo,
+      createHydraBrowserRuntime,
+      getHydraTransformDescriptors
+    } from 'hydra-synth'
     import { createLivecodingSession } from 'hydra-synth/livecoding'
 
     const createTrustedLocalCodeRunner = () => {
@@ -2200,130 +2206,12 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`],
 Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
     ])
 
-    const hydraCompletionNames = [
-      ...grammarUtilityNames,
-      'osc',
-      'noise',
-      'voronoi',
-      'shape',
-      'gradient',
-      'solid',
-      'src',
-      'prev',
-      'prevN',
-      'out',
-      'render',
-      'hush',
-      'rotate',
-      'scale',
-      'scrollX',
-      'scrollY',
-      'kaleid',
-      'pixelate',
-      'repeat',
-      'modulate',
-      'modulateScale',
-      'modulateRotate',
-      'modulatePixelate',
-      'blend',
-      'add',
-      'sub',
-      'mult',
-      'diff',
-      'mask',
-      'color',
-      'colorama',
-      'luma',
-      'thresh',
-      'invert',
-      'posterize',
-      'contrast',
-      'brightness',
-      'saturate',
-      'hue',
-      'blur',
-      'blurX',
-      'blurY',
-      'bloom',
-      'edgeDetect',
-      'toneMap',
-      'captureFrames',
-      'captureAndSaveVideo',
-      'saveCanvasFrame',
-      'setCanvasDisplay',
-      'setCanvasFullscreen',
-      'fitCanvasToWindow',
-      'resetCanvasDisplay',
-      'getCanvasDisplay',
-      'setResolution',
-      'startInterfaceRecording',
-      'stopInterfaceRecording',
-      'toggleInterfaceRecording',
-      'playInterfacePerformance',
-      'loadInterfacePerformance',
-      'loadInterfacePerformanceFile',
-      'saveSketchToUrl',
-      'copySketchUrl',
-      'loadSketchFromUrl',
-      'loadRandomSketch',
-      'randomize',
-      'mutateEditorCode',
-      'hydraAgentLivecoder',
-      'clearEditor',
-      'codeCanvas',
-      'renderCodeToCanvas',
-      'attachCodeMaterial',
-      'syncCodeMaterial',
-      'detachCodeMaterial',
-      'fitEditorPanel',
-      'showCode',
-      'hideCode',
-      'toggleCode',
-      'toggleRecordPanel',
-      'toggleOptionsPanel',
-      'toggleDatastreamPanel',
-      'datastreamControls',
-      'datastreamVideos',
-      'datastreamPatch',
-      'media',
-      'mediaBuffers',
-      'pickMediaFiles',
-      'loadMediaFiles',
-      'hostMediaFiles',
-      'loadVideoFile',
-      'loadVideoFiles',
-      'restartVideos',
-      's0',
-      's1',
-      's2',
-      's3',
-      'o0',
-      'o1',
-      'o2',
-      'o3',
-      'mouse',
-      'time',
-      'speed',
-      'bpm',
-      'fps',
-      'update',
-      'afterUpdate'
-    ]
-
-    const hydraCompletions = hydraCompletionNames.map((label) => ({
-      label,
-      type: /^[os][0-3]$/.test(label) || label === 'A' || label === 'B' ? 'variable' : 'function'
-    }))
-
-    const hydraCompletionSource = (context) => {
-      const word = context.matchBefore(/[A-Za-z_$][\w$]*/)
-      if (!word || (!context.explicit && word.from === word.to)) return null
-      return {
-        from: word.from,
-        options: hydraCompletions,
-        validFor: /^[A-Za-z_$][\w$]*$/
-      }
-    }
+    const hydraCompletionCatalog = createHydraCompletionCatalog({
+      transformDescriptors: getHydraTransformDescriptors(),
+      grammarUtilityNames,
+      grammarUtilityInfo: grammarUtilitySource
+    })
+    const hydraCompletionSource = createHydraCompletionSource(hydraCompletionCatalog)
 
     const flashEffect = StateEffect.define()
     const clearFlashEffect = StateEffect.define()
