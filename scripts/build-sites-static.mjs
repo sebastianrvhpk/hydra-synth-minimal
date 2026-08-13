@@ -22,13 +22,6 @@ const hydraHtml = readFileSync(hydraEntry, 'utf8').replaceAll(
 )
 writeFileSync(hydraEntry, hydraHtml, 'utf8')
 
-const workshopEntry = path.join(clientDir, 'workshop', 'index.html')
-const workshopHtml = readFileSync(workshopEntry, 'utf8').replaceAll(
-  'content="/workshop/og.png"',
-  'content="__WORKSHOP_ORIGIN__/workshop/og.png"'
-)
-writeFileSync(workshopEntry, workshopHtml, 'utf8')
-
 mkdirSync(serverDir, { recursive: true })
 writeFileSync(path.join(serverDir, 'index.js'), `const redirectToPath = (request, pathname) => {
   const url = new URL(request.url)
@@ -58,12 +51,6 @@ export default {
     }
     if (pathname === '/hydra/' || pathname === '/hydra/index.html') {
       return renderEntry(request, env, '/hydra/index.html', '__HYDRA_ORIGIN__')
-    }
-    if (pathname === '/workshop') {
-      return redirectToPath(request, '/workshop/')
-    }
-    if (pathname === '/workshop/' || pathname === '/workshop/index.html') {
-      return renderEntry(request, env, '/workshop/index.html', '__WORKSHOP_ORIGIN__')
     }
     return env.ASSETS.fetch(request)
   }

@@ -10,9 +10,7 @@ Hydra built-ins → synchronous TypeGPU shader graph → fragment passes
 
 `packages/synth` contains the language, runtime, WebGPU/WebGL2 backends, media
 inputs, and capture implementation. `packages/hydra` is the browser instrument and
-editor. `packages/workshop` is the guided presentation **La imagen como señal**,
-which uses the same runtime to turn the conceptual sequence into executable
-experiments.
+editor.
 
 ## Runtime
 
@@ -53,15 +51,6 @@ The cursor also traces nested parameter scopes: the focused texture chain is
 highlighted in cyan, any enclosing texture chain in magenta, and the immediate
 scalar parameter with a compact marker. This is syntax-aware and does not alter
 the editor selection.
-
-The guided presentation is available at `/workshop/`. Its two-hour route contains
-33 cumulative states organized as **entrar → seguir → relacionar → temporalizar →
-volver**. A single visual patch family changes incrementally so value, order,
-branch, role, time, and feedback can be compared without replacing the visual
-material at every step. Code is co-present when it carries pedagogical work, each
-practice has an explicit recovery point, and the current state can be retained in
-the URL or opened in the full editor. Add `?facilitator=1` to expose delivery cues
-without placing them in the participant view.
 
 Images and videos can be dragged anywhere onto the app. Hydra gives each file a
 tab-local object URL and lists it under **Options → media**, so no separate media
