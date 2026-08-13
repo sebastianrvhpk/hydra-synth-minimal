@@ -113,6 +113,10 @@ copyFileSync(
   path.join(hydraOutDir, 'livecode-blocks.js')
 )
 copyFileSync(
+  path.join(repoRoot, 'packages', 'hydra', 'parameter-scopes.js'),
+  path.join(hydraOutDir, 'parameter-scopes.js')
+)
+copyFileSync(
   path.join(repoRoot, 'packages', 'hydra', 'datastream-system.js'),
   path.join(hydraOutDir, 'datastream-system.js')
 )
