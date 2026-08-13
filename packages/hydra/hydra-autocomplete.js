@@ -374,7 +374,6 @@ const referenceContexts = [
   ['graph', 'texture chain'],
   ['sequence', 'sequence'],
   ['sourceMedia', 'media source'],
-  ['audio', 'audio'],
   ['mouse', 'pointer']
 ]
 
