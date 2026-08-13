@@ -54,6 +54,19 @@
       --amber: #ffcc66;
       --ok: #9ff5b0;
       --bad: #ff8d8d;
+      --code-text: #f7fbf8;
+      --code-number: #ffdc82;
+      --code-string: #ffabe5;
+      --code-keyword: #ff98dc;
+      --code-atom: #ffc98a;
+      --code-definition: #9cecff;
+      --code-property: #bdf3ff;
+      --code-type: #d5c4ff;
+      --code-comment: #c2ccc6;
+      --code-meta: #b7c6cf;
+      --code-punctuation: #e8f0eb;
+      --code-invalid: #ff9b9b;
+      --code-keyline: rgba(0, 0, 0, 0.98);
       --editor-font-size: 14px;
       --editor-opacity: 1;
     }
@@ -901,12 +914,12 @@
       height: 100%;
       min-height: 0;
       background: transparent;
-      color: var(--ink);
+      color: var(--code-text);
       font: inherit;
       font-size: var(--editor-font-size);
+      font-weight: 500;
       line-height: 1.5;
       opacity: var(--editor-opacity);
-      text-shadow: 0 1px 8px rgba(0, 0, 0, 0.9);
     }
 
     #live-editor .cm-scroller {
@@ -920,8 +933,80 @@
 
     #live-editor .cm-content {
       caret-color: var(--magenta);
+      color: var(--code-text);
       padding: 0;
       max-width: none;
+      -webkit-text-stroke: 0.5px var(--code-keyline);
+      paint-order: stroke fill;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.96);
+    }
+
+    #live-editor .tok-number {
+      color: var(--code-number);
+    }
+
+    #live-editor .tok-string,
+    #live-editor .tok-string2,
+    #live-editor .tok-url {
+      color: var(--code-string);
+    }
+
+    #live-editor .tok-keyword {
+      color: var(--code-keyword);
+      font-weight: 650;
+    }
+
+    #live-editor .tok-atom,
+    #live-editor .tok-bool,
+    #live-editor .tok-literal {
+      color: var(--code-atom);
+    }
+
+    #live-editor .tok-variableName,
+    #live-editor .tok-labelName {
+      color: var(--code-text);
+    }
+
+    #live-editor .tok-variableName.tok-definition,
+    #live-editor .tok-propertyName.tok-definition,
+    #live-editor .tok-variableName2 {
+      color: var(--code-definition);
+    }
+
+    #live-editor .tok-propertyName,
+    #live-editor .tok-className,
+    #live-editor .tok-macroName {
+      color: var(--code-property);
+    }
+
+    #live-editor .tok-typeName,
+    #live-editor .tok-namespace {
+      color: var(--code-type);
+    }
+
+    #live-editor .tok-comment {
+      color: var(--code-comment);
+      font-style: italic;
+    }
+
+    #live-editor .tok-meta {
+      color: var(--code-meta);
+    }
+
+    #live-editor .tok-operator,
+    #live-editor .tok-punctuation {
+      color: var(--code-punctuation);
+    }
+
+    #live-editor .tok-invalid,
+    #live-editor .tok-deleted {
+      color: var(--code-invalid);
+      text-decoration: underline wavy;
+      text-decoration-thickness: 1px;
+    }
+
+    #live-editor .tok-inserted {
+      color: var(--ok);
     }
 
     #live-panel[data-layout="floating"] #live-editor .cm-content {
@@ -975,18 +1060,16 @@
 
     #live-editor .cm-activeLine,
     #live-editor .cm-activeLineGutter {
-      background-color: rgba(3, 6, 8, 0.22);
-      background-image: linear-gradient(90deg, rgba(255, 107, 214, 0.2), rgba(3, 6, 8, 0.42) 13%, rgba(3, 12, 14, 0.34) 82%, rgba(3, 6, 8, 0.16));
+      background: rgba(3, 6, 8, 0.1);
     }
 
     #live-editor .cm-activeLine {
-      box-shadow: inset 4px 0 0 var(--magenta), inset 0 1px 0 rgba(255, 107, 214, 0.66), inset 0 -1px 0 rgba(117, 247, 255, 0.62);
+      box-shadow: inset 3px 0 0 var(--magenta);
     }
 
     #live-panel[data-layout="floating"] #live-editor .cm-activeLine,
     #live-panel[data-layout="floating"] #live-editor .cm-activeLineGutter {
-      background-color: rgba(3, 6, 8, 0.18);
-      background-image: linear-gradient(90deg, rgba(255, 107, 214, 0.24), rgba(3, 10, 12, 0.34) 72%, rgba(117, 247, 255, 0.14));
+      background: rgba(3, 6, 8, 0.14);
     }
 
     #live-editor .cm-selectionBackground,
@@ -1029,6 +1112,8 @@
       box-shadow: 0 0 0 2px rgba(3, 6, 8, 0.92), 0 0 0 3px rgba(255, 255, 255, 0.96), 0 0 16px rgba(255, 204, 102, 1);
       color: #050505;
       font-weight: 800;
+      -webkit-text-stroke: 0;
+      paint-order: normal;
       text-shadow: none;
     }
 
@@ -1036,7 +1121,7 @@
       border-radius: 3px;
       -webkit-box-decoration-break: clone;
       box-decoration-break: clone;
-      text-shadow: 0 1px 3px rgba(0, 0, 0, 1);
+      text-shadow: inherit;
     }
 
     #live-editor .cm-parameter-chain-focus {
@@ -1061,6 +1146,8 @@
       box-shadow: 0 0 0 2px rgba(3, 6, 8, 0.94), 0 0 0 3px rgba(255, 255, 255, 0.96), 0 0 14px rgba(255, 204, 102, 0.82);
       color: #050505;
       font-weight: 800;
+      -webkit-text-stroke: 0;
+      paint-order: normal;
       text-shadow: none;
     }
 
@@ -1480,8 +1567,9 @@
     import { EditorSelection, EditorState, Prec, StateEffect, StateField } from '@codemirror/state'
     import { autocompletion, startCompletion } from '@codemirror/autocomplete'
     import { javascript } from '@codemirror/lang-javascript'
-    import { syntaxTree } from '@codemirror/language'
+    import { syntaxHighlighting, syntaxTree } from '@codemirror/language'
     import { Decoration, keymap, repositionTooltips, tooltips, ViewPlugin } from '@codemirror/view'
+    import { classHighlighter } from '@lezer/highlight'
     import { captureHydraFrameSequence, captureHydraVideo, createHydraBrowserRuntime } from 'hydra-synth'
     import { createLivecodingSession } from 'hydra-synth/livecoding'
 
@@ -2476,14 +2564,14 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
     ])
 
     const colorForCodeToken = (token) => {
-      if (/^\s+$/u.test(token)) return '#eef4ef'
-      if (/^\/\//u.test(token)) return 'rgba(238, 244, 239, 0.45)'
-      if (/^['"`]/u.test(token)) return '#ffcc66'
-      if (/^[+-]?(?:\d+\.?\d*|\.\d+)/u.test(token)) return '#8affb6'
-      if (/^(?:s|o)[0-3]$/u.test(token)) return '#ff6bd6'
-      if (codeMaterialKeywords.has(token)) return '#75f7ff'
-      if (/^[A-Za-z_$][\w$]*$/u.test(token)) return '#eef4ef'
-      return 'rgba(238, 244, 239, 0.82)'
+      if (/^\s+$/u.test(token)) return '#f7fbf8'
+      if (/^\/\//u.test(token)) return '#c2ccc6'
+      if (/^['"`]/u.test(token)) return '#ffabe5'
+      if (/^[+-]?(?:\d+\.?\d*|\.\d+)/u.test(token)) return '#ffdc82'
+      if (/^(?:s|o)[0-3]$/u.test(token)) return '#ff98dc'
+      if (codeMaterialKeywords.has(token)) return '#bdf3ff'
+      if (/^[A-Za-z_$][\w$]*$/u.test(token)) return '#f7fbf8'
+      return '#e8f0eb'
     }
 
     const tokenizeCodeLine = (line) => {
@@ -2511,6 +2599,7 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
           if (y + layout.lineHeight > layout.height - layout.padding) break
         }
         context.fillStyle = colorForCodeToken(token)
+        context.strokeText(token, x, y)
         context.fillText(token, x, y)
         x += tokenWidth
       }
@@ -2622,6 +2711,13 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
       return {
         font: buildCanvasFont(style),
         fillStyle: style.color,
+        strokeStyle: style.webkitTextStrokeColor || style.getPropertyValue('-webkit-text-stroke-color'),
+        strokeWidth: clampNumber(
+          Number.parseFloat(style.webkitTextStrokeWidth || style.getPropertyValue('-webkit-text-stroke-width')),
+          0,
+          4,
+          0
+        ),
         alpha: opacity,
         direction: style.direction,
         fontKerning: style.fontKerning,
@@ -2938,6 +3034,13 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
       setCanvasTextProperty(context, 'letterSpacing', segment.letterSpacing)
       setCanvasTextProperty(context, 'wordSpacing', segment.wordSpacing)
       applyTextShadow(context, segment.textShadow)
+      if (segment.strokeWidth > 0 && colorLooksVisible(segment.strokeStyle)) {
+        context.strokeStyle = segment.strokeStyle
+        context.lineWidth = segment.strokeWidth * 2
+        context.lineJoin = 'round'
+        context.miterLimit = 2
+        context.strokeText(segment.text, segment.left, segment.top)
+      }
       context.fillText(segment.text, segment.left, segment.top)
     }
 
@@ -2985,8 +3088,9 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
       const { width, height } = getCodeMaterialSize(options)
       context.save()
       context.textBaseline = 'top'
-      context.shadowColor = 'rgba(0, 0, 0, 0.85)'
-      context.shadowBlur = Math.max(3, Math.round(width / 180))
+      context.shadowColor = 'rgba(0, 0, 0, 0.96)'
+      context.shadowBlur = Math.max(1, Math.round(width / 900))
+      context.shadowOffsetY = 1
 
       const editorSize = clampInteger(editorFontSizeInput?.value, 10, 24, 14)
       const fontScale = clampNumber(height / 720, 0.9, 1.8, 1)
@@ -2995,6 +3099,10 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
       const padding = Math.max(12, Math.round(Math.min(width, height) * 0.028))
 
       context.font = `${fontSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace`
+      context.strokeStyle = 'rgba(0, 0, 0, 0.98)'
+      context.lineWidth = Math.max(1, fontSize * 0.065)
+      context.lineJoin = 'round'
+      context.miterLimit = 2
 
       const code = String(options.code ?? readEditorCode())
       const lines = code.split(/\r?\n/u)
@@ -6431,6 +6539,7 @@ speed = ${randomBetween(0.35, 0.9, 2)}`
           extensions: [
             basicSetup,
             javascript(),
+            syntaxHighlighting(classHighlighter),
             tooltips({ parent: document.body }),
             autocompletion({ override: [hydraCompletionSource] }),
             flashField,
