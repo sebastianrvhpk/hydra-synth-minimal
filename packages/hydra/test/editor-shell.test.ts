@@ -17,6 +17,8 @@ describe('live editor shell', () => {
     expect(indexHtml).toMatch(/\.cm-activeLine,\s*#live-editor \.cm-activeLineGutter\s*\{[^}]*background-color:\s*rgba\(3, 6, 8, 0\.22\);/u)
     expect(indexHtml).toMatch(/\.cm-parameter-chain-focus\s*\{[^}]*background:\s*rgba\(3, 28, 32, 0\.9\);/u)
     expect(indexHtml).toMatch(/\.cm-parameter-value-focus\s*\{[^}]*background:\s*rgba\(255, 204, 102, 0\.96\);/u)
+    expect(indexHtml).toMatch(/\.cm-cursor-primary\s*\{[^}]*border-left:\s*3px solid var\(--magenta\);/u)
+    expect(indexHtml).toMatch(/\.cm-focused \.cm-selectionBackground\s*\{[^}]*background:\s*rgba\(255, 107, 214, 0\.24\);/u)
     expect(indexHtml).toMatch(/const codeMaterialChromeSelector = \[[\s\S]*'\.cm-typed-flash',[\s\S]*'\.cm-parameter-scope'/u)
     expect(indexHtml).toContain('}, 420)')
   })

@@ -934,9 +934,9 @@
     }
 
     #live-editor .cm-cursor-primary {
-      border-left: 4px solid var(--magenta);
-      margin-left: -2px;
-      filter: drop-shadow(0 0 1px rgba(0, 0, 0, 1)) drop-shadow(0 0 7px rgba(255, 107, 214, 1));
+      border-left: 3px solid var(--magenta);
+      margin-left: -1.5px;
+      filter: drop-shadow(0 0 1px rgba(0, 0, 0, 1)) drop-shadow(0 0 4px rgba(255, 107, 214, 0.78));
     }
 
     #live-editor .cm-cursorLayer {
@@ -946,12 +946,12 @@
     #live-editor .cm-cursor-primary::before,
     #live-editor .cm-cursor-primary::after {
       position: absolute;
-      left: -7px;
-      width: 10px;
-      height: 3px;
+      left: -4px;
+      width: 6px;
+      height: 2px;
       border-radius: 1px;
       background: #ffffff;
-      box-shadow: 0 0 0 1px var(--magenta), 0 0 8px rgba(255, 107, 214, 1);
+      box-shadow: 0 0 0 1px rgba(255, 107, 214, 0.84), 0 0 4px rgba(255, 107, 214, 0.72);
       content: '';
     }
 
@@ -991,8 +991,8 @@
 
     #live-editor .cm-selectionBackground,
     #live-editor .cm-focused .cm-selectionBackground {
-      background: rgba(255, 107, 214, 0.6);
-      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4), 0 0 9px rgba(255, 107, 214, 0.48);
+      background: rgba(255, 107, 214, 0.24);
+      box-shadow: inset 0 0 0 1px rgba(255, 107, 214, 0.58), inset 0 -2px 0 rgba(255, 107, 214, 0.94), 0 0 5px rgba(255, 107, 214, 0.28);
     }
 
     #live-editor .cm-tooltip,
@@ -2867,7 +2867,7 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
               snapshot,
               createRectFromEdges(left, top, right, bottom),
               mapping,
-              'rgba(255, 107, 214, 0.6)',
+              'rgba(255, 107, 214, 0.24)',
               rootOpacity,
               'selection'
             )
