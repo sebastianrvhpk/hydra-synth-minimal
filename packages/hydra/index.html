@@ -1206,13 +1206,10 @@
 
     #live-editor .cm-typed-flash {
       border-radius: 2px;
-      background: rgba(255, 204, 102, 0.96);
-      box-shadow: 0 0 0 2px rgba(3, 6, 8, 0.92), 0 0 0 3px rgba(255, 255, 255, 0.96), 0 0 16px rgba(255, 204, 102, 1);
-      color: #050505;
-      font-weight: 800;
-      -webkit-text-stroke: 0;
-      paint-order: normal;
-      text-shadow: none;
+      background: rgba(255, 204, 102, 0.12);
+      box-shadow: inset 0 -2px 0 rgba(255, 204, 102, 0.68), 0 0 5px rgba(255, 204, 102, 0.16);
+      color: inherit;
+      font-weight: inherit;
     }
 
     #live-editor .cm-parameter-scope {
@@ -2267,7 +2264,7 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
         this.clearTimer = window.setTimeout(() => {
           this.clearTimer = 0
           this.view.dispatch({ effects: clearTypedFlashEffect.of(true) })
-        }, 420)
+        }, 240)
       }
 
       destroy() {
