@@ -844,19 +844,22 @@
     }
 
     .live-tool {
+      position: relative;
       border: 1px solid rgba(117, 247, 255, 0.42);
       background: rgba(117, 247, 255, 0.12);
       color: var(--ink);
-      border-radius: 4px;
-      width: 28px;
-      height: 28px;
+      border-radius: 5px;
+      width: 30px;
+      height: 30px;
       padding: 0;
       cursor: pointer;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Segoe UI Symbol", "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
-      font-size: 14px;
+      font-size: 15px;
+      font-weight: 650;
       line-height: 1;
       display: inline-grid;
       place-items: center;
+      transition: background 90ms linear, border-color 90ms linear, transform 90ms ease;
     }
 
     .live-tool[hidden] {
@@ -864,7 +867,85 @@
     }
 
     .live-tool:hover {
-      background: rgba(117, 247, 255, 0.2);
+      border-color: rgba(117, 247, 255, 0.76);
+      background: rgba(117, 247, 255, 0.24);
+    }
+
+    .live-tool:active {
+      transform: translateY(1px);
+    }
+
+    .live-tool:focus-visible {
+      outline: 2px solid var(--cyan);
+      outline-offset: 2px;
+    }
+
+    .live-tool[data-tone="run"] {
+      color: var(--ok);
+    }
+
+    .live-tool[data-tone="chance"] {
+      color: var(--amber);
+    }
+
+    .live-tool[data-tone="clear"] {
+      color: var(--bad);
+    }
+
+    .live-tool[data-tone="record"] {
+      color: var(--magenta);
+    }
+
+    #live-share,
+    #live-datastream-toggle:not([hidden]),
+    #live-datastream-toggle[hidden] + #live-record-toggle {
+      margin-inline-start: 6px;
+    }
+
+    #live-share::before,
+    #live-datastream-toggle:not([hidden])::before,
+    #live-datastream-toggle[hidden] + #live-record-toggle::before {
+      content: "";
+      position: absolute;
+      top: 5px;
+      bottom: 5px;
+      left: -6px;
+      width: 1px;
+      background: rgba(238, 244, 239, 0.24);
+      pointer-events: none;
+    }
+
+    #live-tool-hint {
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 2px;
+      z-index: 20;
+      box-sizing: border-box;
+      max-width: min(300px, calc(100vw - 24px));
+      padding: 5px 8px 6px;
+      border: 1px solid rgba(117, 247, 255, 0.44);
+      border-radius: 4px;
+      background: rgba(3, 6, 8, 0.94);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.42);
+      color: var(--ink);
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.25;
+      letter-spacing: 0.01em;
+      text-align: right;
+      text-transform: none;
+      white-space: normal;
+      pointer-events: none;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(-3px);
+      transition: opacity 90ms linear, transform 90ms ease, visibility 90ms linear;
+    }
+
+    #live-tool-hint[data-visible="true"] {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
     }
 
     .live-tool[data-state="active"],
@@ -883,6 +964,13 @@
       border-color: rgba(117, 247, 255, 0.72);
       color: var(--cyan);
       background: rgba(117, 247, 255, 0.18);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .live-tool,
+      #live-tool-hint {
+        transition: none;
+      }
     }
 
     #live-editor {
@@ -1373,18 +1461,19 @@
   <div id="live-panel" data-layout="fullscreen" hidden>
     <div id="live-panel-header">
       <div id="live-tools">
-        <button id="live-run" class="live-tool" type="button" title="Run selection or current block" aria-label="Run selection or current block">▶</button>
-        <button id="live-run-all" class="live-tool" type="button" title="Run full buffer" aria-label="Run full buffer">▶▶</button>
-        <button id="live-share" class="live-tool" type="button" title="Save sketch to URL and copy it" aria-label="Save sketch to URL">🔗</button>
-        <button id="live-random" class="live-tool" type="button" title="Load a random sketch" aria-label="Load a random sketch">⚄</button>
-        <button id="live-dice" class="live-tool" type="button" title="Mutate one number in the editor" aria-label="Mutate one number">±</button>
-        <button id="live-clear" class="live-tool" type="button" title="Clear the editor" aria-label="Clear the editor">⌫</button>
-        <button id="live-datastream-toggle" class="live-tool" type="button" title="DATASTREAM controls" aria-label="DATASTREAM controls" aria-expanded="false" hidden>≋</button>
-        <button id="live-record-toggle" class="live-tool" type="button" title="Record MP4" aria-label="Record MP4" aria-expanded="false">●</button>
-        <button id="live-options-toggle" class="live-tool" type="button" title="Options" aria-label="Options" aria-expanded="false">⚙</button>
-        <button id="live-info-toggle" class="live-tool" type="button" title="Info" aria-label="Info">ⓘ</button>
-        <button id="live-fit" class="live-tool" type="button" title="Fullscreen code layer" aria-label="Fullscreen code layer">⛶</button>
+        <button id="live-run" class="live-tool" data-tone="run" data-tooltip="Run block · Ctrl/⌘ Enter" type="button" aria-label="Run selection or current block">▶</button>
+        <button id="live-run-all" class="live-tool" data-tone="run" data-tooltip="Run all · Shift Ctrl/⌘ Enter" type="button" aria-label="Run full buffer">▶≡</button>
+        <button id="live-share" class="live-tool" data-tooltip="Copy sketch URL" type="button" aria-label="Save sketch to URL and copy it">🔗</button>
+        <button id="live-random" class="live-tool" data-tone="chance" data-tooltip="Load random sketch" type="button" aria-label="Load a random sketch">🎲</button>
+        <button id="live-dice" class="live-tool" data-tone="chance" data-tooltip="Mutate one number" type="button" aria-label="Mutate one number in the editor">±</button>
+        <button id="live-clear" class="live-tool" data-tone="clear" data-tooltip="Clear editor" type="button" aria-label="Clear the editor">⌫</button>
+        <button id="live-datastream-toggle" class="live-tool" data-tooltip="DATASTREAM controls" type="button" aria-label="DATASTREAM controls" aria-expanded="false" hidden>≋</button>
+        <button id="live-record-toggle" class="live-tool" data-tone="record" data-tooltip="Record MP4" type="button" aria-label="Record MP4" aria-expanded="false">●</button>
+        <button id="live-options-toggle" class="live-tool" data-tooltip="Options" type="button" aria-label="Options" aria-expanded="false">⚙</button>
+        <button id="live-info-toggle" class="live-tool" data-tooltip="Help and shortcuts" type="button" aria-label="Help and shortcuts">ⓘ</button>
+        <button id="live-fit" class="live-tool" data-tooltip="Fullscreen code layer" type="button" aria-label="Fullscreen code layer">⛶</button>
       </div>
+      <div id="live-tool-hint" role="tooltip" aria-hidden="true"></div>
     </div>
     <div id="live-editor-shell">
       <strong id="live-drag-handle">code</strong>
@@ -1924,6 +2013,8 @@
     const liveOptionsToggle = document.getElementById('live-options-toggle')
     const liveInfoToggle = document.getElementById('live-info-toggle')
     const liveFitButton = document.getElementById('live-fit')
+    const liveTools = document.getElementById('live-tools')
+    const liveToolHint = document.getElementById('live-tool-hint')
     const liveStatus = document.getElementById('live-status')
     const datastreamPanel = document.getElementById('datastream-panel')
     const datastreamCloseButton = document.getElementById('datastream-close')
@@ -1979,6 +2070,50 @@
     const utilityReferencePreview = document.getElementById('utility-reference-preview')
     const utilityReferenceStatus = document.getElementById('utility-reference-status')
     const codeMaterialCanvas = document.getElementById('code-material-canvas')
+    let hoveredLiveTool = null
+    let focusedLiveTool = null
+
+    const findLiveTool = (target) => {
+      const tool = target instanceof Element ? target.closest('.live-tool') : null
+      return tool && liveTools?.contains(tool) && !tool.hidden ? tool : null
+    }
+
+    const renderLiveToolHint = () => {
+      if (!liveToolHint) return
+      const tool = hoveredLiveTool ?? focusedLiveTool
+      const tooltip = tool?.dataset.tooltip?.trim() ?? ''
+      liveToolHint.textContent = tooltip
+      liveToolHint.dataset.visible = tooltip ? 'true' : 'false'
+      liveToolHint.setAttribute('aria-hidden', tooltip ? 'false' : 'true')
+    }
+
+    const setLiveToolPresentation = (button, { tooltip, label = tooltip, icon } = {}) => {
+      if (!button) return
+      if (typeof tooltip === 'string') button.dataset.tooltip = tooltip
+      if (typeof label === 'string') button.setAttribute('aria-label', label)
+      if (typeof icon === 'string') button.textContent = icon
+      if (button === hoveredLiveTool || button === focusedLiveTool) renderLiveToolHint()
+    }
+
+    if (liveTools && liveToolHint) {
+      liveTools.addEventListener('pointerover', (event) => {
+        hoveredLiveTool = findLiveTool(event.target)
+        renderLiveToolHint()
+      })
+      liveTools.addEventListener('pointerleave', () => {
+        hoveredLiveTool = null
+        renderLiveToolHint()
+      })
+      liveTools.addEventListener('focusin', (event) => {
+        focusedLiveTool = findLiveTool(event.target)
+        renderLiveToolHint()
+      })
+      liveTools.addEventListener('focusout', (event) => {
+        focusedLiveTool = findLiveTool(event.relatedTarget)
+        renderLiveToolHint()
+      })
+    }
+
     const media = createMediaLibrary()
     const mediaBuffers = createMediaBufferManager({
       library: media,
@@ -3643,8 +3778,10 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
     const updateFitButtonState = (mode) => {
       if (!liveFitButton) return
       const isFullscreen = mode === 'fullscreen'
-      liveFitButton.title = isFullscreen ? 'Window code layer' : 'Fullscreen code layer'
-      liveFitButton.setAttribute('aria-label', liveFitButton.title)
+      setLiveToolPresentation(liveFitButton, {
+        tooltip: isFullscreen ? 'Window code layer' : 'Fullscreen code layer',
+        icon: isFullscreen ? '▣' : '⛶'
+      })
       if (isFullscreen) liveFitButton.dataset.state = 'active'
       else delete liveFitButton.dataset.state
     }
@@ -5815,8 +5952,11 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
       }
 
       if (liveRecordToggle) {
-        liveRecordToggle.title = active ? 'Stop MP4 capture' : `Record MP4 (${durationSeconds}s)`
-        liveRecordToggle.setAttribute('aria-label', liveRecordToggle.title)
+        setLiveToolPresentation(liveRecordToggle, {
+          tooltip: active ? 'Stop MP4 recording' : `Record MP4 · ${durationSeconds}s`,
+          label: active ? 'Stop MP4 capture' : `Record MP4 (${durationSeconds}s)`,
+          icon: active ? '■' : '●'
+        })
         if (active) liveRecordToggle.dataset.state = 'active'
         else if (recordPopover?.hidden !== false) delete liveRecordToggle.dataset.state
       }

@@ -35,6 +35,37 @@ describe('live editor shell', () => {
     expect(indexHtml).toMatch(/\.live-tool\[hidden\]\s*\{\s*display:\s*none;/u)
   })
 
+  it('makes every toolbar action recognizable on hover and keyboard focus', () => {
+    const toolbarButtonIds = [
+      'live-run',
+      'live-run-all',
+      'live-share',
+      'live-random',
+      'live-dice',
+      'live-clear',
+      'live-datastream-toggle',
+      'live-record-toggle',
+      'live-options-toggle',
+      'live-info-toggle',
+      'live-fit'
+    ]
+
+    for (const id of toolbarButtonIds) {
+      const button = indexHtml.match(new RegExp(`<button id="${id}"[^>]*>`, 'u'))?.[0]
+      expect(button, `missing #${id}`).toBeDefined()
+      expect(button, `missing tooltip on #${id}`).toContain('data-tooltip=')
+      expect(button, `missing accessible name on #${id}`).toContain('aria-label=')
+    }
+
+    expect(indexHtml).toContain('id="live-run-all" class="live-tool" data-tone="run" data-tooltip="Run all · Shift Ctrl/⌘ Enter"')
+    expect(indexHtml).toContain('id="live-random" class="live-tool" data-tone="chance" data-tooltip="Load random sketch"')
+    expect(indexHtml).toMatch(/#live-tool-hint\[data-visible="true"\]\s*\{[^}]*opacity:\s*1;[^}]*visibility:\s*visible;/u)
+    expect(indexHtml).toContain("liveTools.addEventListener('pointerover'")
+    expect(indexHtml).toContain("liveTools.addEventListener('focusin'")
+    expect(indexHtml).toContain("icon: active ? '■' : '●'")
+    expect(indexHtml).toContain("icon: isFullscreen ? '▣' : '⛶'")
+  })
+
   it('loads the canonical Hydra example collection instead of generated recipes', () => {
     expect(indexHtml).toContain("import { createHydraExamplePicker } from './hydra-examples.js'")
     expect(indexHtml).toContain('const pickHydraExample = createHydraExamplePicker()')
