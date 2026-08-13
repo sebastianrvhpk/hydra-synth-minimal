@@ -228,7 +228,12 @@ const createRuntimeCompletions = () => {
 
   const controlCompletions = [
     ['render', '(output)', 'Displays one output, or all outputs when called without an argument.'],
-    ['hush', '()', 'Clears every Hydra output.']
+    ['hush', '()', 'Clears every Hydra output.'],
+    [
+      'setCanvasDisplay',
+      '(width = viewportWidth, height = viewportHeight, { nativeSize = true })',
+      'Sets the render resolution and canvas display size for pixel-precise output. Resolution changes rerun the patch and refresh A/B.'
+    ]
   ].map(([label, detail, info]) => ({
     label,
     detail,

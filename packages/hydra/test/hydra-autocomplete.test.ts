@@ -26,7 +26,6 @@ const interfaceOnlyNames = [
   'captureFrames',
   'captureAndSaveVideo',
   'saveCanvasFrame',
-  'setCanvasDisplay',
   'setCanvasFullscreen',
   'fitCanvasToWindow',
   'resetCanvasDisplay',
@@ -96,8 +95,20 @@ describe('Hydra autocomplete', () => {
   it('offers only global Hydra sources, signals, buffers, and utilities at top level', () => {
     const options = labels(complete('os'))
 
-    expect(options).toEqual(expect.arrayContaining(['osc', 'ns', 'time', 'a0', 's0', 'o0', 'render', 'hush']))
+    expect(options).toEqual(expect.arrayContaining([
+      'osc',
+      'ns',
+      'time',
+      'a0',
+      's0',
+      'o0',
+      'render',
+      'hush',
+      'setCanvasDisplay'
+    ]))
     expect(options).not.toEqual(expect.arrayContaining(['rotate', 'blend', 'fast', 'initVideo']))
+    expect(catalog.globals.find(({ label }: { label: string }) => label === 'setCanvasDisplay')?.detail)
+      .toBe('(width = viewportWidth, height = viewportHeight, { nativeSize = true })')
   })
 
   it('offers visual chain operations after a texture graph', () => {
