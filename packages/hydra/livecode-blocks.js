@@ -1,3 +1,5 @@
+import { parser as javascriptParser } from '@lezer/javascript'
+
 const clampPosition = (value, length) => {
   const position = Number(value)
   if (!Number.isFinite(position)) return 0
@@ -28,6 +30,15 @@ const readLines = (source) => {
 
 const isBlankLine = (line) => line.text.trim().length === 0
 
+const preambleNodeNames = new Set([
+  'BlockComment',
+  'ClassDeclaration',
+  'EmptyStatement',
+  'FunctionDeclaration',
+  'LineComment',
+  'VariableDeclaration'
+])
+
 const lineIndexAt = (lines, position) => {
   for (let index = 0; index < lines.length - 1; index += 1) {
     if (position < lines[index + 1].from) return index
@@ -35,35 +46,29 @@ const lineIndexAt = (lines, position) => {
   return lines.length - 1
 }
 
-export const findLiveCodeBlock = (code, cursor = 0) => {
-  const source = String(code ?? '')
-  const lines = readLines(source)
-  const currentIndex = lineIndexAt(lines, clampPosition(cursor, source.length))
-  if (isBlankLine(lines[currentIndex])) return null
+const readTopLevelNodes = (source) => {
+  const nodes = []
+  const cursor = javascriptParser.parse(source).cursor()
+  if (!cursor.firstChild()) return nodes
 
-  let firstIndex = currentIndex
-  let lastIndex = currentIndex
-  while (firstIndex > 0 && !isBlankLine(lines[firstIndex - 1])) firstIndex -= 1
-  while (lastIndex < lines.length - 1 && !isBlankLine(lines[lastIndex + 1])) lastIndex += 1
-
-  const from = lines[firstIndex].from
-  const to = lines[lastIndex].to
-  return {
-    code: source.slice(from, to),
-    range: { from, to }
-  }
+  do {
+    nodes.push({ name: cursor.name, from: cursor.from, to: cursor.to })
+  } while (cursor.nextSibling())
+  return nodes
 }
 
-export const splitLiveExecutionBlocks = (code) => {
-  const source = String(code ?? '')
-  const lines = readLines(source)
+const readRawBlocks = (lines) => {
   const blocks = []
   let firstIndex = null
 
   const flush = (lastIndex) => {
     if (firstIndex === null) return
-    const block = source.slice(lines[firstIndex].from, lines[lastIndex].to).trim()
-    if (block) blocks.push(block)
+    blocks.push({
+      firstIndex,
+      lastIndex,
+      from: lines[firstIndex].from,
+      to: lines[lastIndex].to
+    })
     firstIndex = null
   }
 
@@ -73,4 +78,61 @@ export const splitLiveExecutionBlocks = (code) => {
   }
   flush(lines.length - 1)
   return blocks
+}
+
+const syntaxCrossesGap = (nodes, current, next) => nodes.some((node) =>
+  node.from < next.from && node.to > current.to
+)
+
+const isDeclarationPreamble = (nodes, block) => {
+  const containedNodes = nodes.filter((node) => node.from >= block.from && node.to <= block.to)
+  return containedNodes.every((node) => preambleNodeNames.has(node.name))
+}
+
+const readLiveCodeBlocks = (source, lines = readLines(source)) => {
+  const rawBlocks = readRawBlocks(lines)
+  if (rawBlocks.length < 2) return rawBlocks
+
+  const nodes = readTopLevelNodes(source)
+  const blocks = []
+  let current = { ...rawBlocks[0] }
+
+  for (const next of rawBlocks.slice(1)) {
+    const shouldJoin = syntaxCrossesGap(nodes, current, next)
+      || isDeclarationPreamble(nodes, current)
+
+    if (shouldJoin) {
+      current.lastIndex = next.lastIndex
+      current.to = next.to
+    } else {
+      blocks.push(current)
+      current = { ...next }
+    }
+  }
+  blocks.push(current)
+  return blocks
+}
+
+export const findLiveCodeBlock = (code, cursor = 0) => {
+  const source = String(code ?? '')
+  const lines = readLines(source)
+  const currentIndex = lineIndexAt(lines, clampPosition(cursor, source.length))
+  const block = readLiveCodeBlocks(source, lines).find(({ firstIndex, lastIndex }) =>
+    currentIndex >= firstIndex && currentIndex <= lastIndex
+  )
+  if (!block) return null
+
+  const { from, to } = block
+  return {
+    code: source.slice(from, to),
+    range: { from, to }
+  }
+}
+
+export const splitLiveExecutionBlocks = (code) => {
+  const source = String(code ?? '')
+  const lines = readLines(source)
+  return readLiveCodeBlocks(source, lines)
+    .map(({ from, to }) => source.slice(from, to).trim())
+    .filter(Boolean)
 }

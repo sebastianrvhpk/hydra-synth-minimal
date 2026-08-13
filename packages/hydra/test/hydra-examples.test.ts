@@ -6,6 +6,7 @@ import {
   hydraExamplesSource,
   materializeHydraExample
 } from '../hydra-examples.js'
+import { splitLiveExecutionBlocks } from '../livecode-blocks.js'
 
 describe('canonical Hydra examples', () => {
   it('vendors the complete canonical collection at a traceable commit', () => {
@@ -48,10 +49,13 @@ describe('canonical Hydra examples', () => {
     expect(ids).toEqual(['example_0', 'example_3', 'example_0', 'example_3'])
   })
 
-  it('contains syntactically valid JavaScript sketches', () => {
+  it('contains syntactically valid JavaScript sketches and execution blocks', () => {
     for (const example of hydraExamples) {
       const sketch = materializeHydraExample(example)
       expect(() => Function(sketch?.code ?? '')).not.toThrow()
+      for (const block of splitLiveExecutionBlocks(sketch?.code ?? '')) {
+        expect(() => Function(block)).not.toThrow()
+      }
     }
   })
 })
