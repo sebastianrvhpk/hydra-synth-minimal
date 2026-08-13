@@ -841,6 +841,10 @@
       place-items: center;
     }
 
+    .live-tool[hidden] {
+      display: none;
+    }
+
     .live-tool:hover {
       background: rgba(117, 247, 255, 0.2);
     }
@@ -917,7 +921,7 @@
     #live-editor .cm-content {
       caret-color: var(--magenta);
       padding: 0;
-      max-width: min(900px, calc(100vw - 380px));
+      max-width: none;
     }
 
     #live-panel[data-layout="floating"] #live-editor .cm-content {
@@ -1452,7 +1456,8 @@
     import {
       createDatastreamVideoPlaylist,
       createDatastreamControlBank,
-      datastreamPatch
+      datastreamPatch,
+      isDatastreamRoute
     } from './datastream-system.js'
     import { basicSetup, EditorView } from 'codemirror'
     import { EditorSelection, EditorState, Prec, StateEffect, StateField } from '@codemirror/state'
@@ -1471,8 +1476,7 @@
       }
     }
 
-    const normalizeRoutePath = (pathname = window.location.pathname) => pathname.replace(/\/+$/u, '') || '/'
-    const datastreamMode = /\/hydra\/DATASTREAM$/iu.test(normalizeRoutePath()) || new URLSearchParams(location.search).has('DATASTREAM')
+    const datastreamMode = isDatastreamRoute(window.location.pathname)
     const backendQuery = new URLSearchParams(location.search).get('backend')
     const requestedBackend = backendQuery === 'webgpu' || backendQuery === 'webgl2' ? backendQuery : 'auto'
     const runtime = createHydraBrowserRuntime({ autoLoop: true, backend: requestedBackend })

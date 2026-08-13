@@ -3,7 +3,8 @@ import {
   createDatastreamControlBank,
   createDatastreamVideoPlaylist,
   datastreamControlDefinitions,
-  datastreamPatch
+  datastreamPatch,
+  isDatastreamRoute
 } from '../datastream-system.js'
 
 const video = (name: string, lastModified = 1) => ({
@@ -11,6 +12,15 @@ const video = (name: string, lastModified = 1) => ({
   type: 'video/mp4',
   size: 10,
   lastModified
+})
+
+describe('DATASTREAM route', () => {
+  it('activates only on the dedicated path', () => {
+    expect(isDatastreamRoute('/hydra/DATASTREAM')).toBe(true)
+    expect(isDatastreamRoute('/hydra/DATASTREAM/')).toBe(true)
+    expect(isDatastreamRoute('/hydra/')).toBe(false)
+    expect(isDatastreamRoute('/hydra/DATASTREAM/extra')).toBe(false)
+  })
 })
 
 describe('DATASTREAM controls', () => {

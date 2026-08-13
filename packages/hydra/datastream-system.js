@@ -11,6 +11,11 @@ const formatNumber = (value) => {
   return value.toFixed(3).replace(/0+$/u, '').replace(/\.$/u, '')
 }
 
+export const isDatastreamRoute = (pathname = '') => {
+  const normalizedPath = String(pathname).replace(/\/+$/u, '') || '/'
+  return normalizedPath === '/hydra/DATASTREAM'
+}
+
 export const datastreamControlDefinitions = Object.freeze([
   {
     id: 'cc19',
