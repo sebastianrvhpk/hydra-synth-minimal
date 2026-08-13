@@ -45,6 +45,7 @@ describe('live editor shell', () => {
       'live-clear',
       'live-datastream-toggle',
       'live-record-toggle',
+      'live-reference-toggle',
       'live-options-toggle',
       'live-info-toggle',
       'live-fit'
@@ -59,11 +60,22 @@ describe('live editor shell', () => {
 
     expect(indexHtml).toContain('id="live-run-all" class="live-tool" data-tone="run" data-tooltip="Run all · Shift Ctrl/⌘ Enter"')
     expect(indexHtml).toContain('id="live-random" class="live-tool" data-tone="chance" data-tooltip="Load random sketch"')
+    expect(indexHtml).toContain('id="live-reference-toggle" class="live-tool" data-tooltip="Hydra functions"')
     expect(indexHtml).toMatch(/#live-tool-hint\[data-visible="true"\]\s*\{[^}]*opacity:\s*1;[^}]*visibility:\s*visible;/u)
     expect(indexHtml).toContain("liveTools.addEventListener('pointerover'")
     expect(indexHtml).toContain("liveTools.addEventListener('focusin'")
     expect(indexHtml).toContain("icon: active ? '■' : '●'")
     expect(indexHtml).toContain("icon: isFullscreen ? '▣' : '⛶'")
+  })
+
+  it('exposes a searchable reference generated from the autocomplete catalogue', () => {
+    expect(indexHtml).toContain('id="function-reference-panel"')
+    expect(indexHtml).toContain('id="function-reference-query" type="search"')
+    expect(indexHtml).toContain('id="function-reference-list"')
+    expect(indexHtml).toContain('createHydraReferenceGroups(hydraCompletionCatalog)')
+    expect(indexHtml).toContain("functionReferenceQuery.addEventListener('input'")
+    expect(indexHtml).toContain('insertEditorText(functionReferenceInsertion(item))')
+    expect(indexHtml).toContain("event.key === 'Escape' && functionReferencePanel")
   })
 
   it('loads the canonical Hydra example collection instead of generated recipes', () => {

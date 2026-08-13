@@ -116,6 +116,131 @@
       overflow: auto;
     }
 
+    #function-reference-panel {
+      top: 54px;
+      right: 10px;
+      width: min(680px, calc(100vw - 20px));
+      max-height: calc(100vh - 64px);
+      overflow: auto;
+    }
+
+    .function-reference-search {
+      position: sticky;
+      top: -12px;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      margin: 0 -2px 10px;
+      padding: 12px 2px 8px;
+      background: rgba(0, 0, 0, 0.9);
+    }
+
+    #function-reference-query {
+      min-width: 0;
+      border: 1px solid rgba(117, 247, 255, 0.34);
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--ink);
+      padding: 8px 9px;
+      font: inherit;
+      font-size: 12px;
+    }
+
+    #function-reference-query:focus-visible {
+      outline: 2px solid rgba(117, 247, 255, 0.78);
+      outline-offset: 1px;
+    }
+
+    .function-reference-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .function-reference-group {
+      min-width: 0;
+      border: 1px solid rgba(238, 244, 239, 0.12);
+      border-radius: 5px;
+      background: rgba(255, 255, 255, 0.035);
+      overflow: hidden;
+    }
+
+    .function-reference-group-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 7px 8px;
+      border-bottom: 1px solid rgba(238, 244, 239, 0.1);
+      color: var(--cyan);
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .function-reference-items {
+      display: grid;
+    }
+
+    .function-reference-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 4px 10px;
+      width: 100%;
+      min-width: 0;
+      padding: 8px;
+      border: 0;
+      border-bottom: 1px solid rgba(238, 244, 239, 0.08);
+      background: transparent;
+      color: var(--ink);
+      cursor: pointer;
+      font: inherit;
+      text-align: left;
+    }
+
+    .function-reference-item:last-child {
+      border-bottom: 0;
+    }
+
+    .function-reference-item:hover,
+    .function-reference-item:focus-visible {
+      background: rgba(117, 247, 255, 0.1);
+      outline: none;
+    }
+
+    .function-reference-signature {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--ink);
+      font-size: 11px;
+      font-weight: 700;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .function-reference-context {
+      color: rgba(238, 244, 239, 0.48);
+      font-size: 9px;
+      white-space: nowrap;
+    }
+
+    .function-reference-description {
+      grid-column: 1 / -1;
+      color: var(--muted);
+      font-size: 9.5px;
+      line-height: 1.35;
+    }
+
+    .function-reference-empty {
+      grid-column: 1 / -1;
+      padding: 20px;
+      border: 1px dashed rgba(238, 244, 239, 0.18);
+      border-radius: 5px;
+      color: var(--muted);
+      text-align: center;
+    }
+
     #datastream-panel {
       top: 54px;
       left: 10px;
@@ -1409,7 +1534,8 @@
       }
 
       #record-popover,
-      #options-panel {
+      #options-panel,
+      #function-reference-panel {
         top: 88px;
         right: 8px;
         left: 8px;
@@ -1450,6 +1576,10 @@
       #live-panel[data-layout="floating"] #live-editor .cm-scroller {
         padding: 0;
       }
+
+      .function-reference-list {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
@@ -1466,6 +1596,7 @@
         <button id="live-clear" class="live-tool" data-tone="clear" data-tooltip="Clear editor" type="button" aria-label="Clear the editor">⌫</button>
         <button id="live-datastream-toggle" class="live-tool" data-tooltip="DATASTREAM controls" type="button" aria-label="DATASTREAM controls" aria-expanded="false" hidden>≋</button>
         <button id="live-record-toggle" class="live-tool" data-tone="record" data-tooltip="Record MP4" type="button" aria-label="Record MP4" aria-expanded="false">●</button>
+        <button id="live-reference-toggle" class="live-tool" data-tooltip="Hydra functions" type="button" aria-label="Browse Hydra functions" aria-expanded="false">ƒ</button>
         <button id="live-options-toggle" class="live-tool" data-tooltip="Options" type="button" aria-label="Options" aria-expanded="false">⚙</button>
         <button id="live-info-toggle" class="live-tool" data-tooltip="Help and shortcuts" type="button" aria-label="Help and shortcuts">ⓘ</button>
         <button id="live-fit" class="live-tool" data-tooltip="Fullscreen code layer" type="button" aria-label="Fullscreen code layer">⛶</button>
@@ -1488,6 +1619,19 @@
       <div class="live-resize-handle" data-edge="sw" aria-hidden="true"></div>
       <div class="live-resize-handle" data-edge="nw" aria-hidden="true"></div>
     </div>
+  </div>
+
+  <div id="function-reference-panel" class="control-panel" role="dialog" aria-labelledby="function-reference-title" hidden>
+    <div class="panel-header">
+      <div id="function-reference-title" class="panel-title">hydra functions</div>
+      <button id="function-reference-close" class="panel-close" type="button" aria-label="Close Hydra function reference">×</button>
+    </div>
+    <div class="function-reference-search">
+      <input id="function-reference-query" type="search" placeholder="search name, parameter or description" autocomplete="off" aria-label="Search Hydra functions" />
+      <span id="function-reference-count" class="panel-note"></span>
+    </div>
+    <div id="function-reference-list" class="function-reference-list"></div>
+    <p class="panel-note">Click any entry to insert it. The catalogue is generated from the same operations used by autocomplete.</p>
   </div>
 
   <div id="datastream-panel" class="control-panel" hidden>
@@ -1692,7 +1836,7 @@
     import { createGrammarUtilities } from './grammar-utilities.js'
     import { findLiveCodeBlock, splitLiveExecutionBlocks } from './livecode-blocks.js'
     import { findCallScope } from './call-scopes.js'
-    import { createHydraCompletionCatalog, createHydraCompletionSource } from './hydra-autocomplete.js'
+    import { createHydraCompletionCatalog, createHydraCompletionSource, createHydraReferenceGroups } from './hydra-autocomplete.js'
     import { createHydraExamplePicker } from './hydra-examples.js'
     import { findParameterScopes } from './parameter-scopes.js'
     import { createMediaBufferManager, createMediaLibrary, isSupportedMediaFile } from './media-library.js'
@@ -2015,6 +2159,7 @@
     const liveClearButton = document.getElementById('live-clear')
     const liveDatastreamToggle = document.getElementById('live-datastream-toggle')
     const liveRecordToggle = document.getElementById('live-record-toggle')
+    const liveReferenceToggle = document.getElementById('live-reference-toggle')
     const liveOptionsToggle = document.getElementById('live-options-toggle')
     const liveInfoToggle = document.getElementById('live-info-toggle')
     const liveFitButton = document.getElementById('live-fit')
@@ -2038,6 +2183,11 @@
     if (liveDatastreamToggle) liveDatastreamToggle.hidden = !datastreamMode
     const recordPopover = document.getElementById('record-popover')
     const recordCloseButton = document.getElementById('record-close')
+    const functionReferencePanel = document.getElementById('function-reference-panel')
+    const functionReferenceClose = document.getElementById('function-reference-close')
+    const functionReferenceQuery = document.getElementById('function-reference-query')
+    const functionReferenceCount = document.getElementById('function-reference-count')
+    const functionReferenceList = document.getElementById('function-reference-list')
     const optionsPanel = document.getElementById('options-panel')
     const optionsCloseButton = document.getElementById('options-close')
     const optionsOpenRecordButton = document.getElementById('options-open-record')
@@ -2209,6 +2359,7 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
       grammarUtilityInfo: grammarUtilitySource
     })
     const hydraCompletionSource = createHydraCompletionSource(hydraCompletionCatalog)
+    const hydraReferenceGroups = createHydraReferenceGroups(hydraCompletionCatalog)
 
     const flashEffect = StateEffect.define()
     const clearFlashEffect = StateEffect.define()
@@ -3523,6 +3674,77 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
       return { from, to: from + insert.length }
     }
 
+    const functionReferenceInsertion = (item) => {
+      const call = item.type === 'function' || item.type === 'method' ? `${item.label}()` : item.label
+      return item.catalogKey === 'globals' ? call : `.${call}`
+    }
+
+    const renderFunctionReference = (query = '') => {
+      if (!functionReferenceList) return 0
+      const normalizedQuery = String(query).trim().toLocaleLowerCase()
+      functionReferenceList.replaceChildren()
+      let visibleCount = 0
+
+      for (const group of hydraReferenceGroups) {
+        const visibleItems = group.items.filter((item) => {
+          const searchable = [item.label, item.detail, item.info, item.context, group.name]
+            .filter(Boolean)
+            .join(' ')
+            .toLocaleLowerCase()
+          return !normalizedQuery || searchable.includes(normalizedQuery)
+        })
+        if (visibleItems.length === 0) continue
+        visibleCount += visibleItems.length
+
+        const section = document.createElement('section')
+        section.className = 'function-reference-group'
+        const heading = document.createElement('div')
+        heading.className = 'function-reference-group-title'
+        const name = document.createElement('span')
+        name.textContent = group.name
+        const count = document.createElement('span')
+        count.textContent = String(visibleItems.length)
+        heading.append(name, count)
+        section.appendChild(heading)
+
+        const items = document.createElement('div')
+        items.className = 'function-reference-items'
+        for (const item of visibleItems) {
+          const button = document.createElement('button')
+          button.type = 'button'
+          button.className = 'function-reference-item'
+          button.title = `Insert ${functionReferenceInsertion(item)}`
+
+          const signature = document.createElement('span')
+          signature.className = 'function-reference-signature'
+          signature.textContent = `${item.label}${item.detail ?? ''}`
+          const context = document.createElement('span')
+          context.className = 'function-reference-context'
+          context.textContent = item.context
+          const description = document.createElement('span')
+          description.className = 'function-reference-description'
+          description.textContent = item.info ?? ''
+          button.append(signature, context, description)
+          button.addEventListener('click', () => {
+            insertEditorText(functionReferenceInsertion(item))
+            setLiveStatus(`Inserted ${item.label}.`, 'ok')
+          })
+          items.appendChild(button)
+        }
+        section.appendChild(items)
+        functionReferenceList.appendChild(section)
+      }
+
+      if (visibleCount === 0) {
+        const empty = document.createElement('div')
+        empty.className = 'function-reference-empty'
+        empty.textContent = `No Hydra functions match “${query}”.`
+        functionReferenceList.appendChild(empty)
+      }
+      if (functionReferenceCount) functionReferenceCount.textContent = `${visibleCount} functions`
+      return visibleCount
+    }
+
     const renderUtilityReference = () => {
       if (!utilityReference) return
       utilityReference.replaceChildren()
@@ -3788,6 +4010,23 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
       setDisclosure(liveDatastreamToggle, false)
     }
 
+    const toggleFunctionReference = (forceVisible) => {
+      if (!functionReferencePanel) return false
+      const shouldShow = typeof forceVisible === 'boolean' ? forceVisible : functionReferencePanel.hidden
+      functionReferencePanel.hidden = !shouldShow
+      setDisclosure(liveReferenceToggle, shouldShow)
+      if (shouldShow) {
+        closeDatastreamPanel()
+        if (recordPopover) recordPopover.hidden = true
+        if (optionsPanel) optionsPanel.hidden = true
+        setDisclosure(liveRecordToggle, false)
+        setDisclosure(liveOptionsToggle, false)
+        renderFunctionReference(functionReferenceQuery?.value)
+        window.requestAnimationFrame(() => functionReferenceQuery?.focus())
+      }
+      return shouldShow
+    }
+
     const toggleRecordPopover = (forceVisible) => {
       if (!recordPopover) return false
       const shouldShow = typeof forceVisible === 'boolean' ? forceVisible : recordPopover.hidden
@@ -3795,7 +4034,9 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
       setDisclosure(liveRecordToggle, shouldShow)
       if (shouldShow) {
         closeDatastreamPanel()
+        if (functionReferencePanel) functionReferencePanel.hidden = true
         if (optionsPanel) optionsPanel.hidden = true
+        setDisclosure(liveReferenceToggle, false)
         setDisclosure(liveOptionsToggle, false)
       }
       recordInterfaceEvent('action', {
@@ -3811,7 +4052,9 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
       setDisclosure(liveOptionsToggle, shouldShow)
       if (shouldShow) {
         closeDatastreamPanel()
+        if (functionReferencePanel) functionReferencePanel.hidden = true
         if (recordPopover) recordPopover.hidden = true
+        setDisclosure(liveReferenceToggle, false)
         setDisclosure(liveRecordToggle, false)
       }
       recordInterfaceEvent('action', {
@@ -3828,8 +4071,10 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
       if (shouldShow) {
         if (recordPopover) recordPopover.hidden = true
         if (optionsPanel) optionsPanel.hidden = true
+        if (functionReferencePanel) functionReferencePanel.hidden = true
         setDisclosure(liveRecordToggle, false)
         setDisclosure(liveOptionsToggle, false)
+        setDisclosure(liveReferenceToggle, false)
       }
       recordInterfaceEvent('action', {
         action: shouldShow ? 'open-datastream-panel' : 'close-datastream-panel'
@@ -6834,6 +7079,10 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
       })
     }
 
+    if (liveReferenceToggle) {
+      liveReferenceToggle.addEventListener('click', () => toggleFunctionReference())
+    }
+
     if (liveOptionsToggle) {
       liveOptionsToggle.addEventListener('click', () => toggleOptionsPanel())
     }
@@ -6855,6 +7104,14 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
 
     if (optionsCloseButton) {
       optionsCloseButton.addEventListener('click', () => toggleOptionsPanel(false))
+    }
+
+    if (functionReferenceClose) {
+      functionReferenceClose.addEventListener('click', () => toggleFunctionReference(false))
+    }
+
+    if (functionReferenceQuery) {
+      functionReferenceQuery.addEventListener('input', () => renderFunctionReference(functionReferenceQuery.value))
     }
 
     if (datastreamCloseButton) {
@@ -7115,6 +7372,12 @@ Each call gets a distinct spatial seed; explicit seeds reproduce it.`]
     window.addEventListener('hashchange', () => loadSketchFromUrl())
 
     document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && functionReferencePanel && !functionReferencePanel.hidden) {
+        event.preventDefault()
+        toggleFunctionReference(false)
+        liveReferenceToggle?.focus()
+        return
+      }
       const isMod = event.metaKey || event.ctrlKey
       if (!isMod || !event.shiftKey) return
       const key = event.key.toLowerCase()

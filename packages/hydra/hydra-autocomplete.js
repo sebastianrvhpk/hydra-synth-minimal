@@ -162,7 +162,9 @@ const createTransformCompletion = (descriptor) => ({
   detail: transformSignature(descriptor),
   info: `Hydra ${transformTypeLabels[descriptor.type] ?? 'visual operation'}.`,
   type: descriptor.type === 'src' ? 'function' : 'method',
-  section: completionSections[descriptor.type] ?? completionSections.color
+  section: descriptor.type === 'src'
+    ? completionSections.sources
+    : completionSections[descriptor.type] ?? completionSections.color
 })
 
 const grammarCompletion = (name, info) => ({
@@ -365,6 +367,39 @@ export const createHydraCompletionCatalog = ({
     sourceNames,
     textureUtilityNames
   }
+}
+
+const referenceContexts = [
+  ['globals', 'global'],
+  ['graph', 'texture chain'],
+  ['sequence', 'sequence'],
+  ['sourceMedia', 'media source'],
+  ['audio', 'audio'],
+  ['mouse', 'pointer']
+]
+
+export const createHydraReferenceGroups = (catalog) => {
+  const groups = new Map()
+
+  for (const [catalogKey, context] of referenceContexts) {
+    for (const option of catalog[catalogKey] ?? []) {
+      const sectionName = option.section?.name ?? context
+      const group = groups.get(sectionName) ?? {
+        name: sectionName,
+        rank: option.section?.rank ?? 100,
+        items: []
+      }
+      group.items.push({ ...option, context, catalogKey })
+      groups.set(sectionName, group)
+    }
+  }
+
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      items: group.items.sort((left, right) => left.label.localeCompare(right.label))
+    }))
+    .sort((left, right) => left.rank - right.rank || left.name.localeCompare(right.name))
 }
 
 export const createHydraCompletionSource = (catalog) => (context) => {

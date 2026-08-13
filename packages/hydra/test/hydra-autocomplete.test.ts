@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { getHydraTransformDescriptors } from '../../synth/src/core/transforms/default-transforms.ts'
 import {
   createHydraCompletionCatalog,
+  createHydraReferenceGroups,
   createHydraCompletionSource
 } from '../hydra-autocomplete.js'
 
@@ -124,6 +125,32 @@ describe('Hydra autocomplete', () => {
     expect(labels(complete('s0.init'))).toEqual(expect.arrayContaining(['initVideo', 'initImage', 'initCam', 'initScreen', 'clear']))
     expect(labels(complete('a.set'))).toEqual(expect.arrayContaining(['setBins', 'setSmooth', 'setCutoff', 'setScale']))
     expect(labels(complete('mouse.sp'))).toEqual(expect.arrayContaining(['speed', 'speedSmooth']))
+  })
+
+  it('builds the visible reference from every autocomplete context', () => {
+    const referenceGroups = createHydraReferenceGroups(catalog)
+    const referenceItems = referenceGroups.flatMap(({ items }) => items)
+    const referenceKeys = new Set(referenceItems.map(({ catalogKey, label }) => `${catalogKey}:${label}`))
+
+    for (const catalogKey of ['globals', 'graph', 'sequence', 'sourceMedia', 'audio', 'mouse'] as const) {
+      for (const { label } of catalog[catalogKey]) {
+        expect(referenceKeys.has(`${catalogKey}:${label}`)).toBe(true)
+      }
+    }
+
+    expect(referenceGroups.map(({ name }) => name)).toEqual(expect.arrayContaining([
+      'texture sources',
+      'geometry',
+      'color',
+      'mixing',
+      'modulation',
+      'fragment effects',
+      'output',
+      'sequences',
+      'media source',
+      'audio',
+      'pointer signal'
+    ]))
   })
 
   it('does not leak Hydra completions into arbitrary JavaScript members, comments, or strings', () => {
