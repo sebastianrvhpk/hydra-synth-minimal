@@ -127,6 +127,54 @@ export interface HydraOutputAdapter {
   render(passes: HydraCompiledPass[]): void
 }
 
+export interface HydraPortableClock {
+  width: number
+  height: number
+  frameCount: number
+  fps: number
+  startTime: number
+  bpm: number
+  seed: number
+}
+
+export type HydraPortableTextureSource =
+  | { kind: 'input', index: number }
+  | { kind: 'previous', output: number, offset: number }
+  | { kind: 'output', output: number }
+  | { kind: 'internal-pass', index: number }
+
+export interface HydraPortableTextureBinding {
+  variableName: string
+  source: HydraPortableTextureSource
+}
+
+export interface HydraPortablePass {
+  signature: string
+  glsl: string
+  resolutionScale: number
+  uniformFrames: number[][]
+  textures: HydraPortableTextureBinding[]
+}
+
+export interface HydraPortableOutput {
+  index: number
+  passes: HydraPortablePass[]
+}
+
+export interface HydraPortableRenderPlan {
+  schema: 'hydra.portable-render-plan/1'
+  compiler: {
+    name: 'hydra-synth'
+    version: string
+  }
+  source: {
+    code: string
+    hash: string
+  }
+  clock: HydraPortableClock
+  outputs: HydraPortableOutput[]
+}
+
 export interface HydraTextureProvider {
   getTexture(): unknown
 }

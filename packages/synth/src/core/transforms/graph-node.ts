@@ -22,7 +22,7 @@ export class HydraGraphNode {
     output.render(this.compile())
   }
 
-  private compile (): HydraCompiledPass[] {
+  compile (): HydraCompiledPass[] {
     return splitPasses(this.transforms).map((pass) => compileTypeGPUPass(pass))
   }
 }

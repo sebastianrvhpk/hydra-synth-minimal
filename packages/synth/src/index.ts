@@ -11,15 +11,38 @@ import type { HydraRendererBackend, HydraRendererPreference } from './runtime/re
 import { HydraBrowserRuntime, type HydraBrowserRuntimeOptions } from './runtime/runtime.js'
 import { getHydraTransformDescriptors } from './core/transforms/default-transforms.js'
 import type { HydraTransformDescriptor } from './core/types.js'
+import {
+  compileTrustedHydraProgram,
+  HYDRA_PORTABLE_RENDER_PLAN_SCHEMA,
+  HYDRA_SYNTH_COMPILER_VERSION,
+  type CompileTrustedHydraProgramOptions
+} from './portable-plan.js'
 
-export { captureHydraFrameSequence, captureHydraVideo, getHydraTransformDescriptors }
+export {
+  captureHydraFrameSequence,
+  captureHydraVideo,
+  compileTrustedHydraProgram,
+  getHydraTransformDescriptors,
+  HYDRA_PORTABLE_RENDER_PLAN_SCHEMA,
+  HYDRA_SYNTH_COMPILER_VERSION
+}
 
 export type {
   CaptureFrameSequenceResult,
   CaptureHydraFrameSequenceOptions,
   CaptureHydraVideoOptions,
+  CompileTrustedHydraProgramOptions,
   HydraTransformDescriptor
 }
+
+export type {
+  HydraPortableClock,
+  HydraPortableOutput,
+  HydraPortablePass,
+  HydraPortableRenderPlan,
+  HydraPortableTextureBinding,
+  HydraPortableTextureSource
+} from './core/types.js'
 
 export interface CreateHydraBrowserRuntimeOptions extends Omit<HydraBrowserRuntimeOptions, 'host' | 'renderer'> {
   canvas?: HTMLCanvasElement
