@@ -161,11 +161,16 @@ const markerFor = (value: unknown): PortableTextureMarker | null => {
 const textureSourceFor = (
   pass: HydraCompiledPass,
   bindingIndex: number,
-  outputIndex: number
+  outputIndex: number,
+  passIndex: number
 ): HydraPortableTextureSource => {
   const binding = pass.textures[bindingIndex]
   if (!binding) throw new Error(`Missing texture binding ${bindingIndex}.`)
-  if (binding.isPrev) return { kind: 'previous', output: outputIndex, offset: 1 }
+  if (binding.isPrev) {
+    return passIndex > 0
+      ? { kind: 'internal-pass', index: passIndex - 1 }
+      : { kind: 'previous', output: outputIndex, offset: 1 }
+  }
 
   const source = binding.sourceRef
   if (source && typeof source === 'object' && 'internalPassIndex' in source) {
@@ -248,6 +253,7 @@ const normalizeClock = (options: CompileTrustedHydraProgramOptions): HydraPortab
 const portablePass = (
   pass: HydraCompiledPass,
   outputIndex: number,
+  passIndex: number,
   clock: HydraPortableClock,
   scope: Record<string, unknown>,
   naga: WebNagaModule
@@ -272,7 +278,7 @@ const portablePass = (
 
   const textures: HydraPortableTextureBinding[] = pass.textures.map((binding, index) => ({
     variableName: binding.variableName,
-    source: textureSourceFor(pass, index, outputIndex)
+    source: textureSourceFor(pass, index, outputIndex, passIndex)
   }))
 
   return {
@@ -329,7 +335,7 @@ export const compileTrustedHydraProgram = async (
     clock,
     outputs: activeOutputs.map((output) => ({
       index: output.id,
-      passes: output.passes.map((pass) => portablePass(pass, output.id, clock, scope, naga))
+      passes: output.passes.map((pass, passIndex) => portablePass(pass, output.id, passIndex, clock, scope, naga))
     }))
   }
 }
