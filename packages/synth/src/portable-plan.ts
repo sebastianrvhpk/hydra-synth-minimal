@@ -89,6 +89,65 @@ const hashString = (value: string): string => {
   return (hash >>> 0).toString(16).padStart(8, '0')
 }
 
+const createSeededRandom = (seed: number): (() => number) => {
+  let state = seed >>> 0
+  return () => {
+    state = (state + 0x6D2B79F5) >>> 0
+    let value = state
+    value = Math.imul(value ^ (value >>> 15), value | 1)
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61)
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+const installPortableHelpers = (
+  scope: Record<string, unknown>,
+  registry: HydraTransformRegistry,
+  clock: HydraPortableClock
+): void => {
+  type PortableHelperGraph = {
+    scale: (...args: unknown[]) => PortableHelperGraph
+    modulate: (...args: unknown[]) => PortableHelperGraph
+  }
+
+  const solid = registry.generators.solid
+  const noise = registry.generators.noise
+  const noiseLoop = registry.generators.noiseLoop
+  if (!solid || !noise || !noiseLoop) {
+    throw new Error('Portable Hydra helpers require solid, noise, and noiseLoop transforms.')
+  }
+
+  const aspectX = Math.min(1, clock.height / clock.width)
+  const aspectY = Math.min(1, clock.width / clock.height)
+  const random = createSeededRandom(clock.seed)
+  const rn = (max = 1): number => random() * finite(max, 1)
+  const btw = (min = 0, max = 1): number => {
+    const lower = finite(min, 0)
+    const upper = finite(max, 1)
+    return lower + random() * (upper - lower)
+  }
+  const seedTexture = (texture: unknown, seedX: number, seedY: number): unknown => {
+    const graph = texture as PortableHelperGraph
+    return graph.scale(1, aspectX, aspectY).modulate(solid(seedX, seedY), 1)
+  }
+  const ns = (scale = 10, speed = 0.1, seedX = rn(), seedY = rn()): unknown => (
+    seedTexture(noise(scale, speed), seedX, seedY)
+  )
+  const nsloop = (scale = 10, speed = 0.1, radius = 1, seedX = rn(), seedY = rn()): unknown => (
+    seedTexture(noiseLoop(scale, speed, radius), seedX, seedY)
+  )
+
+  Object.assign(scope, {
+    A: aspectX,
+    B: aspectY,
+    rn,
+    btw,
+    ns,
+    nsloop,
+    render: () => undefined
+  })
+}
+
 const markerFor = (value: unknown): PortableTextureMarker | null => {
   if (!value || typeof value !== 'object' || !('__hydraPortableTexture' in value)) return null
   const marker = (value as { __hydraPortableTexture?: unknown }).__hydraPortableTexture
@@ -250,6 +309,7 @@ export const compileTrustedHydraProgram = async (
   registry.attachToBindings(scope)
   outputs.forEach((output, index) => { scope[`o${index}`] = output })
   inputs.forEach((input, index) => { scope[`s${index}`] = input })
+  installPortableHelpers(scope, registry, clock)
 
   const runCode = options.runCode ?? defaultTrustedRunner
   runCode(code, scope)

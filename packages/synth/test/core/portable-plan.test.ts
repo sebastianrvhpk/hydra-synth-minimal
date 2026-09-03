@@ -46,6 +46,28 @@ describe('portable Hydra render plans', () => {
     expect(sources.some((source) => source.kind === 'internal-pass')).toBe(true)
   })
 
+  it('provides deterministic portable grammar helpers', async () => {
+    const first = await compileTrustedHydraProgram({
+      code: 'ns(3, 0.2, rn(), btw(-1, 1)).out(); render(o0)',
+      width: 640,
+      height: 360,
+      frameCount: 2,
+      seed: 42,
+      naga
+    })
+    const second = await compileTrustedHydraProgram({
+      code: 'ns(3, 0.2, rn(), btw(-1, 1)).out(); render(o0)',
+      width: 640,
+      height: 360,
+      frameCount: 2,
+      seed: 42,
+      naga
+    })
+
+    expect(first.outputs[0]?.passes[0]?.glsl).toBe(second.outputs[0]?.passes[0]?.glsl)
+    expect(first.outputs[0]?.passes[0]?.signature).toBe(second.outputs[0]?.passes[0]?.signature)
+  })
+
   it('rejects patches that do not render an output', async () => {
     await expect(compileTrustedHydraProgram({ code: 'osc(10)', naga })).rejects.toThrow(/did not render an output/u)
   })
