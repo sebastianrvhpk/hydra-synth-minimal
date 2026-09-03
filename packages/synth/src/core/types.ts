@@ -150,6 +150,7 @@ export interface HydraPortableTextureBinding {
 
 export interface HydraPortablePass {
   signature: string
+  wgsl: string
   glsl: string
   resolutionScale: number
   uniformFrames: number[][]
@@ -162,17 +163,25 @@ export interface HydraPortableOutput {
 }
 
 export interface HydraPortableRenderPlan {
-  schema: 'hydra.portable-render-plan/1'
+  schema: 'hydra.portable-render-plan/2'
   compiler: {
     name: 'hydra-synth'
     version: string
+    catalogHash: string
+    targets: ['wgsl', 'glsl-es-300']
   }
   source: {
     code: string
-    hash: string
+    sha256: string
   }
   clock: HydraPortableClock
+  selectedOutput: number
   outputs: HydraPortableOutput[]
+  integrity: {
+    algorithm: 'sha256'
+    canonicalization: 'hydra.typed-tree/1'
+    hash: string
+  }
 }
 
 export interface HydraTextureProvider {

@@ -71,3 +71,30 @@ import { createLivecodingSession } from 'hydra-synth/livecoding'
 
 The embedding app supplies both the execution function and any helper values.
 The session does not attach to an engine or add runtime extension hooks.
+
+## Portable render artifact
+
+```ts
+import { compileTrustedHydraProgram } from 'hydra-synth'
+
+const plan = await compileTrustedHydraProgram({
+  code: 'osc(12, 0.08, 0).out(o0); render(o0)',
+  width: 512,
+  height: 512,
+  frameCount: 48,
+  fps: 24,
+  startTime: 0,
+  bpm: 60,
+  seed: 7
+})
+```
+
+Compilation is an explicit trusted-code operation. The v2 artifact contains no
+callbacks or executable JavaScript: it stores canonical WGSL, translated GLSL
+ES 3.00, sampled uniform tracks, texture dependencies, output selection, clock,
+compiler/catalog provenance, and a complete typed-tree SHA-256.
+
+`render(oN)` selects the single graph output a host adapter should return. Four
+sources and four internal outputs, multipass, and feedback/history remain
+available inside the patch. A host can therefore execute the artifact without
+reimplementing Hydra transforms or evaluating its original source.

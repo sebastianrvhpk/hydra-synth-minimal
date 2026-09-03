@@ -1,6 +1,6 @@
 {
   "name": "hydra-synth",
-  "version": "2.0.0-alpha.0",
+  "version": "2.0.0-alpha.1",
   "description": "TypeGPU-backed Hydra video synth runtime, capture, and livecoding exports",
   "type": "module",
   "main": "./dist/index.js",

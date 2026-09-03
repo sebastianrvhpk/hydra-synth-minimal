@@ -1,7 +1,11 @@
 import { readFileSync } from 'node:fs'
 import * as naga from 'web-naga'
 import { beforeAll, describe, expect, it } from 'vitest'
-import { compileTrustedHydraProgram } from '../../src/portable-plan.ts'
+import {
+  compileTrustedHydraProgram,
+  HYDRA_SYNTH_COMPILER_VERSION
+} from '../../src/portable-plan.ts'
+import { hashPortableValue } from '../../src/portable-integrity.ts'
 
 beforeAll(() => {
   const wasm = readFileSync(new URL('../../node_modules/web-naga/web_naga_bg.wasm', import.meta.url))
@@ -21,11 +25,19 @@ describe('portable Hydra render plans', () => {
       naga
     })
 
-    expect(plan.schema).toBe('hydra.portable-render-plan/1')
+    expect(plan.schema).toBe('hydra.portable-render-plan/2')
     expect(plan.clock).toMatchObject({ width: 320, height: 180, frameCount: 3, fps: 2 })
+    expect(plan.selectedOutput).toBe(0)
     expect(plan.outputs).toHaveLength(1)
+    expect(plan.outputs[0]?.passes[0]?.wgsl).toContain('@fragment')
     expect(plan.outputs[0]?.passes[0]?.glsl).toContain('#version 300 es')
     expect(plan.outputs[0]?.passes[0]?.uniformFrames.map((frame) => frame[0])).toEqual([5, 5.5, 6])
+    const { integrity, ...payload } = plan
+    expect(integrity).toMatchObject({ algorithm: 'sha256', canonicalization: 'hydra.typed-tree/1' })
+    expect(integrity.hash).toBe(await hashPortableValue(payload))
+    expect(plan.source.sha256).toMatch(/^[0-9a-f]{64}$/u)
+    expect(plan.compiler.catalogHash).toMatch(/^[0-9a-f]{64}$/u)
+    expect(plan.compiler.catalogHash).toBe('421048e5d55bbf3af12609ae4abf498592337b6e747ff1d1fcfe0bf10587ae02')
     expect(() => JSON.stringify(plan)).not.toThrow()
   })
 
@@ -76,11 +88,33 @@ describe('portable Hydra render plans', () => {
       naga
     })
 
-    expect(first.outputs[0]?.passes[0]?.glsl).toBe(second.outputs[0]?.passes[0]?.glsl)
-    expect(first.outputs[0]?.passes[0]?.signature).toBe(second.outputs[0]?.passes[0]?.signature)
+    expect(first).toEqual(second)
+  })
+
+  it('records render(oN) as the single selected graph output', async () => {
+    const plan = await compileTrustedHydraProgram({
+      code: 'osc(4).out(o0); noise(3).out(o2); render(o2)',
+      frameCount: 1,
+      naga
+    })
+
+    expect(plan.outputs.map(({ index }) => index)).toEqual([0, 2])
+    expect(plan.selectedOutput).toBe(2)
+  })
+
+  it('rejects render targets that are not produced', async () => {
+    await expect(compileTrustedHydraProgram({
+      code: 'osc(4).out(o0); render(o2)',
+      naga
+    })).rejects.toThrow(/does not produce/u)
   })
 
   it('rejects patches that do not render an output', async () => {
     await expect(compileTrustedHydraProgram({ code: 'osc(10)', naga })).rejects.toThrow(/did not render an output/u)
+  })
+
+  it('keeps the portable compiler version aligned with the package release', () => {
+    const packageJson = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version: string }
+    expect(HYDRA_SYNTH_COMPILER_VERSION).toBe(packageJson.version)
   })
 })

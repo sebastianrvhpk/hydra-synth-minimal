@@ -9,14 +9,16 @@ import type {
   HydraPortableTextureSource
 } from './core/types.js'
 import { HydraTransformRegistry } from './core/transforms/registry.js'
+import { getDefaultTransforms } from './core/transforms/default-transforms.js'
+import { hashPortableText, hashPortableValue } from './portable-integrity.js'
 import {
   resolveWebGLFragmentWGSL,
   translateWebGLFragment,
   type WebNagaModule
 } from './webgl2/shader-compiler.js'
 
-export const HYDRA_PORTABLE_RENDER_PLAN_SCHEMA = 'hydra.portable-render-plan/1' as const
-export const HYDRA_SYNTH_COMPILER_VERSION = '2.0.0-alpha.0'
+export const HYDRA_PORTABLE_RENDER_PLAN_SCHEMA = 'hydra.portable-render-plan/2' as const
+export const HYDRA_SYNTH_COMPILER_VERSION = '2.0.0-alpha.1'
 
 export interface CompileTrustedHydraProgramOptions extends Partial<HydraPortableClock> {
   code: string
@@ -80,15 +82,6 @@ const positive = (value: unknown, fallback: number): number => {
   return normalized > 0 ? normalized : fallback
 }
 
-const hashString = (value: string): string => {
-  let hash = 2166136261
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index)
-    hash = Math.imul(hash, 16777619)
-  }
-  return (hash >>> 0).toString(16).padStart(8, '0')
-}
-
 const createSeededRandom = (seed: number): (() => number) => {
   let state = seed >>> 0
   return () => {
@@ -103,7 +96,8 @@ const createSeededRandom = (seed: number): (() => number) => {
 const installPortableHelpers = (
   scope: Record<string, unknown>,
   registry: HydraTransformRegistry,
-  clock: HydraPortableClock
+  clock: HydraPortableClock,
+  selectOutput: (value?: unknown) => void
 ): void => {
   type PortableHelperGraph = {
     scale: (...args: unknown[]) => PortableHelperGraph
@@ -144,7 +138,7 @@ const installPortableHelpers = (
     btw,
     ns,
     nsloop,
-    render: () => undefined
+    render: selectOutput
   })
 }
 
@@ -283,6 +277,7 @@ const portablePass = (
 
   return {
     signature: pass.signature,
+    wgsl,
     glsl,
     resolutionScale: pass.resolutionScale,
     uniformFrames,
@@ -303,6 +298,7 @@ export const compileTrustedHydraProgram = async (
   const outputs = [0, 1, 2, 3].map((index) => new CaptureOutput(index))
   const inputs = [0, 1, 2, 3].map((index) => new CaptureInput(index))
   const registry = new HydraTransformRegistry({ defaultOutput: outputs[0]! })
+  let selectedOutput: number | null = null
   const scope: Record<string, unknown> = {
     time: clock.startTime,
     bpm: clock.bpm,
@@ -315,7 +311,13 @@ export const compileTrustedHydraProgram = async (
   registry.attachToBindings(scope)
   outputs.forEach((output, index) => { scope[`o${index}`] = output })
   inputs.forEach((input, index) => { scope[`s${index}`] = input })
-  installPortableHelpers(scope, registry, clock)
+  installPortableHelpers(scope, registry, clock, (value: unknown = outputs[0]) => {
+    const marker = markerFor(value)
+    if (marker?.kind !== 'output') {
+      throw new Error('render() accepts o0, o1, o2, or o3.')
+    }
+    selectedOutput = marker.index
+  })
 
   const runCode = options.runCode ?? defaultTrustedRunner
   runCode(code, scope)
@@ -323,19 +325,47 @@ export const compileTrustedHydraProgram = async (
   if (activeOutputs.length === 0) {
     throw new Error('Hydra patch did not render an output. End a chain with .out() or .out(oN).')
   }
+  const resolvedOutput = selectedOutput ?? activeOutputs[0]!.id
+  if (!activeOutputs.some((output) => output.id === resolvedOutput)) {
+    throw new Error(`render(o${resolvedOutput}) selected an output that the patch does not produce.`)
+  }
 
   const naga = options.naga ?? await loadNaga()
-  return {
+  const catalog = getDefaultTransforms().map((definition) => ({
+    name: definition.name,
+    type: definition.type,
+    resolutionScale: definition.resolutionScale ?? 1,
+    inputs: definition.inputs?.map((input) => ({
+      name: input.name,
+      type: input.type,
+      default: typeof input.default === 'number' && !Number.isFinite(input.default)
+        ? String(input.default)
+        : input.default
+    })) ?? [],
+    shader: definition.shader ?? null
+  }))
+  const basePlan = {
     schema: HYDRA_PORTABLE_RENDER_PLAN_SCHEMA,
     compiler: {
-      name: 'hydra-synth',
-      version: HYDRA_SYNTH_COMPILER_VERSION
+      name: 'hydra-synth' as const,
+      version: HYDRA_SYNTH_COMPILER_VERSION,
+      catalogHash: await hashPortableValue(catalog),
+      targets: ['wgsl', 'glsl-es-300'] as ['wgsl', 'glsl-es-300']
     },
-    source: { code, hash: hashString(code) },
+    source: { code, sha256: await hashPortableText(code) },
     clock,
+    selectedOutput: resolvedOutput,
     outputs: activeOutputs.map((output) => ({
       index: output.id,
       passes: output.passes.map((pass, passIndex) => portablePass(pass, output.id, passIndex, clock, scope, naga))
     }))
+  }
+  return {
+    ...basePlan,
+    integrity: {
+      algorithm: 'sha256',
+      canonicalization: 'hydra.typed-tree/1',
+      hash: await hashPortableValue(basePlan)
+    }
   }
 }
